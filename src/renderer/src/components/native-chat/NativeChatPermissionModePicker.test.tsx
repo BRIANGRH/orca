@@ -234,8 +234,11 @@ describe('NativeChatComposerPermissionPicker', () => {
     )
     fireEvent.click(option('ask'))
     expect(options.setOption).not.toHaveBeenCalled()
+    // A write that waits behind a starting agent leaves the pill usable.
+    options.setOption.mockImplementation(() => new Promise(() => {}))
     fireEvent.click(option('full-access'))
     expect(options.setOption).toHaveBeenCalledWith('permissionMode', 'full-access')
+    expect(screen.getByTestId('permission-trigger').getAttribute('data-disabled')).toBeNull()
   })
 
   it('locks only while the descriptor cannot take a pick', () => {

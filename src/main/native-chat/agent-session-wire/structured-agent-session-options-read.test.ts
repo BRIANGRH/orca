@@ -60,11 +60,11 @@ describe('options at rest', () => {
       expect(result.models).toEqual([])
       expect(result.current).not.toHaveProperty('model')
       record.options = { model: 'later-model', effort: 'off' }
-      // The resting conversation runs Codex, whose chats state a permission mode.
+      // Of these, only Codex's chats state a permission mode.
       expect((await readStructuredAgentSessionOptions(context, SESSION)).current).toEqual({
         model: 'later-model',
         effort: 'off',
-        permissionMode: 'ask'
+        ...(provider === 'codex' ? { permissionMode: 'ask' } : {})
       })
     }
   )

@@ -76,17 +76,13 @@ export const CLAUDE_STRUCTURED_BASE_OPTIONS: ClaudeStructuredSdkOptions = {
 }
 
 const CLAUDE_PERMISSION_MODES = {
+  // Explicit, so a `defaultMode` in the user's Claude settings never runs other than the button says.
   ask: 'default',
   'accept-edits': 'acceptEdits',
   auto: 'auto'
 } as const satisfies Record<Exclude<AgentChatPermissionMode, 'full-access'>, PermissionMode>
 
-/**
- * A chat's permission mode as query-start options.
- *
- * Full access is the owned CLI flag, which preserves the user-installed binary contract: the SDK's
- * typed bypass option emits a newer allow flag that older Claude binaries reject before starting.
- */
+/** Full access is the owned CLI flag: the SDK's typed bypass emits a flag older binaries reject. */
 export function claudeStructuredPermissionOptions(
   mode: AgentChatPermissionMode
 ): Pick<ClaudeStructuredSdkOptions, 'permissionMode' | 'extraArgs'> {
@@ -170,8 +166,7 @@ export async function resolveClaudeStructuredInvocation(
   }
 }
 
-/** What one start asks of the launch: the conversation, and the permission mode the host decided
- *  it runs, which absent asks. */
+/** The conversation and the permission mode the host decided it starts with (absent asks). */
 export type ClaudeStructuredLaunchInput = {
   identity: AgentSessionJournalIdentity
   permissionMode?: AgentChatPermissionMode

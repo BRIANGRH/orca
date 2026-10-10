@@ -132,9 +132,8 @@ export function useStructuredAgentSessionOptionState(args: {
   }, [agent, fence, identity])
 
   const optionsReadRef = useRef<CoalescedPollRunner | null>(null)
-  // Refresh options each turn to confirm which model the provider actually selected, once the
-  // provider starts (only then has the host read what it will run), and when another device's pick
-  // moves the host's status.
+  // Refresh options each turn to confirm which model the provider actually selected, and once
+  // the provider starts: only then has the host read what it will run.
   useEffect(() => {
     if (!providerVisible || (providerStarting && !readsBeforeStart) || !optionCatalog) {
       return
@@ -173,6 +172,7 @@ export function useStructuredAgentSessionOptionState(args: {
   }, [
     fence,
     optionCatalog,
+    // Another device's pick moves it.
     hostOptionStamp,
     providerStarting,
     providerVisible,

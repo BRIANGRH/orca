@@ -63,8 +63,7 @@ export function useStructuredAgentSessionStatusSummary(
   return { summary, observation }
 }
 
-/** The option values the host's status carries, as one stamp: a pick made on another device moves
- *  it, so a chat re-reads its options. An older host's status carries no permission mode. */
+/** The host status's option values as one stamp: another device's pick moves it, so options re-read. */
 export function useStructuredAgentSessionOptionStamp(
   sessionId: string,
   target: RuntimeClientTarget
@@ -109,8 +108,7 @@ export function useStructuredAgentSessionHostStopping(
   )
 }
 
-/** The host's startup phase, its word on a Stop and its option stamp, each re-rendering the chat
- *  only on a change. */
+/** Startup phase, Stop and option stamp, each re-rendering the chat only on a change. */
 export function useStructuredAgentSessionHostExecution(
   sessionId: string,
   target: RuntimeClientTarget

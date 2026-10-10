@@ -14,7 +14,7 @@ import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import { decodeStructuredAgentSessionOptionValue } from '../../../shared/structured-agent-session-option-codec'
 import {
   AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
-  savedChatPermissionMode
+  agentChatPermissionModes
 } from '../../../shared/agent-chat-permission-mode'
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
 import { journalOpenReadRefusal } from '../agent-session-journal/journal-open-failure'
@@ -23,6 +23,7 @@ import type { StructuredAgentRegistry } from './structured-agent-registry'
 import type { StructuredAgentSessionLiveOptions } from './structured-agent-session-adapter'
 import type { StructuredAgentSessionHostDeps } from './structured-agent-session-host-types'
 import { structuredAgentSessionOptionModels } from './structured-agent-session-option-models'
+import { structuredAgentSessionLaunchPermission } from './structured-agent-session-launch-permission'
 import type { AgentSessionTurnContext, TurnOutcome } from './structured-agent-session-turns'
 import type { StructuredAgentSessionMutationContext } from './structured-agent-session-host-mutations'
 
@@ -30,12 +31,15 @@ type RestingOptions = Pick<AgentSessionOptionsResult, 'models' | 'fastModeSuppor
 
 /** Whether the agent takes this pick: a permission mode it offers, or an option key it names. */
 function acceptsOptionPick(
-  definition: StructuredAgentDefinition | null,
+  agents: Pick<StructuredAgentRegistry, 'definition'>,
+  provider: string,
   key: string,
   value: string
 ): boolean {
+  const definition = agents.definition(provider)
   return key === AGENT_CHAT_PERMISSION_MODE_OPTION_ID
-    ? definition?.permissionModes?.modes.some((mode) => mode === value) === true
+    ? definition !== null &&
+        agentChatPermissionModes(provider)?.modes.some((mode) => mode === value) === true
     : definition?.restingOptions.acceptsKey(key) === true
 }
 
@@ -45,9 +49,8 @@ export function structuredAgentSessionOptionOverridesRefusal(
   provider: string,
   options: Readonly<Record<string, string>>
 ) {
-  const definition = agents.definition(provider)
   const key = Object.keys(options).find(
-    (key) => !acceptsOptionPick(definition, key, options[key] ?? '')
+    (key) => !acceptsOptionPick(agents, provider, key, options[key] ?? '')
   )
   return key === undefined
     ? null
@@ -121,10 +124,7 @@ export async function recordStructuredAgentSessionOptionIntent(
   input: { key: string; value: string }
 ): Promise<TurnOutcome<AgentSessionOptionResult>> {
   const record = deps.store.getRecord(ctx.sessionId)
-  if (
-    !record ||
-    !acceptsOptionPick(deps.agents.definition(record.provider), input.key, input.value)
-  ) {
+  if (!record || !acceptsOptionPick(deps.agents, record.provider, input.key, input.value)) {
     return {
       ok: false,
       refusal: refuse(
@@ -193,19 +193,16 @@ export async function readStructuredAgentSessionOptions(
   }
   // Re-acquired after the reads above: the handle they saw may have closed and reopened since.
   const session = await context.conversation(sessionId)
-  const phase = store.getRecord(sessionId)?.rewind?.phase
+  const record = store.getRecord(sessionId)
+  const phase = record?.rewind?.phase
   const agent = session.params.provider
   const capabilities = agents.capabilities(agent)
   const floor = session.journal.context.floor()
   const contextFloor = floor ? { contextFloor: floor } : {}
-  // The record's, live or at rest: a child never reports it, and only its next start applies it.
-  const permissionModes = agents.definition(agent)?.permissionModes
-  const permissionMode = permissionModes
-    ? savedChatPermissionMode(
-        permissionModes,
-        store.getRecord(sessionId)?.options?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID]
-      )
-    : undefined
+  // What a start launches now, live or at rest: a child never reports it.
+  const permissionMode = record
+    ? await structuredAgentSessionLaunchPermission(context.deps, record)
+    : null
   return {
     ...options,
     ...(permissionMode ? { current: { ...options.current, permissionMode } } : {}),

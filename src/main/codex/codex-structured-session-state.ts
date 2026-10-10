@@ -32,8 +32,7 @@ import type { NativeChatVisualsLaunch } from '../native-chat/native-chat-visuals
 
 export type CodexSessionCatalogAccess = AgentModelCatalogSessionAccess
 
-/** What one start asks of the launch: the conversation, and the permission mode the host decided
- *  it runs, which absent asks. */
+/** The conversation and the permission mode the host decided it starts with (absent asks). */
 export type CodexStructuredLaunchInput = {
   identity: AgentSessionJournalIdentity
   permissionMode?: AgentChatPermissionMode

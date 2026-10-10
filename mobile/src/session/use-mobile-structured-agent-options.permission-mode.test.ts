@@ -86,6 +86,12 @@ async function mountOptions(props: ProbeProps) {
       })
       await settle()
     },
+    pick: async (mode: string) => {
+      await act(async () => {
+        void rendered.current?.setStructuredOption('permissionMode', mode)
+      })
+      await settle()
+    },
     unmount: () => act(async () => renderer?.unmount())
   }
 }
@@ -113,6 +119,18 @@ describe('the permission mode on the phone', () => {
     expect(options.permission()).toBe('auto')
     await options.rerender({ fence: 2 })
     expect(options.permission()).toBe('auto')
+    await options.unmount()
+  })
+
+  it('shows a pick at once while its write waits behind a start, and stays pickable', async () => {
+    vi.mocked(mutate).mockImplementation(() => new Promise(() => {}))
+    const rpc = optionsClient('ask')
+    const options = await mountOptions({ client: rpc.client, fence: 1, optionStamp: '' })
+    await options.pick('full-access')
+    expect(options.permission()).toBe('full-access')
+    await options.pick('auto')
+    expect(options.permission()).toBe('auto')
+    expect(vi.mocked(mutate)).toHaveBeenCalledTimes(2)
     await options.unmount()
   })
 

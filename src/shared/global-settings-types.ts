@@ -234,8 +234,7 @@ export type GlobalSettings = NativeChatGlobalSettings & {
   nativeChatShellEnvironmentVariables?: string[]
   /** Last explicit native-chat model + option selections; live panes need an applied/dispatched record before showing a value. */
   nativeChatSessionOptions?: PersistedNativeChatSessionOptions
-  /** This host's permission mode for new Claude and Codex chats; each chat keeps its own after.
-   *  Seeded once from Agent Permissions when a profile first loads without it. */
+  /** New Claude and Codex chats' permission mode; seeded once from Agent Permissions. */
   nativeChatPermissionMode?: AgentChatPermissionMode
   /** Extra launcher rows for the worktree "Open in" submenu. VS Code is always shown first. */
   openInApplications?: OpenInApplication[]

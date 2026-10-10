@@ -52,8 +52,7 @@ export type StructuredAgentSessionOptionState = {
    *  same list once the host said it has none, usable but naming nothing the host may replace. */
   catalogSource: 'seed' | 'builtin' | 'host' | 'live' | null
   record: NativeChatSessionOptionRecord
-  /** The chat's saved permission mode as the host or the launch last stated it; null until one
-   *  does, which shows no permission picker. */
+  /** The permission mode the host or launch last stated; null shows no picker. */
   permissionMode: string | null
   pendingId: string | null
 }

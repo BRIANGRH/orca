@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -112,8 +112,9 @@ function NativeChatPermissionModePickerInner({
 
 export const NativeChatPermissionModePicker = memo(NativeChatPermissionModePickerInner)
 
-/** The composer's permission pill, a view of the snapshot's permission descriptor: absent where the
- *  host states no mode. Never locked while the agent works; a change applies from the next send. */
+const NO_PENDING_MARK = (): void => {}
+
+/** The snapshot's permission descriptor, absent where the host states none; never locked by work. */
 export function NativeChatComposerPermissionPicker({
   surface,
   snapshot,
@@ -123,7 +124,6 @@ export function NativeChatComposerPermissionPicker({
   snapshot: readonly SessionOptionDescriptor[]
   agent?: string
 }): React.JSX.Element | null {
-  const [pending, setPending] = useState(false)
   const descriptor = snapshot.find((entry) => entry.id === AGENT_CHAT_PERMISSION_MODE_OPTION_ID)
   const current = descriptor?.kind.type === 'select' ? descriptor.kind.currentValue : undefined
   if (
@@ -142,13 +142,12 @@ export function NativeChatComposerPermissionPicker({
       current={current}
       modes={modes}
       agent={agent ?? null}
-      disabled={!descriptor.settable || pending}
+      disabled={!descriptor.settable}
       onSelect={(mode) => {
         if (mode !== current) {
-          runSessionOptionSurfaceCall(
-            mode,
-            (id) => setPending(id !== null),
-            () => surface.setOption(AGENT_CHAT_PERMISSION_MODE_OPTION_ID, mode)
+          // The pick shows at once, so nothing marks it pending.
+          runSessionOptionSurfaceCall(mode, NO_PENDING_MARK, () =>
+            surface.setOption(AGENT_CHAT_PERMISSION_MODE_OPTION_ID, mode)
           )
         }
       }}

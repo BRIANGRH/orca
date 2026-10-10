@@ -18,7 +18,10 @@ import {
   retireOutgrownStructuredAgentSessionChild,
   structuredAgentSessionChildReportedSignedOut
 } from './structured-agent-session-outgrown-child'
-import type { StructuredAgentSessionLaunchPermission } from './structured-agent-session-launch-permission'
+import { claudeAndCodexDeclared } from './structured-agent-session-adapter-router-test-support'
+import { structuredAgentSessionLaunchPermission } from './structured-agent-session-launch-permission'
+import type { AgentChatPermissionMode } from '../../../shared/agent-chat-permission-mode'
+import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import type { StructuredAgentSessionProviderChild } from './structured-agent-session-host-types'
 import type {
   AgentJournalItemBody,
@@ -208,7 +211,7 @@ describe('retireOutgrownStructuredAgentSessionChild', () => {
     input: Parameters<typeof conversation>[0],
     work: Partial<typeof idle> = {},
     stopAgent = vi.fn(async () => undefined),
-    launchPermission?: () => Promise<StructuredAgentSessionLaunchPermission | null>
+    launchPermission?: () => Promise<AgentChatPermissionMode | null>
   ) => {
     const warn = vi.fn()
     await retireOutgrownStructuredAgentSessionChild('session', conversation(input), {
@@ -271,8 +274,7 @@ describe('retireOutgrownStructuredAgentSessionChild', () => {
   })
 
   describe('a child launched with another permission mode', () => {
-    const now = (mode: StructuredAgentSessionLaunchPermission['mode'], known = true) =>
-      vi.fn(async () => ({ mode, known }))
+    const now = (mode: AgentChatPermissionMode) => vi.fn(async () => mode)
     const askChild = { child: childAt({ permissionMode: 'ask' }) }
 
     it('is stopped once, and one launched with the current mode is kept', async () => {
@@ -292,15 +294,70 @@ describe('retireOutgrownStructuredAgentSessionChild', () => {
       }
     })
 
-    it('is kept while starting, closing, or when the current mode is unknown', async () => {
+    it('is kept while starting, or for an agent with no modes', async () => {
       const starting = { child: childAt({ permissionMode: 'ask', phase: 'starting' }) }
       expect((await retire(starting, {}, undefined, now('auto'))).stopAgent).not.toHaveBeenCalled()
       expect(
-        (await retire(askChild, {}, undefined, now('auto', false))).stopAgent
-      ).not.toHaveBeenCalled()
-      expect(
         (await retire(askChild, {}, undefined, async () => null)).stopAgent
       ).not.toHaveBeenCalled()
+    })
+
+    // The check reads the same mode a start launches with, so each start ends the restarts.
+    describe('against the mode a start launches with', () => {
+      const rows = [{ id: 'opus', label: 'Opus', isDefault: true, efforts: [] }]
+      const catalog = (supportsAutoMode?: boolean) => ({
+        read: vi.fn(async () => ({
+          origin: 'probe' as const,
+          fetchedAt: 1,
+          models: rows.map((row) =>
+            supportsAutoMode === undefined ? row : { ...row, supportsAutoMode }
+          )
+        })),
+        recordLiveListing: vi.fn(),
+        prewarm: vi.fn(async () => undefined),
+        stop: vi.fn(),
+        providerStarted: vi.fn()
+      })
+      const launch = (options: Record<string, string>, supportsAutoMode?: boolean) => {
+        // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the launch mode reads only the record's id, agent and options.
+        const record = { sessionId: 'session', provider: 'claude', options } as AgentSessionRecord
+        return () =>
+          structuredAgentSessionLaunchPermission(
+            { agents: claudeAndCodexDeclared(), modelCatalog: catalog(supportsAutoMode) },
+            record
+          )
+      }
+      const stoppedAfterLaunch = async (
+        launched: AgentChatPermissionMode,
+        current: () => Promise<AgentChatPermissionMode | null>
+      ) =>
+        (await retire({ child: childAt({ permissionMode: launched }) }, {}, undefined, current))
+          .stopAgent.mock.calls.length > 0
+
+      it('restarts Full access or Accept edits into Ask when auto is not confirmed', async () => {
+        for (const supportsAutoMode of [undefined, false]) {
+          const autoPick = launch({ model: 'opus', permissionMode: 'auto' }, supportsAutoMode)
+          await expect(autoPick()).resolves.toBe('ask')
+          expect(await stoppedAfterLaunch('full-access', autoPick)).toBe(true)
+          expect(await stoppedAfterLaunch('accept-edits', autoPick)).toBe(true)
+          expect(await stoppedAfterLaunch('ask', autoPick)).toBe(false)
+        }
+      })
+
+      it('never restarts a child started from an alias or a resolved model id', async () => {
+        const records: Record<string, string>[] = [
+          { model: 'opus', permissionMode: 'auto' },
+          { model: 'claude-opus-4-5', permissionMode: 'auto' },
+          { model: 'default', permissionMode: 'auto' },
+          { permissionMode: 'auto' }
+        ]
+        for (const options of records) {
+          const current = launch(options, true)
+          const launched = await current()
+          expect(launched).toBe(options.model === 'claude-opus-4-5' ? 'ask' : 'auto')
+          expect(await stoppedAfterLaunch(launched!, current)).toBe(false)
+        }
+      })
     })
 
     it('never reads the mode for a child launched with none', async () => {

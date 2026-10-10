@@ -2849,7 +2849,7 @@
       "composer": {
         "effort": "Effort",
         "imageUnsupported": "Image paste is not supported for this agent.",
-        "permissions": "permissions"
+        "permissions": "Permissions"
       },
       "failureWords": {
         "accountSwitchInProgress": "A Claude account switch is in progress. Try again after it finishes.",

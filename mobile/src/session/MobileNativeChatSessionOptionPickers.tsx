@@ -59,15 +59,15 @@ export function MobileNativeChatSessionOptionPickers({
     (descriptor) => descriptor.id === AGENT_CHAT_PERMISSION_MODE_OPTION_ID
   )
   const options = sortNativeChatSessionOptions(snapshot)
-  if (!model) {
+  if (!model && !permission) {
     return null
   }
   const activeDescriptor = snapshot.find((descriptor) => descriptor.id === openDescriptorId)
   const permissionView = activeDescriptor !== undefined && activeDescriptor === permission
   // The permission mode applies from the next send, so a running turn never locks it.
   const disabled = (!permissionView && isWorking) || pendingId !== null || sendInFlight
-  const modelView = activeDescriptor?.id === model.id
-  const modelLabel = mobileModelPillLabel(model)
+  const modelView = model !== undefined && activeDescriptor?.id === model.id
+  const modelLabel = model ? mobileModelPillLabel(model) : ''
   const optionsLabel = options.length > 0 ? mobileOptionsPillLabel(options) : null
   const pillLabel = optionsLabel ? `${modelLabel} ${optionsLabel}` : modelLabel
   const reason = mobileSessionOptionDisabledReason(activeDescriptor?.disabledReason)
@@ -75,7 +75,7 @@ export function MobileNativeChatSessionOptionPickers({
   const closePicker = (): void => setOpenDescriptorId(null)
   const openPicker = (): void => {
     Keyboard.dismiss()
-    setOpenDescriptorId(model.id)
+    setOpenDescriptorId(model?.id ?? null)
   }
 
   const applyOption = (descriptor: SessionOptionDescriptor, value: SessionOptionValue): void => {
@@ -87,6 +87,10 @@ export function MobileNativeChatSessionOptionPickers({
     ) {
       closePicker()
       return
+    }
+    // A permission pick shows at once; its write may wait behind a starting agent.
+    if (descriptor === permission) {
+      closePicker()
     }
     void controller.setOption(descriptor.id, value).then((applied) => {
       if (applied) {
@@ -122,12 +126,14 @@ export function MobileNativeChatSessionOptionPickers({
           }}
         />
       ) : null}
-      <Pill
-        label={pillLabel}
-        accessibleName={`Model, ${pillLabel}`}
-        disabled={isWorking || pillsBusy}
-        onPress={openPicker}
-      />
+      {model ? (
+        <Pill
+          label={pillLabel}
+          accessibleName={`Model, ${pillLabel}`}
+          disabled={isWorking || pillsBusy}
+          onPress={openPicker}
+        />
+      ) : null}
       <BottomDrawer visible={activeDescriptor !== undefined} onClose={closePicker}>
         {activeDescriptor ? (
           <View style={styles.sheet}>
@@ -136,9 +142,7 @@ export function MobileNativeChatSessionOptionPickers({
                 accessibilityLabel={modelView || permissionView ? 'Close picker' : 'Back to models'}
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.sheetNav, pressed && styles.pressed]}
-                onPress={
-                  modelView || permissionView ? closePicker : () => setOpenDescriptorId(model.id)
-                }
+                onPress={modelView || permissionView ? closePicker : openPicker}
                 hitSlop={8}
               >
                 {modelView || permissionView ? (

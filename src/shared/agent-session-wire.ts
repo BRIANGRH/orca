@@ -399,8 +399,7 @@ export type AgentSessionModelOption = {
   efforts: AgentSessionOptionChoice[]
   /** Provider catalog fact. Absent means the host could not determine support. */
   supportsFastMode?: boolean
-  /** Whether the model runs the agent's own approval reviewer (Approve for me). Absent is unknown,
-   *  which neither offers nor launches it. */
+  /** Whether the model runs Approve for me; absent is unknown, which neither offers nor launches it. */
   supportsAutoMode?: boolean
   /** Service tiers the provider lists for this model besides its standard one, each valued by the
    *  provider's own tier id. Absent means unknown; a client that reads it offers one speed choice
@@ -504,8 +503,7 @@ export type AgentSessionOptionsResult = {
     fastMode?: boolean
     /** Next-turn service tier id where the model lists `serviceTiers`; `default` is standard. */
     serviceTier?: string
-    /** The chat's saved permission mode, which the next start of its agent runs. Absent from a
-     *  host or agent with no permission picker. */
+    /** The permission mode a start runs now; absent from a host or agent with no picker. */
     permissionMode?: string
     /** Provider-reported effective routing, distinct from the next-turn preference. */
     fastModeState?: AgentSessionFastModeState

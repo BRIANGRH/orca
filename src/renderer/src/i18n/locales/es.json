@@ -18033,7 +18033,7 @@
         "attachmentOwnerChanged": "Este espacio de trabajo cambió de host durante la conexión; vuelve a soltar los archivos.",
         "attachmentUnreadable": "No se pudieron leer los archivos soltados.",
         "tooManyAttachments": "Adjunta {{value0}} archivos o menos a la vez.",
-        "permissions": "permisos",
+        "permissions": "Permisos",
         "permissionAsk": "Pedir aprobación",
         "permissionAskDescription": "Pregunta antes de ediciones y comandos que tu configuración no permite",
         "permissionAskCodexDescription": "Trabaja dentro del entorno aislado del espacio de trabajo; pregunta antes de salir de él",

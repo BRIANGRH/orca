@@ -191,8 +191,7 @@ export function mergeSettings(
   }
 }
 
-/** The host's new-chat permission default, kept only when it is a mode this build knows. The host
- *  seeds new chats from its own, so web reads and edits that one rather than a local copy. */
+/** The host's new-chat permission default (the host seeds from it), kept only when a known mode. */
 export function runtimeChatPermissionSetting(
   settings: Partial<GlobalSettings>
 ): Pick<GlobalSettings, 'nativeChatPermissionMode'> {

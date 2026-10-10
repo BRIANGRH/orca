@@ -72,16 +72,19 @@ describe('the permission mode picker', () => {
     ])
   })
 
-  it('offers and shows Claude auto only on a model listed as supporting it', () => {
-    const supported = permission(live('claude', { permissionMode: 'auto' }, true))
-    expect(supported).toMatchObject({ kind: { currentValue: 'auto' } })
-    for (const autoMode of [false, undefined]) {
-      const narrowed = permission(live('claude', { permissionMode: 'auto' }, autoMode))
-      expect(narrowed).toMatchObject({ kind: { currentValue: 'ask' } })
-      expect(
-        narrowed?.kind.type === 'select' && narrowed.kind.choices.map((choice) => choice.value)
-      ).toEqual(['ask', 'accept-edits', 'full-access'])
+  it("shows the host's mode as stated, and offers Claude auto only on a model listed for it", () => {
+    const offered = (autoMode: boolean | undefined, mode = 'ask') => {
+      const descriptor = permission(live('claude', { permissionMode: mode }, autoMode))
+      return descriptor?.kind.type === 'select' && descriptor.kind.choices.map((c) => c.value)
     }
+    expect(offered(true)).toEqual(['ask', 'accept-edits', 'auto', 'full-access'])
+    expect(offered(false)).toEqual(['ask', 'accept-edits', 'full-access'])
+    expect(offered(undefined)).toEqual(['ask', 'accept-edits', 'full-access'])
+    // The host decides what runs; a client catalog that cannot confirm it never relabels it.
+    expect(permission(live('claude', { permissionMode: 'auto' }, false))).toMatchObject({
+      kind: { currentValue: 'auto' }
+    })
+    expect(offered(false, 'auto')).toEqual(['ask', 'accept-edits', 'auto', 'full-access'])
   })
 
   it("shows a held pick over the host's value, and the host's over the seed", () => {

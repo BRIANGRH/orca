@@ -1,5 +1,5 @@
-// The mode a start launches with: Claude's Approve for me needs its model listed as supporting it,
-// read from the saved catalog only, and an unknown answer is never treated as a change.
+// The mode a start launches with: Claude's Approve for me needs its model listed for it in the saved
+// catalog; anything the catalog cannot confirm launches Ask.
 
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
@@ -55,18 +55,15 @@ function launchPermission(
 describe('the permission mode a chat starts with', () => {
   it('launches a saved mode that needs no model as it is, without reading the catalog', async () => {
     const claude = launchPermission('claude', { permissionMode: 'accept-edits' })
-    await expect(claude.result).resolves.toEqual({ mode: 'accept-edits', known: true })
+    await expect(claude.result).resolves.toBe('accept-edits')
     expect(claude.read).not.toHaveBeenCalled()
     const codex = launchPermission('codex', { permissionMode: 'auto' })
-    await expect(codex.result).resolves.toEqual({ mode: 'auto', known: true })
+    await expect(codex.result).resolves.toBe('auto')
     expect(codex.read).not.toHaveBeenCalled()
   })
 
   it('asks for a chat saved before modes existed', async () => {
-    await expect(launchPermission('claude', undefined).result).resolves.toEqual({
-      mode: 'ask',
-      known: true
-    })
+    await expect(launchPermission('claude', undefined).result).resolves.toBe('ask')
   })
 
   it('runs Claude auto on a model the saved catalog lists as supporting it', async () => {
@@ -75,7 +72,7 @@ describe('the permission mode a chat starts with', () => {
       { permissionMode: 'auto', model: 'opus' },
       listing([{ id: 'opus', supportsAutoMode: true }])
     )
-    await expect(supported.result).resolves.toEqual({ mode: 'auto', known: true })
+    await expect(supported.result).resolves.toBe('auto')
     expect(supported.read).toHaveBeenCalledWith(expect.objectContaining({ savedOnly: true }))
   })
 
@@ -89,10 +86,10 @@ describe('the permission mode a chat starts with', () => {
           { id: 'opus', supportsAutoMode: true }
         ])
       ).result
-    ).resolves.toEqual({ mode: 'ask', known: true })
+    ).resolves.toBe('ask')
   })
 
-  it('asks, as an unknown answer, when the catalog cannot say', async () => {
+  it('asks when the catalog cannot confirm the model runs auto', async () => {
     for (const answer of [
       { origin: 'unknown' } as const,
       listing([{ id: 'opus' }]),
@@ -101,7 +98,7 @@ describe('the permission mode a chat starts with', () => {
     ]) {
       await expect(
         launchPermission('claude', { permissionMode: 'auto', model: 'opus' }, answer).result
-      ).resolves.toEqual({ mode: 'ask', known: false })
+      ).resolves.toBe('ask')
     }
   })
 

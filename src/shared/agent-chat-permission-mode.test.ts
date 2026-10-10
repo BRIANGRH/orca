@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   AGENT_CHAT_PERMISSION_MODES,
-  CLAUDE_CHAT_PERMISSION_MODES,
-  CODEX_CHAT_PERMISSION_MODES,
   agentChatPermissionModes,
   chatPermissionModeNeedsModelSupport,
   effectiveChatPermissionMode,
@@ -12,6 +10,9 @@ import {
 } from './agent-chat-permission-mode'
 import { getDefaultSettings } from './constants'
 import { applyAgentPermissionMode } from './tui-agent-permissions'
+
+const CLAUDE_CHAT_PERMISSION_MODES = agentChatPermissionModes('claude')!
+const CODEX_CHAT_PERMISSION_MODES = agentChatPermissionModes('codex')!
 
 describe('agent chat permission modes', () => {
   it('orders the picker from least to most access', () => {

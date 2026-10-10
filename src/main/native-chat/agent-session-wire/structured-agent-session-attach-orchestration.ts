@@ -207,7 +207,7 @@ async function runAttachUnderAbort(
       },
       optionRevision: () => context.runtimeState.optionRevisions.current(sessionId),
       launchPermissionMode: async (record) =>
-        (await structuredAgentSessionLaunchPermission(context.deps, record))?.mode,
+        (await structuredAgentSessionLaunchPermission(context.deps, record)) ?? undefined,
       ...(options.onAcquisitionFailed ? { onAcquisitionFailed: options.onAcquisitionFailed } : {}),
       openConversation: async (record) => {
         const conversation = await context.openConversation(record.sessionId, {

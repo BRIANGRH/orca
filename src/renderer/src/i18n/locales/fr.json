@@ -18135,7 +18135,7 @@
         "attachmentOwnerChanged": "Cet espace de travail a changé d'hôte lors de la connexion : supprimez à nouveau les fichiers.",
         "attachmentUnreadable": "Impossible de lire les fichiers supprimés.",
         "tooManyAttachments": "Joignez {{value0}} fichiers maximum à la fois.",
-        "permissions": "autorisations",
+        "permissions": "Autorisations",
         "permissionAsk": "Demander l’approbation",
         "permissionAskDescription": "Demande avant les modifications et commandes que vos réglages n'autorisent pas",
         "permissionAskCodexDescription": "Travaille dans le bac à sable de l’espace de travail ; demande avant d’en sortir",

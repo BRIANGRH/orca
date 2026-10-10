@@ -74,8 +74,7 @@ export type StructuredAgentSessionProviderChild = StructuredAgentSessionProvider
   /** The queued message whose delivery started this child, fixed when the start is made; absent
    *  for any other start. In memory only: it tells a restart offer its own start from another. */
   readonly startedFor?: string
-  /** The permission mode this child was launched with; absent for an agent with none. In memory
-   *  only: a send after the chat's mode changes starts a new child. */
+  /** The permission mode it was launched with, in memory only; absent for an agent with none. */
   readonly permissionMode?: AgentChatPermissionMode
   close?: StructuredAgentSessionChildClose
 }

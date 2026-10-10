@@ -20,6 +20,7 @@ import {
   structuredAgentSessionOptionSnapshot,
   type StructuredAgentSessionOptionState
 } from '../../../src/shared/structured-agent-session-options'
+import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../../src/shared/agent-chat-permission-mode'
 import type { RpcClient } from '../transport/rpc-client'
 import {
   callAgentSession,
@@ -168,8 +169,36 @@ export function useMobileStructuredAgentOptions(args: {
       }
       const targetRecord = currentState.record
       const mutationGeneration = ++optionMutationGeneration.current
-      pendingOptionRef.current = id
-      updateOptionState((current) => ({ ...current, pendingId: id }))
+      // Record-only: shown at once, so the picker stays usable while the write waits behind a start.
+      const shownAtOnce = id === AGENT_CHAT_PERMISSION_MODE_OPTION_ID
+      if (shownAtOnce) {
+        updateOptionState((current) =>
+          current.record === targetRecord
+            ? commitStructuredAgentSessionOption(current, id, encoded)
+            : current
+        )
+      } else {
+        pendingOptionRef.current = id
+        updateOptionState((current) => ({ ...current, pendingId: id }))
+      }
+      const readBack = (): void => {
+        void callAgentSession<AgentSessionOptionsResult>(client, 'agentSession.options', {
+          sessionId
+        })
+          .then((refreshed) => {
+            if (
+              activeOptionRecordRef.current === targetRecord &&
+              optionMutationGeneration.current === mutationGeneration
+            ) {
+              updateOptionState((latest) =>
+                latest.record === targetRecord
+                  ? applyStructuredAgentSessionOptions(latest, optionCatalog, refreshed)
+                  : latest
+              )
+            }
+          })
+          .catch(() => undefined)
+      }
       try {
         const result = await mutate<AgentSessionOptionResult>(
           'agentSession.setOption',
@@ -200,22 +229,7 @@ export function useMobileStructuredAgentOptions(args: {
             })
           }
           if (result.sameFence) {
-            void callAgentSession<AgentSessionOptionsResult>(client, 'agentSession.options', {
-              sessionId
-            })
-              .then((refreshed) => {
-                if (
-                  activeOptionRecordRef.current === targetRecord &&
-                  optionMutationGeneration.current === mutationGeneration
-                ) {
-                  updateOptionState((latest) =>
-                    latest.record === targetRecord
-                      ? applyStructuredAgentSessionOptions(latest, optionCatalog, refreshed)
-                      : latest
-                  )
-                }
-              })
-              .catch(() => undefined)
+            readBack()
           }
           return true
         }
@@ -226,6 +240,9 @@ export function useMobileStructuredAgentOptions(args: {
               : current
           )
           return true
+        }
+        if (shownAtOnce) {
+          readBack()
         }
         return false
       } finally {

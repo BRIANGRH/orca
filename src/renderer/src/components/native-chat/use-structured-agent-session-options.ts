@@ -7,6 +7,7 @@ import type {
 import type { AgentType } from '../../../../shared/agent-status-types'
 import { structuredAgentSessionSeedCatalog } from '../../../../shared/structured-agent-session-seed-catalog'
 import type { SessionOptionsSurface } from '../../../../shared/native-chat-session-options'
+import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../../../shared/agent-chat-permission-mode'
 import {
   applyStructuredAgentSessionOptions,
   canSetStructuredAgentSessionOption,
@@ -133,10 +134,21 @@ export function useStructuredAgentSessionOptions(args: {
       const isCurrent = (): boolean =>
         activeOptionRecordRef.current === targetRecord &&
         optionMutationGeneration.current === mutationGeneration
-      pendingOptionRef.current = id
-      updateOptionState((current) => ({ ...current, pendingId: id }))
+      // Record-only: shown at once, so the picker stays usable while the write waits behind a start.
+      const shownAtOnce = id === AGENT_CHAT_PERMISSION_MODE_OPTION_ID
+      if (shownAtOnce) {
+        updateOptionState((current) =>
+          current.record === targetRecord
+            ? commitStructuredAgentSessionOptionValues(current, { [id]: encoded })
+            : current
+        )
+      } else {
+        pendingOptionRef.current = id
+        updateOptionState((current) => ({ ...current, pendingId: id }))
+      }
+      let result: AgentSessionOptionResult | null = null
       try {
-        const result = await mutate<AgentSessionOptionResult>(
+        result = await mutate<AgentSessionOptionResult>(
           'agentSession.setOption',
           'agentSession.setOption',
           { key: id, value: encoded }
@@ -153,6 +165,11 @@ export function useStructuredAgentSessionOptions(args: {
             structuredAgentSessionOptionView(currentState, launchSeedOptions, NO_HELD_OPTIONS),
             committed
           )
+        }
+        return Boolean(result)
+      } finally {
+        // A settled write, or a shown one that failed, reads back what the host now holds.
+        if (isCurrent() && (result || shownAtOnce)) {
           void callStructuredAgentSession<AgentSessionOptionsResult>(
             target,
             'agentSession.options',
@@ -169,8 +186,6 @@ export function useStructuredAgentSessionOptions(args: {
             })
             .catch(() => {})
         }
-        return Boolean(result)
-      } finally {
         if (isCurrent()) {
           pendingOptionRef.current = null
           updateOptionState((current) =>

@@ -4,11 +4,7 @@ import { mobileStructuredSessionStatusFeed } from './mobile-structured-session-s
 
 const noSubscription = (): (() => void) => () => {}
 
-/**
- * The option values the host's status carries for session `sessionId`, as one stamp: a pick made
- * on another device moves it, so the phone re-reads the session's options, as the desktop does.
- * Off `enabled` (no status feed or no connection), it never moves.
- */
+/** The host status's option values as one stamp; another device's pick moves it, off `enabled` never. */
 export function useMobileStructuredSessionOptionStamp(args: {
   client: RpcClient | null
   sessionId: string | null

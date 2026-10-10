@@ -1,10 +1,8 @@
-// The chat's permission mode as a picker descriptor, beside the model's but never locked by it: it
-// shows before the agent starts, and only a host that states a mode gets one.
+// The chat's permission mode as a picker descriptor: shows the mode the host states, never derives it.
 
 import {
   AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
   agentChatPermissionModes,
-  effectiveChatPermissionMode,
   offeredChatPermissionModes,
   type AgentChatPermissionMode
 } from './agent-chat-permission-mode'
@@ -36,7 +34,7 @@ const CODEX_DESCRIPTIONS: Partial<Record<AgentChatPermissionMode, string>> = {
   'full-access': 'Never asks; no sandbox'
 }
 
-/** Whether the model the chat runs is listed as running Approve for me; unknown reads as no. */
+/** Only decides whether the menu offers Approve for me; unknown reads as no. */
 function currentModelSupportsAutoMode(
   catalog: AgentSessionOptionCatalog | null,
   record: NativeChatSessionOptionRecord
@@ -54,18 +52,22 @@ export function structuredAgentSessionPermissionDescriptor(state: {
   permissionMode: string | null
 }): SessionOptionDescriptor | null {
   const support = agentChatPermissionModes(state.record.agent)
-  if (!support || state.permissionMode === null) {
+  const current = support?.modes.find((mode) => mode === state.permissionMode)
+  if (!support || !current) {
     return null
   }
-  const autoSupported = currentModelSupportsAutoMode(state.catalog, state.record)
+  const offered = offeredChatPermissionModes(
+    support,
+    current === 'auto' || currentModelSupportsAutoMode(state.catalog, state.record)
+  )
   return {
     id: AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
     label: 'Permissions',
     category: 'mode',
     kind: {
       type: 'select',
-      currentValue: effectiveChatPermissionMode(support, state.permissionMode, autoSupported),
-      choices: offeredChatPermissionModes(support, autoSupported).map((value) => ({
+      currentValue: current,
+      choices: offered.map((value) => ({
         value,
         label: MODE_COPY[value].label,
         description:

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ call: vi.fn() }))
@@ -110,6 +110,46 @@ describe('the permission mode another device picks', () => {
       )
     )
     expect(permission(result.current.optionSnapshot)).toBeNull()
+    unmount()
+  })
+})
+
+describe('a permission pick on this device', () => {
+  beforeEach(() => {
+    mocks.call.mockReset()
+    vi.mocked(mutate).mockReset()
+    resetHostModelCatalogSnapshotsForTests()
+  })
+
+  it('shows at once and stays pickable while the write waits behind a start', async () => {
+    optionsAnswering('ask')
+    vi.mocked(mutate).mockImplementation(() => new Promise(() => {}))
+    const { result, unmount } = renderReopened(1)
+    await waitFor(() => expect(permission(result.current.optionSnapshot)).toBe('ask'))
+
+    await act(async () => {
+      void result.current.setStructuredOption('permissionMode', 'full-access')
+    })
+    expect(permission(result.current.optionSnapshot)).toBe('full-access')
+    await act(async () => {
+      void result.current.setStructuredOption('permissionMode', 'auto')
+    })
+    expect(permission(result.current.optionSnapshot)).toBe('auto')
+    expect(vi.mocked(mutate)).toHaveBeenCalledTimes(2)
+    unmount()
+  })
+
+  it("shows the host's mode again when the write is refused", async () => {
+    optionsAnswering('ask')
+    vi.mocked(mutate).mockResolvedValue(null)
+    const { result, unmount } = renderReopened(1)
+    await waitFor(() => expect(permission(result.current.optionSnapshot)).toBe('ask'))
+
+    await act(async () => {
+      await result.current.setStructuredOption('permissionMode', 'full-access')
+    })
+    await waitFor(() => expect(optionReads()).toBe(2))
+    await waitFor(() => expect(permission(result.current.optionSnapshot)).toBe('ask'))
     unmount()
   })
 })

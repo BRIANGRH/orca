@@ -26,16 +26,16 @@ export type AgentChatPermissionModeSupport = {
   autoNeedsModelSupport?: true
 }
 
-export const CLAUDE_CHAT_PERMISSION_MODES: AgentChatPermissionModeSupport = {
+const CLAUDE_CHAT_PERMISSION_MODES: AgentChatPermissionModeSupport = {
   modes: AGENT_CHAT_PERMISSION_MODES,
   autoNeedsModelSupport: true
 }
 
-export const CODEX_CHAT_PERMISSION_MODES: AgentChatPermissionModeSupport = {
+const CODEX_CHAT_PERMISSION_MODES: AgentChatPermissionModeSupport = {
   modes: ['ask', 'auto', 'full-access']
 }
 
-/** Null for an agent whose chats have no picker: it keeps following Agent Permissions. */
+/** The one table of which agents' chats offer which modes; null keeps following Agent Permissions. */
 export function agentChatPermissionModes(agent: string): AgentChatPermissionModeSupport | null {
   return agent === 'claude'
     ? CLAUDE_CHAT_PERMISSION_MODES
@@ -62,8 +62,7 @@ export function chatPermissionModeNeedsModelSupport(
   )
 }
 
-/** What a chat runs and shows: its saved choice, with `auto` on a model not listed for it read as
- *  Ask. Derived on every read and never written back, so a supporting model gets `auto` again. */
+/** Saved choice, with `auto` on a model not listed for it read as Ask; never written back. */
 export function effectiveChatPermissionMode(
   support: AgentChatPermissionModeSupport,
   intent: unknown,
@@ -91,8 +90,7 @@ export function newChatPermissionMode(
   return support ? savedChatPermissionMode(support, setting) : null
 }
 
-/** The new-chat default as loaded. Seeded once from Agent Permissions when absent; once stored it
- *  no longer follows them. An unknown value from another build asks. */
+/** Seeded once from Agent Permissions when absent, then stored; an unknown value asks. */
 export function loadedChatPermissionSetting(
   saved: unknown,
   terminal: Partial<Pick<GlobalSettings, 'agentDefaultArgs' | 'agentDefaultEnv'>>
