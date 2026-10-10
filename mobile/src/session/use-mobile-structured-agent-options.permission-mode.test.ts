@@ -45,7 +45,7 @@ function optionsClient(...modes: (string | undefined)[]) {
 }
 
 type Controller = ReturnType<typeof useMobileStructuredAgentOptions>
-type ProbeProps = { client: RpcClient; fence: number; optionStamp: string }
+type ProbeProps = { client: RpcClient; fence: number; optionStamp: string; agent?: string }
 
 const mutate: StructuredAgentSessionMutate = vi.fn()
 
@@ -53,7 +53,7 @@ async function mountOptions(props: ProbeProps) {
   const rendered: { current: Controller | null } = { current: null }
   function Probe(probe: ProbeProps): null {
     rendered.current = useMobileStructuredAgentOptions({
-      agent: 'codex',
+      agent: probe.agent ?? 'codex',
       client: probe.client,
       sessionId: 'session-1',
       enabled: true,
@@ -74,6 +74,12 @@ async function mountOptions(props: ProbeProps) {
   })
   await settle()
   return {
+    offered: () => {
+      const entry = rendered.current?.optionSnapshot.find(
+        (descriptor) => descriptor.id === 'permissionMode'
+      )
+      return entry?.kind.type === 'select' ? entry.kind.choices.map((choice) => choice.value) : []
+    },
     permission: () => {
       const entry = rendered.current?.optionSnapshot.find(
         (descriptor) => descriptor.id === 'permissionMode'
@@ -139,6 +145,69 @@ describe('the permission mode on the phone', () => {
     const options = await mountOptions({ client: rpc.client, fence: 1, optionStamp: '' })
     expect(rpc.reads()).toBe(1)
     expect(options.permission()).toBeNull()
+    await options.unmount()
+  })
+})
+
+/** A host whose account listing lands only after the chat's first options read. */
+function listingLandsLaterClient() {
+  let landed = false
+  let land: () => void = () => {}
+  const lands = new Promise<void>((resolve) => (land = resolve))
+  const rows = [
+    { id: 'opus[1m]', label: 'Opus', isDefault: true, efforts: [], supportsAutoMode: true },
+    { id: 'haiku', label: 'Haiku', isDefault: false, efforts: [] }
+  ]
+  const answer = async (method: string, waitForListing: boolean) => {
+    if (method === 'agentSession.modelCatalog') {
+      if (!waitForListing) {
+        return { origin: 'unknown', listingInProgress: true }
+      }
+      await lands
+      return { origin: 'probe', fetchedAt: 1, models: rows }
+    }
+    // At rest, a read before the listing lands answers from the agent's built-in list.
+    return landed
+      ? { models: rows, current: { model: 'opus[1m]', permissionMode: 'ask' } }
+      : {
+          models: [{ id: 'sonnet', label: 'Sonnet', isDefault: true, efforts: [] }],
+          current: { permissionMode: 'ask' }
+        }
+  }
+  const client: RpcClient = {
+    ...optionsClient().client,
+    sendRequest: async (method: string, params?: unknown) => ({
+      id: 'rpc-1',
+      ok: true as const,
+      result: await answer(
+        method,
+        typeof params === 'object' && params !== null && 'waitForListing' in params
+      ),
+      _meta: { runtimeId: 'runtime-1' }
+    })
+  }
+  return {
+    client,
+    land: () => {
+      landed = true
+      land()
+    }
+  }
+}
+
+describe('Approve for me on a phone chat opened before its account was listed', () => {
+  it('is offered once the listing lands', async () => {
+    const host = listingLandsLaterClient()
+    const options = await mountOptions({
+      client: host.client,
+      fence: 1,
+      optionStamp: '',
+      agent: 'claude'
+    })
+    expect(options.offered()).toEqual(['ask', 'accept-edits', 'full-access'])
+    host.land()
+    await options.rerender({})
+    expect(options.offered()).toContain('auto')
     await options.unmount()
   })
 })

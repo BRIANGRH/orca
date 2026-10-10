@@ -110,6 +110,9 @@ export function useMobileStructuredAgentOptions(args: {
     () => (sessionId ? mobileCreatedStructuredSession(sessionId) : undefined),
     [sessionId]
   )
+  // An options answer made before the account's listing landed listed none of it.
+  const [listingsLanded, setListingsLanded] = useState(0)
+  const onListingLanded = useCallback(() => setListingsLanded((count) => count + 1), [])
   useMobileHostModelCatalogUpgrade({
     agent,
     client,
@@ -120,7 +123,8 @@ export function useMobileStructuredAgentOptions(args: {
     ...(createdHere ? { worktree: createdHere.worktree } : {}),
     optionCatalog,
     activeOptionRecordRef,
-    updateOptionState
+    updateOptionState,
+    onListingLanded
   })
 
   useEffect(() => {
@@ -146,7 +150,16 @@ export function useMobileStructuredAgentOptions(args: {
     return () => {
       stale = true
     }
-  }, [client, enabled, optionCatalog, optionStamp, sessionId, fence, updateOptionState])
+  }, [
+    client,
+    enabled,
+    optionCatalog,
+    optionStamp,
+    listingsLanded,
+    sessionId,
+    fence,
+    updateOptionState
+  ])
 
   const optionSnapshot = useMemo(
     () => structuredAgentSessionOptionSnapshot(optionState),

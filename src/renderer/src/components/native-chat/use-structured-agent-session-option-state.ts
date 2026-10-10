@@ -193,8 +193,12 @@ export function useStructuredAgentSessionOptionState(args: {
     }
   }, [contextRefresh])
 
+  // An options answer made before the account's listing landed listed none of it.
+  const rereadOptions = useCallback(() => optionsReadRef.current?.run(), [])
+
   return {
     conversationSupport,
+    rereadOptions,
     optionState,
     optionStateRef,
     activeOptionRecordRef,

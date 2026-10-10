@@ -75,6 +75,7 @@ export function useStructuredAgentSessionOptions(args: {
     pendingOptionRef,
     optionMutationGeneration,
     updateOptionState,
+    rereadOptions,
     conversationSupport
   } = useStructuredAgentSessionOptionState({
     agent,
@@ -113,7 +114,8 @@ export function useStructuredAgentSessionOptions(args: {
       optionState.catalogSource === 'live',
     ...(args.providerRunning ? { providerRunning: true } : {}),
     activeOptionRecordRef,
-    updateOptionState
+    updateOptionState,
+    onListingLanded: rereadOptions
   })
 
   // What a settled pick must remember so the next launch starts where the user left off.
