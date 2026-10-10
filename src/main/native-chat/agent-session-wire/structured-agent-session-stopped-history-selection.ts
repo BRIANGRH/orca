@@ -27,10 +27,9 @@ const NONE: StoppedHistorySelection = { ids: [], bodies: [] }
 export async function selectStoppedHistory(
   ctx: {
     sessionId: string
-    journal: Pick<
-      AgentSessionJournal,
-      'submissions' | 'stoppedHistoryCarried' | 'context' | 'itemBody'
-    >
+    journal: Pick<AgentSessionJournal, 'submissions' | 'stoppedHistoryCarried' | 'itemBody'> & {
+      context: Pick<AgentSessionJournal['context'], 'floor'>
+    }
     adapter: Pick<StructuredAgentSessionAdapter, 'historyFits'>
     logger?: StructuredAgentSessionLogger
   },

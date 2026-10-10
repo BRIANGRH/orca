@@ -94,10 +94,12 @@ export function agentSessionStoppedHistoryOwed(
 /** Whether this send may carry stopped history: a person's ordinary message (a queued card's
  *  hand-off included) that is not a slash command, which only reads right as the prompt's start. */
 export function agentSessionCanCarryStoppedHistory(
-  submission: Pick<AgentJournalSubmission, 'source'>,
+  submission: Pick<AgentJournalSubmission, 'source' | 'queuedMessageId'>,
   body: AgentJournalItemBody | null | undefined
 ): body is AgentJournalMessageItem {
-  if (submission.source?.kind !== 'user' || !isOrdinaryPersonMessage(body)) {
+  // A card's hand-off records no sender; its body's missing `from` says it is the person's.
+  const persons = submission.source?.kind === 'user' || submission.queuedMessageId !== undefined
+  if (!persons || !isOrdinaryPersonMessage(body)) {
     return false
   }
   const firstText = body.blocks.find((block) => block.type === 'text' && block.text.length > 0)

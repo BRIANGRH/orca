@@ -25,6 +25,8 @@ export type QueuedRigProviderOptions = {
   stopEndsSession?: true
   /** Its child never answers its start, so it runs nothing it is handed. */
   startUnanswered?: true
+  /** Its own check of whether stopped history fits beside a send. */
+  historyFits?: NonNullable<StructuredAgentSessionAdapter['historyFits']>
 }
 
 export function createQueuedRigProvider(
@@ -101,7 +103,8 @@ export function createQueuedRigProvider(
     ...(options.rewind
       ? { rewind: options.rewind, rewindSupport: () => ({ supported: true as const }) }
       : {}),
-    ...(options.recoverRewind ? { recoverRewind: options.recoverRewind } : {})
+    ...(options.recoverRewind ? { recoverRewind: options.recoverRewind } : {}),
+    ...(options.historyFits ? { historyFits: options.historyFits } : {})
   }
 
   /** What the provider's translator writes when a /compact's turn ends, as a success. */

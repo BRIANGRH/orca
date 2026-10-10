@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentSessionFailureFact, type AgentSessionFailureKind } from './agent-session-failure'
+import { agentSessionFailureFact, type SubmissionRejectionKind } from './agent-session-failure'
 import { agentSessionFailureWords } from './agent-session-failure-words'
 import type {
   AgentJournalItemBody,
@@ -47,7 +47,7 @@ function sent(
 }
 
 function rejected(
-  kind: AgentSessionFailureKind,
+  kind: SubmissionRejectionKind,
   extra: { mayHaveReachedAgent?: true } = {}
 ): Partial<AgentJournalSubmission> {
   return {
@@ -190,6 +190,9 @@ describe('which sends carry stopped history', () => {
 
   it("a person's ordinary send carries it, a queued card's hand-off too", () => {
     expect(agentSessionCanCarryStoppedHistory(user, message('next'))).toBe(true)
+    expect(agentSessionCanCarryStoppedHistory({ queuedMessageId: 'card' }, message('card'))).toBe(
+      true
+    )
   })
 
   it('a slash command, a command, mail or an orchestration preamble does not', () => {
@@ -204,5 +207,7 @@ describe('which sends carry stopped history', () => {
       false
     )
     expect(agentSessionCanCarryStoppedHistory({}, message('preamble'))).toBe(false)
+    const mail = message('task', { from: { kind: 'agent', senders: [], orchestration: null } })
+    expect(agentSessionCanCarryStoppedHistory({ queuedMessageId: 'card' }, mail)).toBe(false)
   })
 })
