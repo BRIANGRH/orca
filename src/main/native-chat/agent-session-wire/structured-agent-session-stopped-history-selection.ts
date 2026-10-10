@@ -23,23 +23,56 @@ export type StoppedHistorySelection = {
 
 export const NO_STOPPED_HISTORY: StoppedHistorySelection = { ids: [], bodies: [] }
 
-/** Logs a send that went without the stopped history it was to carry; that history stays listed
- *  as carried, so the drop is visible only here. */
-export function stoppedHistoryLeftOutLog(
+/** Logs a send going without the stopped history it was to carry, then tells the host, which stops
+ *  listing that history as carried before the write. */
+export function stoppedHistoryLeftOut(
   logger: StructuredAgentSessionLogger | undefined,
-  sessionId?: string
-): (error: unknown) => void {
-  return (error) =>
+  input: { sessionId?: string; historyLeftOut?: () => Promise<void> }
+): (error: unknown) => Promise<void> {
+  return async (error) => {
     logger?.warn('stopped history left out of a send', {
       scope: 'stopped-history',
-      ...(sessionId ? { sessionId } : {}),
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       error
     })
+    await input.historyLeftOut?.()
+  }
+}
+
+/** The adapter is sending without the history this send's pending row lists: rewrite the row
+ *  without it, so those messages stay owed. A failed write is logged and the send still goes. */
+export async function uncarryStoppedHistory(
+  ctx: {
+    sessionId: string
+    fence: number
+    journal: Pick<AgentSessionJournal, 'submission' | 'resolveDispatch'>
+    logger?: StructuredAgentSessionLogger
+  },
+  clientMessageId: string,
+  turnScope: AgentJournalTurnScope
+): Promise<void> {
+  try {
+    if (ctx.journal.submission(clientMessageId)?.dispatchState === 'pending') {
+      await ctx.journal.resolveDispatch({
+        clientMessageId,
+        state: 'pending',
+        fence: ctx.fence,
+        turnScope
+      })
+    }
+  } catch (error) {
+    ctx.logger?.warn('un-listing stopped history left out of a send failed', {
+      scope: 'stopped-history',
+      sessionId: ctx.sessionId,
+      error
+    })
+  }
 }
 
 /** None for a steer into a running turn, which may never record it, or for anything but a
- *  person's ordinary send. If the history does not fit beside the send it goes again without its
- *  images, then not at all: history never refuses a send. */
+ *  person's ordinary send. Oldest first, each stopped message rides with its images if the whole
+ *  still fits, else without them, else waits for a later send without holding back the rest:
+ *  history never refuses a send. */
 export async function selectStoppedHistory(
   ctx: {
     sessionId: string
@@ -62,20 +95,20 @@ export async function selectStoppedHistory(
     clearSequence: ctx.journal.context.floor()?.sequence ?? 0,
     body: (id) => ctx.journal.itemBody(agentJournalSubmissionKey(id))
   })
-  if (owed.length === 0) {
-    return NO_STOPPED_HISTORY
-  }
-  const ids = owed.map((entry) => entry.submission.clientMessageId)
-  const full = owed.map((entry) => entry.body)
-  const textOnly = full.map(stoppedMessageWithoutImages)
-  const tries = textOnly.some((item, index) => item !== full[index]) ? [full, textOnly] : [full]
+  const selected: StoppedHistorySelection = { ids: [], bodies: [] }
   try {
-    for (const bodies of tries) {
-      const fits =
-        (await ctx.adapter.historyFits?.({ sessionId: ctx.sessionId, body, history: bodies })) ??
-        true
-      if (fits) {
-        return { ids, bodies }
+    for (const entry of owed) {
+      const textOnly = stoppedMessageWithoutImages(entry.body)
+      for (const candidate of textOnly === entry.body ? [entry.body] : [entry.body, textOnly]) {
+        const history = [...selected.bodies, candidate]
+        if (
+          (await ctx.adapter.historyFits?.({ sessionId: ctx.sessionId, body, history })) ??
+          true
+        ) {
+          selected.ids.push(entry.submission.clientMessageId)
+          selected.bodies.push(candidate)
+          break
+        }
       }
     }
   } catch (error) {
@@ -84,6 +117,7 @@ export async function selectStoppedHistory(
       sessionId: ctx.sessionId,
       error
     })
+    return NO_STOPPED_HISTORY
   }
-  return NO_STOPPED_HISTORY
+  return selected
 }

@@ -1,5 +1,6 @@
 import { sliceAtCodeUnitLimit } from '../../shared/surrogate-safe-text-slice'
 import { withoutNativeChatVisualDirectiveLines } from '../../shared/native-chat-visual-directive'
+import { STOPPED_MESSAGE_TAG } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 export { sliceAtCodeUnitLimit }
 
@@ -16,7 +17,9 @@ const XML_INSTRUCTIONS_PREFIX = '<INSTRUCTIONS>'
 const HIDDEN_TEXT_BLOCKS = [
   { name: 'system-reminder', closeTag: '</system-reminder>' },
   { name: 'codex_internal_context', closeTag: '</codex_internal_context>' },
-  { name: 'goal_context', closeTag: '</goal_context>' }
+  { name: 'goal_context', closeTag: '</goal_context>' },
+  // Stopped messages a native chat's send carried ahead of the person's own words.
+  { name: STOPPED_MESSAGE_TAG, closeTag: `</${STOPPED_MESSAGE_TAG}>` }
 ] as const
 
 type TextBuilder = {

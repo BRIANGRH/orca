@@ -73,7 +73,7 @@ describe('Claude: one user frame', () => {
     const content = await claudeDispatchContentWithHistory(
       NEXT,
       [STOPPED, STOPPED_WITH_IMAGE],
-      () => {}
+      async () => {}
     )
 
     expect(content.map((part) => field(part, 'type'))).toEqual(['image', 'text'])
@@ -86,7 +86,7 @@ describe('Claude: one user frame', () => {
 
   it('does not fit past its image limit, and then sends the send alone, reported', async () => {
     const many = message(...Array.from({ length: 21 }, () => image))
-    const report = vi.fn()
+    const report = vi.fn(async () => {})
     expect(await claudeStoppedHistoryFits(NEXT, [many])).toBe(false)
     expect(await claudeDispatchContentWithHistory(NEXT, [many], report)).toEqual([
       { type: 'text', text: 'what did I send?' }
@@ -162,7 +162,7 @@ describe('ACP: leading framed blocks', () => {
     const blocks = await acpDispatchPromptWithHistory(
       { body: NEXT, history: [STOPPED_WITH_IMAGE] },
       session,
-      () => {}
+      async () => {}
     )
 
     expect(blocks).toEqual([
@@ -173,7 +173,7 @@ describe('ACP: leading framed blocks', () => {
   })
 
   it('does not fit an image the agent cannot take, and sends the send alone, reported', async () => {
-    const report = vi.fn()
+    const report = vi.fn(async () => {})
     expect(await acpStoppedHistoryFits(NEXT, [STOPPED_WITH_IMAGE], textOnly)).toBe(false)
     expect(
       await acpDispatchPromptWithHistory(
@@ -197,7 +197,7 @@ describe('Pi: a framed text prefix and the images', () => {
     const prompt = await preparePiRpcPromptWithHistory(
       NEXT,
       [STOPPED, STOPPED_WITH_IMAGE],
-      () => {}
+      async () => {}
     )
 
     expect(prompt.message).toBe(
@@ -211,7 +211,7 @@ describe('Pi: a framed text prefix and the images', () => {
   it('does not fit past its image limit, and sends the send alone', async () => {
     const many = message(...Array.from({ length: 21 }, () => image))
     expect(await piStoppedHistoryFits(NEXT, [many])).toBe(false)
-    const report = vi.fn()
+    const report = vi.fn(async () => {})
     expect((await preparePiRpcPromptWithHistory(NEXT, [many], report)).message).toBe(
       'what did I send?'
     )

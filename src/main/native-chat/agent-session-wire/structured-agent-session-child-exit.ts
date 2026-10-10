@@ -134,9 +134,7 @@ export async function endExitedStructuredAgentSessionChildUnderSerialize<
   // send for the same end. A Stop withdraws it as cancelled; a quit or close keeps a person's
   // message as a held card. A host stop fails the start (`startFailure`).
   const unrunRejection =
-    startClose === 'user-stop'
-      ? agentSessionFailureFact('cancelled', { neverReachedAgent: true })
-      : undefined
+    startClose === 'user-stop' ? agentSessionFailureFact('cancelled') : undefined
   const unrunHold =
     expected &&
     exit.startupUnanswered &&

@@ -212,18 +212,18 @@ export async function claudeStoppedHistoryFits(
 }
 
 /** The send's content with its stopped history in the same frame, its own words last so they stay
- *  the prompt. Alone if the history stopped fitting since `claudeStoppedHistoryFits`: history never
- *  refuses a send. */
+ *  the prompt. Alone, reported before the write, if the history stopped fitting since
+ *  `claudeStoppedHistoryFits`: history never refuses a send. */
 export async function claudeDispatchContentWithHistory(
   body: AgentJournalMessageItem,
   history: readonly AgentJournalMessageItem[],
-  reportLeftOut: (error: unknown) => void
+  reportLeftOut: (error: unknown) => Promise<void>
 ): Promise<unknown[]> {
   if (history.length > 0) {
     try {
       return await claudeDispatchMessageContent(withStoppedHistory(body, history))
     } catch (error) {
-      reportLeftOut(error)
+      await reportLeftOut(error)
     }
   }
   return claudeDispatchMessageContent(body)

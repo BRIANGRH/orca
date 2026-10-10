@@ -187,18 +187,19 @@ export async function piStoppedHistoryFits(
   }
 }
 
-/** The prompt with its stopped history as a framed text prefix and leading images. Alone if the
- *  history stopped fitting since `piStoppedHistoryFits`: history never refuses a send. */
+/** The prompt with its stopped history as a framed text prefix and leading images. Alone, reported
+ *  before the write, if the history stopped fitting since `piStoppedHistoryFits`: history never
+ *  refuses a send. */
 export async function preparePiRpcPromptWithHistory(
   body: AgentJournalMessageItem,
   history: readonly AgentJournalMessageItem[],
-  reportLeftOut: (error: unknown) => void
+  reportLeftOut: (error: unknown) => Promise<void>
 ): Promise<PiRpcPrompt> {
   if (history.length > 0) {
     try {
       return await preparePiRpcPrompt(withStoppedHistory(body, history))
     } catch (error) {
-      reportLeftOut(error)
+      await reportLeftOut(error)
     }
   }
   return preparePiRpcPrompt(body)

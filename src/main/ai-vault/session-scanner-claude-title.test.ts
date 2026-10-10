@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { scanAiVaultSessions } from './session-scanner'
 import { isolatedScanRoots, writeJsonlFile } from './session-scanner-test-fixtures'
+import { stoppedMessageContext } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 let tempRoots: string[] = []
 
@@ -69,5 +70,33 @@ describe('scanAiVaultSessions Claude title selection', () => {
       'Updated karma discussion title',
       'User set title'
     ])
+  })
+
+  it('titles a native chat send that carried stopped messages by its own words', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-ai-vault-claude-stopped-'))
+    tempRoots.push(root)
+    const roots = isolatedScanRoots(root)
+    const stopped = stoppedMessageContext({
+      kind: 'message',
+      role: 'user',
+      blocks: [{ type: 'text', text: 'delete the build folder' }]
+    })
+    await writeJsonlFile(join(roots.claudeProjectsDir, 'project', 'stopped.jsonl'), [
+      {
+        type: 'user',
+        sessionId: 'stopped',
+        timestamp: '2026-05-01T12:00:00.000Z',
+        cwd: '/tmp/claude',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: `${stopped}\n\nWhat did I send?` }]
+        }
+      }
+    ])
+
+    const result = await scanAiVaultSessions({ ...roots, platform: 'darwin' })
+
+    expect(result.issues).toEqual([])
+    expect(result.sessions.map((session) => session.title)).toEqual(['What did I send?'])
   })
 })

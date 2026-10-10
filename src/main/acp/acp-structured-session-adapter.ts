@@ -34,7 +34,7 @@ import { waitForAcpExit, type AcpStructuredConnection } from './acp-structured-c
 import { AcpConnectionClosedError } from './acp-errors'
 import { awaitAcpTurnEnd, interruptAcpTurn, windDownAcpTurn } from './acp-structured-stop'
 import { acpDispatchPromptWithHistory, acpStoppedHistoryFits } from './acp-prompt-content'
-import { stoppedHistoryLeftOutLog } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-selection'
+import { stoppedHistoryLeftOut } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-selection'
 import {
   ACP_OPTION_WRITE_TIMEOUT_MS,
   ACP_STOP_GRACE_MS,
@@ -148,7 +148,7 @@ export class AcpStructuredSessionAdapter implements StructuredAgentSessionAdapte
       return this.rejected(lost, 'providerExited')
     }
     const session = this.live(input.sessionId)
-    const leftOut = stoppedHistoryLeftOutLog(this.deps.logger, input.sessionId)
+    const leftOut = stoppedHistoryLeftOut(this.deps.logger, input)
     const prompt = await acpDispatchPromptWithHistory(input, session, leftOut)
     if (!Array.isArray(prompt)) {
       return { state: 'rejected', ...prompt }

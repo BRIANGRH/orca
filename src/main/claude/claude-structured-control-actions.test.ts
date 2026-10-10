@@ -96,7 +96,7 @@ describe('cancelClaudeTurn', () => {
           clientMessageId: 'client-1',
           state: 'rejected',
           reason: 'provider_cancelled_before_start',
-          rejection: { kind: 'cancelled', neverReachedAgent: true }
+          rejection: { kind: 'cancelled' }
         }
       ]
     ])
@@ -137,7 +137,7 @@ describe('cancelClaudeTurn', () => {
       clientMessageId: 'client-0',
       state: 'rejected',
       reason: 'provider_cancelled_before_start',
-      rejection: { kind: 'cancelled', neverReachedAgent: true }
+      rejection: { kind: 'cancelled' }
     })
   })
 
@@ -171,7 +171,7 @@ describe('cancelClaudeTurn', () => {
       clientMessageId: 'client-ambiguous',
       state: 'rejected',
       reason: 'provider_cancelled_before_start',
-      rejection: { kind: 'cancelled', neverReachedAgent: true }
+      rejection: { kind: 'cancelled' }
     })
   })
 

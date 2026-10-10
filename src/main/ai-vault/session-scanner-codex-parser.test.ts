@@ -7,6 +7,7 @@ import {
   parseCodexSessionFile
 } from './session-scanner-codex-parser'
 import type { TranscriptMessage } from './session-transcript-consumers'
+import { stoppedMessageContext } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 let tempRoots: string[] = []
 
@@ -223,6 +224,53 @@ describe('parseCodexSessionFile', () => {
     )
 
     expect(session?.lastUserPrompt).toBe('Review the PR and fix real regressions')
+  })
+
+  it('titles a native chat send that carried stopped messages by its own words', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-ai-vault-codex-stopped-'))
+    tempRoots.push(root)
+    const sessionPath = join(root, 'sessions', '2026', '07', '21', 'rollout-stopped.jsonl')
+    await mkdir(dirname(sessionPath), { recursive: true })
+    const stopped = stoppedMessageContext({
+      kind: 'message',
+      role: 'user',
+      blocks: [{ type: 'text', text: 'delete the build folder' }]
+    })
+    await writeFile(
+      sessionPath,
+      jsonLines([
+        {
+          timestamp: '2026-07-21T10:00:00.000Z',
+          type: 'session_meta',
+          payload: { id: 'stopped-session', cwd: '/repo/app' }
+        },
+        {
+          timestamp: '2026-07-21T10:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              { type: 'input_text', text: stopped },
+              { type: 'input_text', text: 'What did I send?' }
+            ]
+          }
+        }
+      ])
+    )
+
+    const sessionStat = await stat(sessionPath)
+    const session = await parseCodexSessionFile(
+      {
+        path: sessionPath,
+        mtimeMs: sessionStat.mtimeMs,
+        modifiedAt: sessionStat.mtime.toISOString()
+      },
+      'darwin',
+      root
+    )
+
+    expect(session?.title).toBe('What did I send?')
   })
 
   it('does not double-count usage when token count formats switch', async () => {

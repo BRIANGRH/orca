@@ -307,6 +307,9 @@ export type StructuredAgentSessionAdapter = StructuredAgentSessionAdapterStop & 
     /** Stopped messages that ride in this same write as framed context, in the order they were
      *  sent (`structured-agent-session-stopped-history-frame.ts`); never sent on their own. */
     history?: readonly AgentJournalMessageItem[]
+    /** Called before the write when the adapter leaves `history` out, so the host stops listing it
+     *  as carried. Never throws. */
+    historyLeftOut?: () => Promise<void>
   }): Promise<AgentSessionDispatchOutcome>
   /** Whether `history` fits beside `body` within this agent's own limits, asked before the
    *  handover is recorded; false sends the message alone. Absent: it always fits. */

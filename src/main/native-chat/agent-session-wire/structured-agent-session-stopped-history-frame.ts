@@ -5,6 +5,9 @@
 import type { AgentJournalMessageItem } from '../../../shared/agent-session-journal-types'
 import type { NativeChatImageRefBlock } from '../../../shared/native-chat-types'
 
+/** Wraps each stopped message; transcript-derived titles and previews skip what it wraps. */
+export const STOPPED_MESSAGE_TAG = 'stopped-message'
+
 export const STOPPED_MESSAGE_FRAME =
   'Sent earlier; the user stopped it before you started on it. Context only, not a request.'
 
@@ -20,7 +23,13 @@ export function stoppedMessageContext(item: AgentJournalMessageItem): string {
   const imageCount = images(item).length
   const attached =
     imageCount > 0 ? `It had ${imageCount} image(s), attached ahead of the new message's.` : ''
-  return ['<stopped-message>', STOPPED_MESSAGE_FRAME, attached, text, '</stopped-message>']
+  return [
+    `<${STOPPED_MESSAGE_TAG}>`,
+    STOPPED_MESSAGE_FRAME,
+    attached,
+    text,
+    `</${STOPPED_MESSAGE_TAG}>`
+  ]
     .filter((line) => line.length > 0)
     .join('\n')
 }

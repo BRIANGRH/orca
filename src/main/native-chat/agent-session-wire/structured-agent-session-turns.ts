@@ -13,7 +13,8 @@ import {
 } from '../../../shared/agent-session-failure-words'
 import type {
   AgentJournalMessageItem,
-  AgentJournalSubmission
+  AgentJournalSubmission,
+  AgentJournalTurnScope
 } from '../../../shared/agent-session-journal-types'
 import type { AgentSessionMessageSource } from '../../../shared/agent-session-message-source'
 import {
@@ -47,7 +48,8 @@ import { CommandReceiptExistsError } from '../agent-session-journal/command-rece
 import type { StructuredAgentRegistry } from './structured-agent-registry'
 import {
   NO_STOPPED_HISTORY,
-  selectStoppedHistory
+  selectStoppedHistory,
+  uncarryStoppedHistory
 } from './structured-agent-session-stopped-history-selection'
 export { performSetOption } from './structured-agent-session-turns-options'
 export { performPrompt } from './structured-agent-session-turns-prompt'
@@ -108,7 +110,7 @@ async function dispatchSafely(
   clientMessageId: string,
   body: AgentJournalMessageItem,
   requestedAt: number,
-  history: readonly AgentJournalMessageItem[]
+  carried: { history: readonly AgentJournalMessageItem[]; turnScope: AgentJournalTurnScope }
 ): Promise<AgentSessionDispatchOutcome> {
   try {
     return await ctx.adapter.dispatch({
@@ -117,7 +119,12 @@ async function dispatchSafely(
       body,
       fence: ctx.fence,
       requestedAt,
-      ...(history.length > 0 ? { history } : {})
+      ...(carried.history.length > 0
+        ? {
+            history: carried.history,
+            historyLeftOut: () => uncarryStoppedHistory(ctx, clientMessageId, carried.turnScope)
+          }
+        : {})
     })
   } catch (error) {
     return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
@@ -245,7 +252,7 @@ export async function handOverSubmission(
     clientMessageId,
     body,
     structuredAgentSessionHandoverOrigin(ctx.journal, submission),
-    history.bodies
+    { history: history.bodies, turnScope }
   )
   // An admission needs no dispatch row: the submission is already pending.
   if (outcome.state === 'admitted') {

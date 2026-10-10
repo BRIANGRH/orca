@@ -8,7 +8,7 @@ import {
 import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { AgentSessionDispatchOutcome } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import type { StructuredAgentSessionLogger } from '../native-chat/agent-session-wire/structured-agent-session-logger'
-import { stoppedHistoryLeftOutLog } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-selection'
+import { stoppedHistoryLeftOut } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-selection'
 import type { ClaudeDispatchWaiter, ClaudeSession } from './claude-structured-session-state'
 import type { ClaudeLateDispatchSettlement } from './claude-replay-turn-resolution'
 import {
@@ -42,11 +42,10 @@ export function settleCancelledClaudeDispatchWaiters(
   cancelledUuids: readonly string[],
   onSettledLate?: ClaudeLateDispatchSettlement
 ): void {
-  // The CLI withdrew them from its queue: none started.
   rejectClaudeDispatchWaiters(
     session,
     cancelledUuids,
-    agentSessionFailureFact('cancelled', { neverReachedAgent: true }),
+    agentSessionFailureFact('cancelled'),
     onSettledLate
   )
 }
@@ -125,6 +124,7 @@ export async function dispatchClaudeTurn(
     sentUuid?: string
     /** Stopped messages riding in this frame as framed context. */
     history?: readonly AgentJournalMessageItem[]
+    historyLeftOut?: () => Promise<void>
     sessionId?: string
     logger?: StructuredAgentSessionLogger
   },
@@ -135,7 +135,7 @@ export async function dispatchClaudeTurn(
     content = await claudeDispatchContentWithHistory(
       input.body,
       input.history ?? [],
-      stoppedHistoryLeftOutLog(input.logger, input.sessionId)
+      stoppedHistoryLeftOut(input.logger, input)
     )
   } catch (error) {
     return { state: 'rejected', ...claudeDispatchContentRejection(error) }

@@ -168,22 +168,22 @@ export async function acpStoppedHistoryFits(
   return Array.isArray(await acpDispatchPrompt(withStoppedHistory(body, history), session))
 }
 
-/** The prompt with its stopped history as leading framed blocks. Alone if the history stopped
- *  fitting since the adapter's `historyFits`: history never refuses a send. */
+/** The prompt with its stopped history as leading framed blocks. Alone, reported before the write,
+ *  if the history stopped fitting since the adapter's `historyFits`: history never refuses a send. */
 export async function acpDispatchPromptWithHistory(
   {
     body,
     history = []
   }: { body: AgentJournalMessageItem; history?: readonly AgentJournalMessageItem[] },
   session: Parameters<typeof acpDispatchPrompt>[1],
-  reportLeftOut: (error: unknown) => void
+  reportLeftOut: (error: unknown) => Promise<void>
 ): Promise<ContentBlock[] | AgentJournalDispatchRejection> {
   if (history.length > 0) {
     const combined = await acpDispatchPrompt(withStoppedHistory(body, history), session)
     if (Array.isArray(combined)) {
       return combined
     }
-    reportLeftOut(combined.reason)
+    await reportLeftOut(combined.reason)
   }
   return acpDispatchPrompt(body, session)
 }

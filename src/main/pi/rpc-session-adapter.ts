@@ -22,7 +22,7 @@ import { PiRpcPromptError, piStoppedHistoryFits, preparePiRpcPromptWithHistory }
 import { applyPiRpcSessionOption } from './rpc-options'
 import { supportsSupervisedProviderChildLocation } from '../provider-process/supervised-provider-child-location'
 import { ClaudeDispatchContentError } from '../claude/claude-structured-dispatch-content'
-import { stoppedHistoryLeftOutLog } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-selection'
+import { stoppedHistoryLeftOut } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-selection'
 
 export type PiRpcSessionAdapterDeps = PiRpcSessionDeps & {
   resolveLaunch: (
@@ -135,7 +135,7 @@ export class PiRpcSessionAdapter implements StructuredAgentSessionAdapter {
       prompt = await preparePiRpcPromptWithHistory(
         input.body,
         input.history ?? [],
-        stoppedHistoryLeftOutLog(this.deps.logger, input.sessionId)
+        stoppedHistoryLeftOut(this.deps.logger, input)
       )
     } catch (error) {
       this.deps.logger.warn('Pi prompt could not be prepared', {

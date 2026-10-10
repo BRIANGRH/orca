@@ -254,7 +254,7 @@ async function replayCapture(
 const WITHDRAWN = {
   state: 'rejected',
   reason: DISPATCH_REJECTED_CANCELLED,
-  rejection: { kind: 'cancelled', neverReachedAgent: true }
+  rejection: { kind: 'cancelled' }
 }
 
 function acceptedAs(uuid: string) {

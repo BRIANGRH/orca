@@ -258,7 +258,6 @@ describe('stopped messages ride with the next send', () => {
     await start()
     const [first] = await stopWhileStarting('first')
     const carrier = await nextSend('carrier')
-    // As Claude reports a queued frame its Stop swept before it started.
     await settle(carrier, { kind: 'rejected', fact: 'cancelled', neverReached: true })
     const next = await nextSend('next')
 
@@ -335,6 +334,28 @@ describe('stopped messages ride with the next send', () => {
     const next = await nextSend('next')
 
     expect(dispatched()).toEqual(['alone', 'next <- [first]'])
+    expect(journal().stoppedHistoryCarried().get(next)).toEqual([first])
+  })
+
+  it('an adapter that leaves the history out after it fit un-lists it first: still owed', async () => {
+    await start()
+    const [first] = await stopWhileStarting('first')
+    let carriedAtWrite: readonly string[] | undefined
+    rig.dispatch.mockImplementationOnce(async (input) => {
+      expect(journal().stoppedHistoryCarried().get(input.clientMessageId)).toEqual([first])
+      // As Claude, ACP and Pi do when their second build of the history fails.
+      await input.historyLeftOut?.()
+      carriedAtWrite = journal().stoppedHistoryCarried().get(input.clientMessageId)
+      return { state: 'admitted' }
+    })
+    const alone = await nextSend('alone')
+    await eventually(() => expect(journal().stoppedHistoryCarried().has(alone)).toBe(false))
+    expect(carriedAtWrite).toBeUndefined()
+    expect(await rig.submission(alone)).toMatchObject({ dispatchState: 'pending' })
+    await rig.settleAccepted(alone, 'alone')
+    const next = await nextSend('next')
+
+    expect(dispatched()).toEqual(['alone <- [first]', 'next <- [first]'])
     expect(journal().stoppedHistoryCarried().get(next)).toEqual([first])
   })
 

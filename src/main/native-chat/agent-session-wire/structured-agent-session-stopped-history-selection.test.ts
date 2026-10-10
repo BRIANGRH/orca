@@ -1,5 +1,6 @@
-// The handover's choice of stopped history: bounded by the latest /clear, never on a steer, without
-// its images when only that fits, and never a reason a send waits or fails.
+// The handover's choice of stopped history: bounded by the latest /clear, never on a steer, oldest
+// first with each message's images left out only when that message needs it, and never a reason a
+// send waits or fails.
 
 import { describe, expect, it, vi } from 'vitest'
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
@@ -55,8 +56,15 @@ function context(options: {
   clearSequence?: number
   historyFits?: (input: { history: readonly AgentJournalMessageItem[] }) => Promise<boolean>
   bodies?: Record<string, AgentJournalMessageItem>
+  /** The stopped messages, oldest first; sequences 2, 9, then 12 on. */
+  stoppedIds?: readonly string[]
 }): Parameters<typeof selectStoppedHistory>[0] {
-  const submissions = [stopped('old', 2), stopped('new', 9), CARRIER]
+  const submissions = [
+    ...(options.stoppedIds ?? ['old', 'new']).map((id, index) =>
+      stopped(id, index === 0 ? 2 : index === 1 ? 9 : 10 + index)
+    ),
+    CARRIER
+  ]
   return {
     sessionId: 'session-1',
     journal: {
@@ -111,28 +119,47 @@ describe('choosing the stopped history a handover carries', () => {
     expect(chosen).toEqual({ ids: [], bodies: [] })
   })
 
-  it('tries once more with the images left out, then sends alone and leaves it owed', async () => {
-    const tried: string[][] = []
-    const fitsWithoutImages = async (input: { history: readonly AgentJournalMessageItem[] }) => {
-      tried.push(input.history.flatMap((item) => item.blocks.map((block) => block.type)))
-      return input.history.every((item) => item.blocks.every((block) => block.type === 'text'))
-    }
+  it('leaves images out only for the message that needed it', async () => {
+    const atMostOneImage = async (input: { history: readonly AgentJournalMessageItem[] }) =>
+      input.history.flatMap((item) => item.blocks).filter((block) => block.type === 'image-ref')
+        .length <= 1
     const chosen = await selectStoppedHistory(
-      context({ historyFits: fitsWithoutImages, bodies: { new: WITH_IMAGE } }),
+      context({
+        historyFits: atMostOneImage,
+        stoppedIds: ['first', 'second'],
+        bodies: { first: WITH_IMAGE, second: WITH_IMAGE }
+      }),
+      CARRIER,
+      message('next'),
+      AGENT_JOURNAL_THREAD_SCOPE
+    )
+    expect(chosen.ids).toEqual(['first', 'second'])
+    expect(chosen.bodies[0]).toBe(WITH_IMAGE)
+    expect(chosen.bodies[1]?.blocks).toEqual([
+      { type: 'text', text: 'It had 1 image(s), not attached.' },
+      { type: 'text', text: 'new' }
+    ])
+  })
+
+  it('skips a message too large to ride this time and still carries the later ones', async () => {
+    const shortText = async (input: { history: readonly AgentJournalMessageItem[] }) =>
+      input.history
+        .flatMap((item) => item.blocks)
+        .reduce((total, block) => total + (block.type === 'text' ? block.text.length : 0), 0) <= 50
+    const chosen = await selectStoppedHistory(
+      context({
+        historyFits: shortText,
+        stoppedIds: ['old', 'huge', 'new'],
+        bodies: { huge: message('x'.repeat(100)) }
+      }),
       CARRIER,
       message('next'),
       AGENT_JOURNAL_THREAD_SCOPE
     )
     expect(chosen.ids).toEqual(['old', 'new'])
-    expect(tried).toEqual([
-      ['text', 'image-ref', 'text'],
-      ['text', 'text', 'text']
-    ])
-    expect(chosen.bodies[1]?.blocks[0]).toEqual({
-      type: 'text',
-      text: 'It had 1 image(s), not attached.'
-    })
+  })
 
+  it('sends alone when nothing fits, asking twice only for a message with images', async () => {
     const never = vi.fn(async () => false)
     const alone = await selectStoppedHistory(
       context({ historyFits: never, bodies: { new: WITH_IMAGE } }),
@@ -141,17 +168,6 @@ describe('choosing the stopped history a handover carries', () => {
       AGENT_JOURNAL_THREAD_SCOPE
     )
     expect(alone).toEqual({ ids: [], bodies: [] })
-    expect(never).toHaveBeenCalledTimes(2)
-  })
-
-  it('asks once when nothing it carries has images', async () => {
-    const never = vi.fn(async () => false)
-    await selectStoppedHistory(
-      context({ historyFits: never }),
-      CARRIER,
-      message('next'),
-      AGENT_JOURNAL_THREAD_SCOPE
-    )
-    expect(never).toHaveBeenCalledTimes(1)
+    expect(never).toHaveBeenCalledTimes(3)
   })
 })
