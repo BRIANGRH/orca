@@ -7,6 +7,7 @@ import type {
 } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { stopCurrentClaudeBackgroundTasks } from './claude-structured-control-actions'
 import { dispatchClaudeTurn } from './claude-structured-dispatch'
+import { claudeStoppedHistoryFits } from './claude-structured-dispatch-content'
 import { claudeHoldsDispatch } from './claude-command-lifecycle'
 import { releaseClaudeAcquisition } from './claude-structured-acquisition-release'
 import { acquireClaudeSession } from './claude-structured-session-acquisition'
@@ -165,6 +166,9 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
 
   dispatch: StructuredAgentSessionAdapter['dispatch'] = (input) =>
     dispatchClaudeTurn(this.session(input.sessionId), input, input.beforeDispatch)
+
+  historyFits: NonNullable<StructuredAgentSessionAdapter['historyFits']> = (input) =>
+    claudeStoppedHistoryFits(input.body, input.history)
 
   compact: NonNullable<StructuredAgentSessionAdapter['compact']> = (input) =>
     dispatchClaudeCommand(this.session(input.sessionId), input.command)

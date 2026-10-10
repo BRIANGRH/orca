@@ -144,7 +144,8 @@ export function journalDispatchRowBuilder(
       : {}),
     ...journalRowBase(state().epoch, seq, input.fence, ts),
     ...(input.recovered ? { recovered: input.recovered } : {}),
-    ...(input.state === 'pending' ? { turnScope: input.turnScope } : {})
+    ...(input.state === 'pending' ? { turnScope: input.turnScope } : {}),
+    ...(input.state === 'pending' && input.carries?.length ? { carries: [...input.carries] } : {})
   })
 }
 

@@ -11,6 +11,7 @@ import {
   ClaudeDispatchContentError,
   readClaudeImage
 } from '../claude/claude-structured-dispatch-content'
+import { withStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const MAX_IMAGE_COUNT = 20
@@ -171,4 +172,33 @@ export async function preparePiRpcPrompt(
     )
   }
   return prompt
+}
+
+/** Whether stopped history fits beside `body` in one Pi prompt. */
+export async function piStoppedHistoryFits(
+  body: AgentJournalMessageItem,
+  history: readonly AgentJournalMessageItem[]
+): Promise<boolean> {
+  try {
+    await preparePiRpcPrompt(withStoppedHistory(body, history))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** The prompt with its stopped history as a framed text prefix and leading images. Alone if the
+ *  history stopped fitting since `piStoppedHistoryFits`: history never refuses a send. */
+export async function preparePiRpcPromptWithHistory(
+  body: AgentJournalMessageItem,
+  history: readonly AgentJournalMessageItem[] = []
+): Promise<PiRpcPrompt> {
+  if (history.length > 0) {
+    try {
+      return await preparePiRpcPrompt(withStoppedHistory(body, history))
+    } catch (error) {
+      console.warn('[pi-dispatch] stopped history left out:', error)
+    }
+  }
+  return preparePiRpcPrompt(body)
 }

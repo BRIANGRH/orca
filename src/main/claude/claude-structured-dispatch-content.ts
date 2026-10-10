@@ -14,6 +14,7 @@ import {
 } from '../../shared/agent-session-failure-words'
 import { TUI_AGENT_DISPLAY_NAMES } from '../../shared/tui-agent-display-names'
 import { claudeRecord } from './claude-structured-item-translation'
+import { withStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 /** Orca refused the message's content, as opposed to failing to read an attachment. */
 export class ClaudeDispatchContentError extends Error {
@@ -195,6 +196,36 @@ export async function claudeDispatchMessageContent(
     )
   }
   return content
+}
+
+/** Whether stopped history fits beside `body` in one Claude user frame. */
+export async function claudeStoppedHistoryFits(
+  body: AgentJournalMessageItem,
+  history: readonly AgentJournalMessageItem[]
+): Promise<boolean> {
+  try {
+    await claudeDispatchMessageContent(withStoppedHistory(body, history))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** The send's content with its stopped history in the same frame, its own words last so they stay
+ *  the prompt. Alone if the history stopped fitting since `claudeStoppedHistoryFits`: history never
+ *  refuses a send. */
+export async function claudeDispatchContentWithHistory(
+  body: AgentJournalMessageItem,
+  history: readonly AgentJournalMessageItem[] = []
+): Promise<unknown[]> {
+  if (history.length > 0) {
+    try {
+      return await claudeDispatchMessageContent(withStoppedHistory(body, history))
+    } catch (error) {
+      console.warn('[claude-dispatch] stopped history left out:', error)
+    }
+  }
+  return claudeDispatchMessageContent(body)
 }
 
 /** The prompt Claude recovers from a dispatch, or null when the turn carries no prompt. */

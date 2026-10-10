@@ -96,9 +96,12 @@ export function codexUnopenedSendResolutions(
       !openedSince(handover)
     )
   })
-  const withdrawn = agentSessionFailureWords(agentSessionFailureFact('cancelled'), {
-    surface: 'rejection'
-  })
+  // Codex can record a prompt during turn setup before Orca hears of it, so this is no proof the
+  // agent never saw it: a stopped message's history never carries it.
+  const withdrawn = agentSessionFailureWords(
+    agentSessionFailureFact('cancelled', { mayHaveReachedAgent: true }),
+    { surface: 'rejection' }
+  )
   return unopened.map((entry): ResolveDispatchInput => ({
     clientMessageId: entry.clientMessageId,
     state: 'rejected',

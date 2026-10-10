@@ -18,7 +18,7 @@ import { compactPiRpcSession } from './rpc-compaction'
 import { buildPiRpcLaunch } from './rpc-launch'
 import { piRpcProviderLink, type PiRpcResolvedLaunch } from './rpc-launch-resolution'
 import { PiRpcSession, type PiRpcSessionDeps, type PiRpcConnection } from './rpc-session'
-import { PiRpcPromptError, preparePiRpcPrompt } from './rpc-prompt'
+import { PiRpcPromptError, piStoppedHistoryFits, preparePiRpcPromptWithHistory } from './rpc-prompt'
 import { applyPiRpcSessionOption } from './rpc-options'
 import { supportsSupervisedProviderChildLocation } from '../provider-process/supervised-provider-child-location'
 import { ClaudeDispatchContentError } from '../claude/claude-structured-dispatch-content'
@@ -131,7 +131,7 @@ export class PiRpcSessionAdapter implements StructuredAgentSessionAdapter {
     const session = this.session(input.sessionId, input.fence)
     let prompt
     try {
-      prompt = await preparePiRpcPrompt(input.body)
+      prompt = await preparePiRpcPromptWithHistory(input.body, input.history)
     } catch (error) {
       this.deps.logger.warn('Pi prompt could not be prepared', {
         scope: 'pi-prompt',
@@ -155,6 +155,9 @@ export class PiRpcSessionAdapter implements StructuredAgentSessionAdapter {
       input.beforeDispatch
     )
   }
+
+  historyFits: NonNullable<StructuredAgentSessionAdapter['historyFits']> = (input) =>
+    piStoppedHistoryFits(input.body, input.history)
 
   compact: NonNullable<StructuredAgentSessionAdapter['compact']> = async (input) =>
     compactPiRpcSession(this.session(input.sessionId, input.fence), input.command)

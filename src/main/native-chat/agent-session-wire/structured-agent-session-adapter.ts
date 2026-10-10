@@ -304,7 +304,17 @@ export type StructuredAgentSessionAdapter = StructuredAgentSessionAdapterStop & 
     requestedAt?: number
     /** Revalidate after preparation, immediately before writing to the provider. */
     beforeDispatch?: () => Promise<void>
+    /** Stopped messages that ride in this same write as framed context, in the order they were
+     *  sent (`structured-agent-session-stopped-history-frame.ts`); never sent on their own. */
+    history?: readonly AgentJournalMessageItem[]
   }): Promise<AgentSessionDispatchOutcome>
+  /** Whether `history` fits beside `body` within this agent's own limits, asked before the
+   *  handover is recorded; false sends the message alone. Absent: it always fits. */
+  historyFits?(input: {
+    sessionId: string
+    body: AgentJournalMessageItem
+    history: readonly AgentJournalMessageItem[]
+  }): Promise<boolean>
   /** How this session narrows its agent's declared rewind; `agent` answers for one with no child
    *  running. The router applies the declaration first, so an adapter's answer never widens it. */
   rewindSupport?(sessionId: string, agent?: string): AgentSessionRewindSupport

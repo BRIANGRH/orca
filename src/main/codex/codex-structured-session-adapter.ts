@@ -216,6 +216,7 @@ export class CodexStructuredSessionAdapter implements StructuredAgentSessionAdap
     fence: number
     requestedAt?: number
     beforeDispatch?: () => Promise<void>
+    history?: readonly AgentJournalMessageItem[]
   }): Promise<AgentSessionDispatchOutcome> {
     const session = this.session(input.sessionId)
     session.dispatchPending = true

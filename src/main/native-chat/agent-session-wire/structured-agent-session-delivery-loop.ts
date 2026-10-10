@@ -267,7 +267,8 @@ export class StructuredAgentSessionDeliveryLoop {
         failureTextContext: this.deps.failureTextContext(sessionId),
         record: () => this.deps.record(sessionId),
         childWork: () => this.deps.readChildWork(sessionId),
-        now: this.deps.now
+        now: this.deps.now,
+        logger: this.deps.logger
       },
       next
     )

@@ -178,6 +178,9 @@ export type JournalDispatchRow = JournalRowBase & {
   reason: string | null
   /** On `pending`: the turn the message was handed into, which becomes its row's scope. */
   turnScope?: AgentJournalTurnScope
+  /** On `pending`: the stopped messages this send carries to the agent as history, by client
+   *  message id in the order they were sent. Host-only; older readers keep the key and ignore it. */
+  carries?: string[]
   /** On `rejected`: why, typed. Older readers keep the key and ignore it; a malformed one is
    *  dropped when read, never the row. */
   rejection?: AgentSessionFailureFact

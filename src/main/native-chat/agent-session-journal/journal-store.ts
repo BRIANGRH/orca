@@ -258,6 +258,9 @@ export class AgentSessionJournal {
 
   submission = (clientMessageId: string) => this.state.submissions.get(clientMessageId)
 
+  /** Host-only: what each handed-over send carries as stopped-message history. */
+  stoppedHistoryCarried = () => this.state.stoppedHistoryCarried
+
   pendingSubmissions = (): AgentJournalSubmission[] =>
     this.submissions().filter((entry) => entry.dispatchState === 'pending')
 

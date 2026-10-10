@@ -6,6 +6,7 @@
 // and a child that ends first is settled with it. The host writes a command's end only when the
 // provider never took it. While the turn runs it takes no input, so the loop hands nothing over.
 
+import type { StructuredAgentSessionLogger } from './structured-agent-session-logger'
 import {
   agentSessionFailureFact,
   type AgentSessionFailureFact,
@@ -144,6 +145,7 @@ export type StructuredAgentSessionCommandHandoverContext = {
   /** The session's child records, the same read the strip and conversation-command admission use. */
   childWork: () => readonly AgentChildWorkView[] | undefined
   now: () => number
+  logger?: StructuredAgentSessionLogger
 }
 
 /** Refuses the command, or opens its turn and sends it. */

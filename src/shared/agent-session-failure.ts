@@ -158,6 +158,9 @@ export type AgentSessionFailureFact = {
   retry?: AgentSessionProviderRetry
   /** A safe option name from Orca's saved Arguments parser, never an error message. */
   argumentProblem?: AgentSessionArgumentProblem
+  /** On `cancelled`: the agent may have recorded the message before the Stop took its work back,
+   *  so it is not proof the agent never saw it. Host-only; clients read the kind. */
+  mayHaveReachedAgent?: true
 }
 
 /** A fact as a row stores it: its kind may be one a newer host added, so only
@@ -191,6 +194,7 @@ export function agentSessionFailureFact<TKind extends AgentSessionFailureKind>(
     attachment?: AgentSessionAttachmentProblem
     retry?: AgentSessionProviderRetry
     argumentProblem?: AgentSessionArgumentProblem
+    mayHaveReachedAgent?: true
   } = {}
 ): AgentSessionFailureFact & { kind: TKind } {
   // Re-bounded here, so no writer can store more than the cap however it built the detail.
@@ -204,7 +208,8 @@ export function agentSessionFailureFact<TKind extends AgentSessionFailureKind>(
     ...(extra.refusal ? { refusal: extra.refusal } : {}),
     ...(extra.attachment ? { attachment: extra.attachment } : {}),
     ...(extra.retry ? { retry: extra.retry } : {}),
-    ...(extra.argumentProblem ? { argumentProblem: extra.argumentProblem } : {})
+    ...(extra.argumentProblem ? { argumentProblem: extra.argumentProblem } : {}),
+    ...(extra.mayHaveReachedAgent ? { mayHaveReachedAgent: true as const } : {})
   }
 }
 
@@ -281,7 +286,8 @@ export function readAgentSessionFailureFact(value: unknown): AgentSessionFailure
     ...(refusal ? { refusal } : {}),
     ...(attachment ? { attachment } : {}),
     ...(retry ? { retry } : {}),
-    ...(argumentProblem ? { argumentProblem } : {})
+    ...(argumentProblem ? { argumentProblem } : {}),
+    ...(value.mayHaveReachedAgent === true ? { mayHaveReachedAgent: true as const } : {})
   })
 }
 

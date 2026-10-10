@@ -25,6 +25,7 @@ import { acpAgentName } from './acp-structured-acquire'
 import type { AcpStructuredConnection } from './acp-structured-connection'
 import { acpSessionAcceptsImages } from './acp-structured-options'
 import type { ContentBlock } from './generated/acp-protocol.generated'
+import { withStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 const ACP_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 /** A prompt is one JSON-RPC line; this leaves room for the request around its blocks. */
@@ -156,4 +157,30 @@ export async function acpDispatchPrompt(
     }
     throw error
   }
+}
+
+/** Whether stopped history fits beside `body` in one prompt. */
+export async function acpStoppedHistoryFits(
+  body: AgentJournalMessageItem,
+  history: readonly AgentJournalMessageItem[],
+  session: Parameters<typeof acpDispatchPrompt>[1]
+): Promise<boolean> {
+  return Array.isArray(await acpDispatchPrompt(withStoppedHistory(body, history), session))
+}
+
+/** The prompt with its stopped history as leading framed blocks. Alone if the history stopped
+ *  fitting since the adapter's `historyFits`: history never refuses a send. */
+export async function acpDispatchPromptWithHistory(
+  body: AgentJournalMessageItem,
+  history: readonly AgentJournalMessageItem[],
+  session: Parameters<typeof acpDispatchPrompt>[1]
+): Promise<ContentBlock[] | AgentJournalDispatchRejection> {
+  if (history.length > 0) {
+    const combined = await acpDispatchPrompt(withStoppedHistory(body, history), session)
+    if (Array.isArray(combined)) {
+      return combined
+    }
+    console.warn('[acp-dispatch] stopped history left out:', combined.reason)
+  }
+  return acpDispatchPrompt(body, session)
 }

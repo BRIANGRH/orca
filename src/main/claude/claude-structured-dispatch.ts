@@ -13,7 +13,7 @@ import {
   claudeDispatchContentKey,
   claudeDispatchContentRejection,
   claudeDispatchInvokesSlashCommand,
-  claudeDispatchMessageContent,
+  claudeDispatchContentWithHistory,
   claudeDispatchRejection
 } from './claude-structured-dispatch-content'
 import { dispatchWriteOutcomeUnknownReason } from '../native-chat/agent-session-journal/journal-dispatch-doubt-reasons'
@@ -120,12 +120,14 @@ export async function dispatchClaudeTurn(
     requestedAt?: number
     /** The frame's uuid, for a caller that correlates the provider's answer to it. */
     sentUuid?: string
+    /** Stopped messages riding in this frame as framed context. */
+    history?: readonly AgentJournalMessageItem[]
   },
   beforeDispatch?: () => Promise<void>
 ): Promise<AgentSessionDispatchOutcome> {
   let content: unknown[]
   try {
-    content = await claudeDispatchMessageContent(input.body)
+    content = await claudeDispatchContentWithHistory(input.body, input.history)
   } catch (error) {
     return { state: 'rejected', ...claudeDispatchContentRejection(error) }
   }

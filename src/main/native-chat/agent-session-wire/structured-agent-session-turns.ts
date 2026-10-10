@@ -45,6 +45,7 @@ import type { StructuredAgentSessionLogger } from './structured-agent-session-lo
 import { isAgentSessionAttachmentExpiredError } from '../agent-session-attachments/agent-session-attachment-claims'
 import { CommandReceiptExistsError } from '../agent-session-journal/command-receipt-transaction'
 import type { StructuredAgentRegistry } from './structured-agent-registry'
+import { selectStoppedHistory } from './structured-agent-session-stopped-history-selection'
 export { performSetOption } from './structured-agent-session-turns-options'
 export { performPrompt } from './structured-agent-session-turns-prompt'
 export { performCancel } from './structured-agent-session-turns-cancel'
@@ -103,7 +104,8 @@ async function dispatchSafely(
   ctx: AgentSessionHandoverContext,
   clientMessageId: string,
   body: AgentJournalMessageItem,
-  requestedAt: number
+  requestedAt: number,
+  history: readonly AgentJournalMessageItem[]
 ): Promise<AgentSessionDispatchOutcome> {
   try {
     return await ctx.adapter.dispatch({
@@ -111,7 +113,8 @@ async function dispatchSafely(
       clientMessageId,
       body,
       fence: ctx.fence,
-      requestedAt
+      requestedAt,
+      ...(history.length > 0 ? { history } : {})
     })
   } catch (error) {
     return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
@@ -220,11 +223,15 @@ export async function handOverSubmission(
     return
   }
   // The message joins the turn running at handover, a steer, or opens its own.
+  const turnScope = ctx.journal.liveTurnScope()
+  // Stopped messages it carries are named on this same row, before anything is written.
+  const history = await selectStoppedHistory(ctx, submission, body, turnScope)
   await ctx.journal.resolveDispatch({
     clientMessageId,
     state: 'pending',
     fence: ctx.fence,
-    turnScope: ctx.journal.liveTurnScope()
+    turnScope,
+    ...(history.ids.length > 0 ? { carries: history.ids } : {})
   })
   // The handover row's instant on the host clock; the turn this dispatch opens records it so the
   // live counter never re-anchors at turn-open.
@@ -232,7 +239,8 @@ export async function handOverSubmission(
     ctx,
     clientMessageId,
     body,
-    structuredAgentSessionHandoverOrigin(ctx.journal, submission)
+    structuredAgentSessionHandoverOrigin(ctx.journal, submission),
+    history.bodies
   )
   // An admission needs no dispatch row: the submission is already pending.
   if (outcome.state === 'admitted') {
