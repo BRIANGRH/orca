@@ -6,6 +6,7 @@ import type {
   PermissionMode
 } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentSessionJournalIdentity } from '../../shared/agent-session-journal-types'
+import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import { agentSessionProviderHandleRoot } from '../../shared/agent-session-provider-handle'
 import { claudeProviderHandleLeafUuid } from '../../shared/agent-session-provider-handle-encoding'
 import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
@@ -74,16 +75,24 @@ export const CLAUDE_STRUCTURED_BASE_OPTIONS: ClaudeStructuredSdkOptions = {
   extraArgs: { 'replay-user-messages': null }
 }
 
+const CLAUDE_PERMISSION_MODES = {
+  ask: 'default',
+  'accept-edits': 'acceptEdits',
+  auto: 'auto'
+} as const satisfies Record<Exclude<AgentChatPermissionMode, 'full-access'>, PermissionMode>
+
 /**
- * Agent Permissions as query-start options.
+ * A chat's permission mode as query-start options.
  *
- * The owned CLI flag preserves the user-installed binary contract. The SDK's typed bypass option
- * emits a newer allow flag that older Claude binaries reject before a structured session starts.
+ * Full access is the owned CLI flag, which preserves the user-installed binary contract: the SDK's
+ * typed bypass option emits a newer allow flag that older Claude binaries reject before starting.
  */
 export function claudeStructuredPermissionOptions(
-  mode: PermissionMode
-): Pick<ClaudeStructuredSdkOptions, 'extraArgs'> {
-  return mode === 'bypassPermissions' ? { extraArgs: { 'dangerously-skip-permissions': null } } : {}
+  mode: AgentChatPermissionMode
+): Pick<ClaudeStructuredSdkOptions, 'permissionMode' | 'extraArgs'> {
+  return mode === 'full-access'
+    ? { extraArgs: { 'dangerously-skip-permissions': null } }
+    : { permissionMode: CLAUDE_PERMISSION_MODES[mode] }
 }
 
 export type ClaudeStructuredLaunch = {
@@ -118,8 +127,6 @@ export type ClaudeStructuredLaunchResolverDeps = {
   /** Required, so every caller states which login a failed sign-in names rather than inherit a
    *  guess. Build it with claudeStructuredAuthPolicyForSettings. */
   resolveAuthPolicy: () => Promise<ClaudeStructuredAuthPolicy> | ClaudeStructuredAuthPolicy
-  /** The user's Agent Permissions setting, re-read per acquisition. Absent means prompting. */
-  resolvePermissionMode?: () => Promise<PermissionMode> | PermissionMode
   /** The host's chat attachment store: files a client attached live there, outside the workspace,
    *  and the agent reads them without asking. */
   attachmentDirectory?: string
@@ -163,10 +170,17 @@ export async function resolveClaudeStructuredInvocation(
   }
 }
 
+/** What one start asks of the launch: the conversation, and the permission mode the host decided
+ *  it runs, which absent asks. */
+export type ClaudeStructuredLaunchInput = {
+  identity: AgentSessionJournalIdentity
+  permissionMode?: AgentChatPermissionMode
+}
+
 export function createClaudeStructuredLaunchResolver(
   deps: ClaudeStructuredLaunchResolverDeps
-): (input: { identity: AgentSessionJournalIdentity }) => Promise<ClaudeStructuredLaunch> {
-  return async ({ identity }) => {
+): (input: ClaudeStructuredLaunchInput) => Promise<ClaudeStructuredLaunch> {
+  return async ({ identity, permissionMode }) => {
     const record = deps.store.getRecord(identity.sessionId)
     if (!record) {
       throw new Error(`no durable agent-session record for ${identity.sessionId}`)
@@ -218,9 +232,7 @@ export function createClaudeStructuredLaunchResolver(
       ...(deps.attachmentDirectory ? [deps.attachmentDirectory] : []),
       ...(visuals ? [visuals.visuals.folder] : [])
     ]
-    const permission = claudeStructuredPermissionOptions(
-      (await deps.resolvePermissionMode?.()) ?? 'default'
-    )
+    const permission = claudeStructuredPermissionOptions(permissionMode ?? 'ask')
     // A start that failed before its first turn wrote no transcript, and `--resume` of an absent
     // one exits; launch that id fresh instead. With a transcript, `--session-id` would collide.
     const leafUuid = head ? claudeProviderHandleLeafUuid(head) : null

@@ -1,3 +1,4 @@
+import { isAgentChatPermissionMode } from '../../../../shared/agent-chat-permission-mode'
 import { normalizeNativeChatAppearanceSettings } from '../../../../shared/native-chat-appearance-settings'
 import { normalizeAutoRenameBranchFromWorkDefaultOn } from '../../../../shared/auto-rename-branch-from-work-settings'
 import {
@@ -188,4 +189,14 @@ export function mergeSettings(
       preserveExplicitValue: options.preserveAutoRenameBranchFromWorkUpdate
     })
   }
+}
+
+/** The host's new-chat permission default, kept only when it is a mode this build knows. The host
+ *  seeds new chats from its own, so web reads and edits that one rather than a local copy. */
+export function runtimeChatPermissionSetting(
+  settings: Partial<GlobalSettings>
+): Pick<GlobalSettings, 'nativeChatPermissionMode'> {
+  return isAgentChatPermissionMode(settings.nativeChatPermissionMode)
+    ? { nativeChatPermissionMode: settings.nativeChatPermissionMode }
+    : {}
 }

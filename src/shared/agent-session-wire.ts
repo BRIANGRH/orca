@@ -248,6 +248,8 @@ export type AgentSessionStatusSummary = {
   latestPrompt: string
   /** Provider model in force for the next turn; absent until the host has read the options. */
   model?: string
+  /** The chat's saved permission mode; a client re-reads options when it or `model` moves. */
+  permissionMode?: string
   /** The tool the running turn is inside, else the last one it used. Absent unless `status`
    *  is 'working'. */
   toolName?: string
@@ -397,6 +399,9 @@ export type AgentSessionModelOption = {
   efforts: AgentSessionOptionChoice[]
   /** Provider catalog fact. Absent means the host could not determine support. */
   supportsFastMode?: boolean
+  /** Whether the model runs the agent's own approval reviewer (Approve for me). Absent is unknown,
+   *  which neither offers nor launches it. */
+  supportsAutoMode?: boolean
   /** Service tiers the provider lists for this model besides its standard one, each valued by the
    *  provider's own tier id. Absent means unknown; a client that reads it offers one speed choice
    *  (`default` for standard) in place of the Fast toggle. */
@@ -473,9 +478,7 @@ export type AgentSessionThreadGoalChange =
   | { kind: 'status'; status: 'active' | 'paused' }
   | { kind: 'clear' }
 
-export type AgentSessionThreadGoalResult = {
-  change: AgentSessionThreadGoalChange['kind']
-}
+export type AgentSessionThreadGoalResult = { change: AgentSessionThreadGoalChange['kind'] }
 
 /** Provider-reported choices and effective next-turn values. Additive read-only
  *  surface so older hosts can reject it without changing structured v1 writes. */
@@ -501,6 +504,9 @@ export type AgentSessionOptionsResult = {
     fastMode?: boolean
     /** Next-turn service tier id where the model lists `serviceTiers`; `default` is standard. */
     serviceTier?: string
+    /** The chat's saved permission mode, which the next start of its agent runs. Absent from a
+     *  host or agent with no permission picker. */
+    permissionMode?: string
     /** Provider-reported effective routing, distinct from the next-turn preference. */
     fastModeState?: AgentSessionFastModeState
     /**

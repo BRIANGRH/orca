@@ -63,6 +63,24 @@ export function useStructuredAgentSessionStatusSummary(
   return { summary, observation }
 }
 
+/** The option values the host's status carries, as one stamp: a pick made on another device moves
+ *  it, so a chat re-reads its options. An older host's status carries no permission mode. */
+export function useStructuredAgentSessionOptionStamp(
+  sessionId: string,
+  target: RuntimeClientTarget
+): string {
+  const feed = useMemo(() => getStructuredAgentSessionStatusFeed(target), [target])
+  useEffect(() => feed.activate(), [feed])
+  return useSyncExternalStore(
+    feed.subscribe,
+    () => {
+      const summary = feed.getSnapshot().get(sessionId)
+      return `${summary?.model ?? ''}|${summary?.permissionMode ?? ''}`
+    },
+    () => ''
+  )
+}
+
 /** Only the host's startup phase, so a chat re-renders when that changes, not on every status. */
 export function useStructuredAgentSessionHostExecutionPhase(
   sessionId: string,
@@ -91,14 +109,20 @@ export function useStructuredAgentSessionHostStopping(
   )
 }
 
-/** The host's startup phase and its word on a Stop, each re-rendering the chat only on a change. */
+/** The host's startup phase, its word on a Stop and its option stamp, each re-rendering the chat
+ *  only on a change. */
 export function useStructuredAgentSessionHostExecution(
   sessionId: string,
   target: RuntimeClientTarget
-): { phase: ReturnType<typeof useStructuredAgentSessionHostExecutionPhase>; stopping: boolean } {
+): {
+  phase: ReturnType<typeof useStructuredAgentSessionHostExecutionPhase>
+  stopping: boolean
+  optionStamp: string
+} {
   return {
     phase: useStructuredAgentSessionHostExecutionPhase(sessionId, target),
-    stopping: useStructuredAgentSessionHostStopping(sessionId, target)
+    stopping: useStructuredAgentSessionHostStopping(sessionId, target),
+    optionStamp: useStructuredAgentSessionOptionStamp(sessionId, target)
   }
 }
 

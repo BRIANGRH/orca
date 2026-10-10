@@ -1,5 +1,6 @@
-// A child that reported its agent is not signed in is replaced before the next send. Some agents
-// read their saved login only when they start, so a sign-in made since reaches a new child only.
+// A child the chat has outgrown is replaced before the next send: one that reported its agent is not
+// signed in, or one launched with a permission mode the chat no longer has. Agents read their saved
+// login and their permission mode only when they start, so either change reaches a new child only.
 
 import type { AgentSessionUnavailable } from '../../../shared/agent-session-availability'
 import { readWholeAgentSessionFailureFact } from '../../../shared/agent-session-failure'
@@ -13,6 +14,7 @@ import {
   type StructuredAgentSessionChildWorkReads
 } from './structured-agent-session-idle-sweep'
 import type { StructuredAgentSessionLogger } from './structured-agent-session-logger'
+import type { StructuredAgentSessionLaunchPermission } from './structured-agent-session-launch-permission'
 
 /** What the check reads of a conversation; every read skips building a snapshot. */
 type SignedOutReading = Pick<StructuredAgentSessionHostSession, 'child'> & {
@@ -78,30 +80,48 @@ function owesWakeUp(
   )
 }
 
+/** The running child was launched with another mode than the chat's. Only a known mode counts, so
+ *  a catalog the host cannot read never restarts a child. */
+async function launchedWithOtherPermissionMode(
+  child: SignedOutReading['child'],
+  current: (() => Promise<StructuredAgentSessionLaunchPermission | null>) | undefined
+): Promise<boolean> {
+  if (!child || child.phase === 'starting' || child.close || !child.permissionMode || !current) {
+    return false
+  }
+  const permission = await current()
+  return permission !== null && permission.known && permission.mode !== child.permissionMode
+}
+
 /** For a caller inside the session's serialize, before it hands the next send to the child. Work
  *  the child still owes keeps it, as it keeps an idle one from the sweep. A stop that fails leaves
  *  the close begun, which the start joins. */
-export async function retireSignedOutStructuredAgentSessionChild(
+export async function retireOutgrownStructuredAgentSessionChild(
   sessionId: string,
   session: SignedOutReading | undefined,
   deps: {
     work: StructuredAgentSessionChildWorkReads
     startUnavailable?: () => AgentSessionUnavailable | undefined
+    /** The mode a start of the chat would launch with now. */
+    launchPermission?: () => Promise<StructuredAgentSessionLaunchPermission | null>
     stopAgent: (sessionId: string) => Promise<void>
     logger: StructuredAgentSessionLogger
   }
 ): Promise<void> {
   if (
     !session ||
-    !structuredAgentSessionChildReportedSignedOut(session, deps.startUnavailable?.()) ||
+    !(
+      structuredAgentSessionChildReportedSignedOut(session, deps.startUnavailable?.()) ||
+      (await launchedWithOtherPermissionMode(session.child, deps.launchPermission))
+    ) ||
     structuredAgentSessionChildHasOpenWork(session.journal, deps.work) ||
     owesWakeUp(session.journal, deps.work.childWork())
   ) {
     return
   }
   await deps.stopAgent(sessionId).catch((error: unknown) =>
-    deps.logger.warn('replacing a signed-out agent failed', {
-      scope: 'signed-out-child',
+    deps.logger.warn('replacing an outgrown agent failed', {
+      scope: 'outgrown-child',
       sessionId,
       error
     })

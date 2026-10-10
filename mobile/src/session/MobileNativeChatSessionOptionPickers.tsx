@@ -21,6 +21,7 @@ import {
   SessionOptionSummaryRow
 } from './MobileNativeChatSessionOptionRows'
 import { sortNativeChatSessionOptions } from '../../../src/shared/native-chat-session-option-snapshot'
+import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../../src/shared/agent-chat-permission-mode'
 import type { MobileNativeChatSessionOptionsController } from './use-mobile-native-chat-session-options'
 
 export type MobileNativeChatSessionOptionPickersProps = {
@@ -35,7 +36,12 @@ export type MobileNativeChatSessionOptionPickersProps = {
   sendInFlight?: boolean
 }
 
-/** Combined model/session-option trigger and its mobile bottom drawer. */
+/** Full access reads in the warning colour wherever it is shown. */
+function permissionChoiceColor(value: string | undefined): string | undefined {
+  return value === 'full-access' ? colors.statusAmber : undefined
+}
+
+/** The permission pill, then the combined model/session-option pill, sharing one bottom drawer. */
 export function MobileNativeChatSessionOptionPickers({
   controller,
   isWorking,
@@ -49,12 +55,17 @@ export function MobileNativeChatSessionOptionPickers({
   }
   const { snapshot, pendingId } = controller
   const model = snapshot.find((descriptor) => descriptor.category === 'model')
+  const permission = snapshot.find(
+    (descriptor) => descriptor.id === AGENT_CHAT_PERMISSION_MODE_OPTION_ID
+  )
   const options = sortNativeChatSessionOptions(snapshot)
   if (!model) {
     return null
   }
-  const disabled = isWorking || pendingId !== null || sendInFlight
   const activeDescriptor = snapshot.find((descriptor) => descriptor.id === openDescriptorId)
+  const permissionView = activeDescriptor !== undefined && activeDescriptor === permission
+  // The permission mode applies from the next send, so a running turn never locks it.
+  const disabled = (!permissionView && isWorking) || pendingId !== null || sendInFlight
   const modelView = activeDescriptor?.id === model.id
   const modelLabel = mobileModelPillLabel(model)
   const optionsLabel = options.length > 0 ? mobileOptionsPillLabel(options) : null
@@ -91,12 +102,30 @@ export function MobileNativeChatSessionOptionPickers({
     })
   }
 
+  const permissionChoice =
+    permission?.kind.type === 'select'
+      ? permission.kind.choices.find((choice) => choice.value === permission.kind.currentValue)
+      : undefined
+  const pillsBusy = pendingId !== null || sendInFlight
+
   return (
-    <View>
+    <View style={styles.pills}>
+      {permission && permissionChoice ? (
+        <Pill
+          label={permissionChoice.label}
+          accessibleName={`Permissions, ${permissionChoice.label}`}
+          disabled={pillsBusy}
+          labelColor={permissionChoiceColor(permissionChoice.value)}
+          onPress={() => {
+            Keyboard.dismiss()
+            setOpenDescriptorId(permission.id)
+          }}
+        />
+      ) : null}
       <Pill
         label={pillLabel}
         accessibleName={`Model, ${pillLabel}`}
-        disabled={disabled}
+        disabled={isWorking || pillsBusy}
         onPress={openPicker}
       />
       <BottomDrawer visible={activeDescriptor !== undefined} onClose={closePicker}>
@@ -104,13 +133,15 @@ export function MobileNativeChatSessionOptionPickers({
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
               <Pressable
-                accessibilityLabel={modelView ? 'Close picker' : 'Back to models'}
+                accessibilityLabel={modelView || permissionView ? 'Close picker' : 'Back to models'}
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.sheetNav, pressed && styles.pressed]}
-                onPress={modelView ? closePicker : () => setOpenDescriptorId(model.id)}
+                onPress={
+                  modelView || permissionView ? closePicker : () => setOpenDescriptorId(model.id)
+                }
                 hitSlop={8}
               >
-                {modelView ? (
+                {modelView || permissionView ? (
                   <X size={18} color={colors.textSecondary} strokeWidth={2.2} />
                 ) : (
                   <ChevronLeft size={18} color={colors.textSecondary} strokeWidth={2.2} />
@@ -136,6 +167,7 @@ export function MobileNativeChatSessionOptionPickers({
                 grouped
                 onSetOption={(value) => applyOption(activeDescriptor, value)}
                 onInvokeAction={() => invokeAction(activeDescriptor)}
+                {...(permissionView ? { choiceLabelColor: permissionChoiceColor } : {})}
               />
             </View>
             {modelView && options.length > 0 ? (
@@ -160,6 +192,12 @@ export function MobileNativeChatSessionOptionPickers({
 }
 
 const styles = StyleSheet.create({
+  pills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+    gap: spacing.xs
+  },
   sheet: {
     paddingBottom: spacing.xs
   },

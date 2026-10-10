@@ -47,6 +47,8 @@ export function useStructuredAgentSessionOptionState(args: {
   seedsModel: boolean
   providerVisible: boolean
   providerStarting: boolean
+  /** The option values the host's status carries: a pick made on another device moves it. */
+  hostOptionStamp: string
   readsBeforeStart: boolean
   turnId: string | null
   unloadedTurnRevisions: number | undefined
@@ -54,6 +56,7 @@ export function useStructuredAgentSessionOptionState(args: {
   const {
     agent,
     fence,
+    hostOptionStamp,
     identity,
     newLaunch,
     optionCatalog,
@@ -115,10 +118,12 @@ export function useStructuredAgentSessionOptionState(args: {
       ...(launch.worktree ? { worktree: launch.worktree } : {})
     })
     // A host answer is the account's, not the fence's: keep it rather than blank the default.
-    const next =
+    const kept =
       sameSession && (previous.catalogSource === 'host' || previous.catalogSource === 'builtin')
         ? { ...seeded, catalog: previous.catalog, catalogSource: previous.catalogSource }
         : seeded
+    // The chat's own, which a restart for a new mode keeps: the picker never blanks between them.
+    const next = sameSession ? { ...kept, permissionMode: previous.permissionMode } : kept
     optionMutationGeneration.current += 1
     pendingOptionRef.current = null
     optionStateRef.current = next
@@ -127,8 +132,9 @@ export function useStructuredAgentSessionOptionState(args: {
   }, [agent, fence, identity])
 
   const optionsReadRef = useRef<CoalescedPollRunner | null>(null)
-  // Refresh options each turn to confirm which model the provider actually selected, and once
-  // the provider starts: only then has the host read what it will run.
+  // Refresh options each turn to confirm which model the provider actually selected, once the
+  // provider starts (only then has the host read what it will run), and when another device's pick
+  // moves the host's status.
   useEffect(() => {
     if (!providerVisible || (providerStarting && !readsBeforeStart) || !optionCatalog) {
       return
@@ -167,6 +173,7 @@ export function useStructuredAgentSessionOptionState(args: {
   }, [
     fence,
     optionCatalog,
+    hostOptionStamp,
     providerStarting,
     providerVisible,
     readsBeforeStart,

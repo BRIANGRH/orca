@@ -1,4 +1,3 @@
-import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentSessionRecord } from '../../shared/agent-session-record'
 import { claudeProviderHandle } from '../../shared/agent-session-provider-handle-encoding'
 import { resolveClaudeCommand } from '../codex-cli/command'
@@ -37,8 +36,6 @@ export type StructuredClaudeRuntimeAdapterDeps = {
   /** Managed-account auth state for a Claude launch, mirroring the terminal preflight.
    *  Required: an absent policy is what silently under-strips. */
   resolveClaudeAuthPolicy: () => Promise<ClaudeStructuredAuthPolicy> | ClaudeStructuredAuthPolicy
-  /** The user's Agent Permissions setting for Claude; absent means prompting. */
-  resolveClaudePermissionMode?: () => Promise<PermissionMode> | PermissionMode
   /** Where the host stores chat attachments; granted to the agent as a readable directory. */
   attachmentDirectory?: string
   openClaudeConnection?: ClaudeStructuredSessionAdapterDeps['openConnection']
@@ -115,9 +112,6 @@ export function createStructuredClaudeRuntimeAdapter(
         ? { resolveInheritedEnv: deps.resolveClaudeInheritedEnv }
         : {}),
       resolveAuthPolicy: deps.resolveClaudeAuthPolicy,
-      ...(deps.resolveClaudePermissionMode
-        ? { resolvePermissionMode: deps.resolveClaudePermissionMode }
-        : {}),
       ...(deps.attachmentDirectory ? { attachmentDirectory: deps.attachmentDirectory } : {}),
       ...(deps.claudeCliFlags ? { cliFlags: deps.claudeCliFlags } : {}),
       ...(deps.prepareVisuals ? { prepareVisuals: deps.prepareVisuals } : {})

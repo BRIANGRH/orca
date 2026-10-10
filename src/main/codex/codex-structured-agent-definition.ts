@@ -1,6 +1,7 @@
 import type { DirectoryAccountAgentDefinition } from '../native-chat/agent-session-wire/structured-agent-definition'
 import { CODEX_STRUCTURED_HANDLE_NAMESPACE } from '../../shared/agent-session-provider-handle-encoding'
 import { isCodexTurnOptionKey } from './codex-structured-turn-start'
+import { CODEX_CHAT_PERMISSION_MODES } from '../../shared/agent-chat-permission-mode'
 
 export const CODEX_STRUCTURED_AGENT: DirectoryAccountAgentDefinition = {
   agent: 'codex',
@@ -24,5 +25,6 @@ export const CODEX_STRUCTURED_AGENT: DirectoryAccountAgentDefinition = {
     fallbackModels: () => null,
     // A running child answers only the effort its thread reported, never the model's default.
     effortDefaultsToModel: false
-  }
+  },
+  permissionModes: CODEX_CHAT_PERMISSION_MODES
 }

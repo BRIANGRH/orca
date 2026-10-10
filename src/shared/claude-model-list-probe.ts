@@ -31,6 +31,8 @@ export type ClaudeListedModel = {
   /** `--effort` values this model accepts; empty when it has no effort control. */
   effortLevels: string[]
   supportsFastMode: boolean
+  /** Absent when the CLI predates the field: unknown, never unsupported. */
+  supportsAutoMode?: boolean
 }
 
 const CLAUDE_MODEL_LIST_JSON_LIMITS = {
@@ -53,6 +55,7 @@ type RawListedModel = {
   supportsEffort?: unknown
   supportedEffortLevels?: unknown
   supportsFastMode?: unknown
+  supportsAutoMode?: unknown
   disabled?: unknown
 }
 
@@ -80,7 +83,8 @@ function toListedModel(value: unknown): ClaudeListedModel | null {
     label,
     ...(description ? { description } : {}),
     effortLevels,
-    supportsFastMode: raw.supportsFastMode === true
+    supportsFastMode: raw.supportsFastMode === true,
+    ...(typeof raw.supportsAutoMode === 'boolean' ? { supportsAutoMode: raw.supportsAutoMode } : {})
   }
 }
 

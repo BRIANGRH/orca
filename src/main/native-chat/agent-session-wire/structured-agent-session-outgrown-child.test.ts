@@ -1,5 +1,6 @@
-// A child that reported it is not signed in is replaced before the next send, so a sign-in made
-// since reaches a new child; an agent that read its login once at start would fail again.
+// A child the chat outgrew is replaced before the next send: one that reported it is not signed in,
+// so a sign-in made since reaches a new child, and one launched with a permission mode the chat no
+// longer has, so the new mode reaches a new child.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
@@ -14,9 +15,10 @@ import {
   type RestTestRig
 } from './structured-agent-session-rest-test-rig'
 import {
-  retireSignedOutStructuredAgentSessionChild,
+  retireOutgrownStructuredAgentSessionChild,
   structuredAgentSessionChildReportedSignedOut
-} from './structured-agent-session-signed-out-child'
+} from './structured-agent-session-outgrown-child'
+import type { StructuredAgentSessionLaunchPermission } from './structured-agent-session-launch-permission'
 import type { StructuredAgentSessionProviderChild } from './structured-agent-session-host-types'
 import type {
   AgentJournalItemBody,
@@ -185,7 +187,7 @@ describe('structuredAgentSessionChildReportedSignedOut', () => {
   })
 })
 
-describe('retireSignedOutStructuredAgentSessionChild', () => {
+describe('retireOutgrownStructuredAgentSessionChild', () => {
   const liveChildWork: AgentChildWorkView = {
     id: 'subagent-1',
     kind: 'agent',
@@ -205,11 +207,13 @@ describe('retireSignedOutStructuredAgentSessionChild', () => {
   const retire = async (
     input: Parameters<typeof conversation>[0],
     work: Partial<typeof idle> = {},
-    stopAgent = vi.fn(async () => undefined)
+    stopAgent = vi.fn(async () => undefined),
+    launchPermission?: () => Promise<StructuredAgentSessionLaunchPermission | null>
   ) => {
     const warn = vi.fn()
-    await retireSignedOutStructuredAgentSessionChild('session', conversation(input), {
+    await retireOutgrownStructuredAgentSessionChild('session', conversation(input), {
       work: { ...idle, ...work },
+      ...(launchPermission ? { launchPermission } : {}),
       stopAgent,
       logger: { warn, error: vi.fn() }
     })
@@ -261,8 +265,60 @@ describe('retireSignedOutStructuredAgentSessionChild', () => {
       })
     )
     expect(warn).toHaveBeenCalledWith(
-      'replacing a signed-out agent failed',
+      'replacing an outgrown agent failed',
       expect.objectContaining({ sessionId: 'session' })
     )
   })
+
+  describe('a child launched with another permission mode', () => {
+    const now = (mode: StructuredAgentSessionLaunchPermission['mode'], known = true) =>
+      vi.fn(async () => ({ mode, known }))
+    const askChild = { child: childAt({ permissionMode: 'ask' }) }
+
+    it('is stopped once, and one launched with the current mode is kept', async () => {
+      expect(
+        (await retire(askChild, {}, undefined, now('full-access'))).stopAgent
+      ).toHaveBeenCalledWith('session')
+      expect((await retire(askChild, {}, undefined, now('ask'))).stopAgent).not.toHaveBeenCalled()
+    })
+
+    it('is kept while it owes work, as a signed-out one is', async () => {
+      for (const kept of [
+        await retire({ ...askChild, activeTurnId: 'turn-1' }, {}, undefined, now('auto')),
+        await retire(askChild, { childWork: () => [liveChildWork] }, undefined, now('auto')),
+        await retire({ ...askChild, items: [pendingPrompt] }, {}, undefined, now('auto'))
+      ]) {
+        expect(kept.stopAgent).not.toHaveBeenCalled()
+      }
+    })
+
+    it('is kept while starting, closing, or when the current mode is unknown', async () => {
+      const starting = { child: childAt({ permissionMode: 'ask', phase: 'starting' }) }
+      expect((await retire(starting, {}, undefined, now('auto'))).stopAgent).not.toHaveBeenCalled()
+      expect(
+        (await retire(askChild, {}, undefined, now('auto', false))).stopAgent
+      ).not.toHaveBeenCalled()
+      expect(
+        (await retire(askChild, {}, undefined, async () => null)).stopAgent
+      ).not.toHaveBeenCalled()
+    })
+
+    it('never reads the mode for a child launched with none', async () => {
+      const current = now('full-access')
+      expect((await retire({}, {}, undefined, current)).stopAgent).not.toHaveBeenCalled()
+      expect(current).not.toHaveBeenCalled()
+    })
+  })
 })
+
+const pendingPrompt: Row = {
+  itemId: 'approval-1',
+  fence: 2,
+  body: {
+    kind: 'approval',
+    title: 'Run a command',
+    detail: null,
+    options: [],
+    resolution: { state: 'pending', selectedOptionId: null, resolvedBy: null, resolvedAt: null }
+  }
+}

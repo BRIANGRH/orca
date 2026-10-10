@@ -7,6 +7,7 @@
 import type { AgentSessionCapabilities } from '../../../shared/agent-session-capabilities'
 import type { AgentSessionStoredAgent } from '../../../shared/agent-session-stored-agent'
 import type { AgentSessionModelOption } from '../../../shared/agent-session-wire'
+import type { AgentChatPermissionModeSupport } from '../../../shared/agent-chat-permission-mode'
 
 /** `agent` names the Orca agent whose sessions this describes; the storage fields bound its records. */
 export type StructuredAgentDefinition = AgentSessionStoredAgent & {
@@ -20,6 +21,8 @@ export type StructuredAgentDefinition = AgentSessionStoredAgent & {
     /** An unpicked effort reads as the model's default effort, as a running child reports it. */
     effortDefaultsToModel: boolean
   }
+  /** The permission modes its chats offer, each a launch policy; absent keeps Agent Permissions. */
+  permissionModes?: AgentChatPermissionModeSupport
 }
 
 /** An agent whose account is one config directory, as Claude's and Codex's are. */

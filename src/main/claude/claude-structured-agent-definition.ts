@@ -2,6 +2,7 @@ import type { DirectoryAccountAgentDefinition } from '../native-chat/agent-sessi
 import { CLAUDE_STRUCTURED_HANDLE_NAMESPACE } from '../../shared/agent-session-provider-handle-encoding'
 import { isClaudeStructuredOptionKey } from './claude-structured-options'
 import { claudeFallbackModelOptions } from './claude-structured-session-options'
+import { CLAUDE_CHAT_PERMISSION_MODES } from '../../shared/agent-chat-permission-mode'
 
 export const CLAUDE_STRUCTURED_AGENT: DirectoryAccountAgentDefinition = {
   agent: 'claude',
@@ -23,5 +24,6 @@ export const CLAUDE_STRUCTURED_AGENT: DirectoryAccountAgentDefinition = {
     acceptsKey: isClaudeStructuredOptionKey,
     fallbackModels: claudeFallbackModelOptions,
     effortDefaultsToModel: true
-  }
+  },
+  permissionModes: CLAUDE_CHAT_PERMISSION_MODES
 }

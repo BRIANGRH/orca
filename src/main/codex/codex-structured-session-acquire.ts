@@ -115,7 +115,10 @@ export async function acquireCodexStructuredSession(input: {
     }
     acquisitions.assertCurrent(sessionId, attempt)
     const launch = await deps
-      .resolveLaunch({ identity: acquireInput.identity })
+      .resolveLaunch({
+        identity: acquireInput.identity,
+        ...(acquireInput.permissionMode ? { permissionMode: acquireInput.permissionMode } : {})
+      })
       .catch((error: unknown) => {
         throw new AgentSessionPreSpawnError(error)
       })

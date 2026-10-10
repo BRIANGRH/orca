@@ -23,6 +23,7 @@ import type { CodexBackgroundTaskTracker } from './codex-background-task-tracker
 import type { CodexJournalTranslator } from './codex-structured-journal-translation'
 import type { StructuredAgentSessionEndedEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import type { CodexStructuredPermissionPolicy } from './codex-structured-permission-policy'
+import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import type {
   AgentModelCatalogSessionAccess,
   AgentModelCatalogStore
@@ -30,6 +31,13 @@ import type {
 import type { NativeChatVisualsLaunch } from '../native-chat/native-chat-visuals-delivery'
 
 export type CodexSessionCatalogAccess = AgentModelCatalogSessionAccess
+
+/** What one start asks of the launch: the conversation, and the permission mode the host decided
+ *  it runs, which absent asks. */
+export type CodexStructuredLaunchInput = {
+  identity: AgentSessionJournalIdentity
+  permissionMode?: AgentChatPermissionMode
+}
 
 export type CodexStructuredLaunch = {
   command: string
@@ -88,9 +96,7 @@ export type CodexStructuredSessionEvent =
 
 export type CodexStructuredSessionAdapterDeps = {
   resolveAccountKind?: (home: string) => AgentSessionAccountKind | undefined
-  resolveLaunch: (input: {
-    identity: AgentSessionJournalIdentity
-  }) => Promise<CodexStructuredLaunch>
+  resolveLaunch: (input: CodexStructuredLaunchInput) => Promise<CodexStructuredLaunch>
   onEvent?: (event: CodexStructuredSessionEvent) => void
   /** Where bookkeeping a close or exit does after the child is gone reports a failure. */
   logger?: StructuredAgentSessionLogger

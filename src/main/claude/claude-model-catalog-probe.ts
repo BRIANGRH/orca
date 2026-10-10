@@ -72,6 +72,9 @@ export function createClaudeModelCatalogProbe(
         })),
         ...(model.supportsFastMode !== undefined
           ? { supportsFastMode: model.supportsFastMode }
+          : {}),
+        ...(model.supportsAutoMode !== undefined
+          ? { supportsAutoMode: model.supportsAutoMode }
           : {})
       })),
       origin: 'probe'

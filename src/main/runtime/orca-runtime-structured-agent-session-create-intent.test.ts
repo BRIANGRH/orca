@@ -148,7 +148,12 @@ describe('structured agent-session create intent', () => {
       variable: 'CODEX_HOME',
       path: '/accounts/selected/home'
     })
-    expect(intent.options).toEqual({ model: 'gpt-5.6-sol', effort: 'medium', fastMode: 'true' })
+    expect(intent.options).toEqual({
+      model: 'gpt-5.6-sol',
+      effort: 'medium',
+      fastMode: 'true',
+      permissionMode: 'ask'
+    })
   })
 
   it('resolves the record-less catalog account home read-only, never through launch preparation', async () => {
@@ -232,7 +237,12 @@ describe('structured agent-session create intent', () => {
       variable: 'CLAUDE_CONFIG_DIR',
       path: '/configured/claude-home'
     })
-    expect(intent.options).toEqual({ model: 'opus', effort: 'high', fastMode: 'true' })
+    expect(intent.options).toEqual({
+      model: 'opus',
+      effort: 'high',
+      fastMode: 'true',
+      permissionMode: 'ask'
+    })
     // createSupport reports this same seed, so a paired client's picker shows what create runs.
     expect(runtime.structuredAgentSessionLaunchSeedOptions('claude')).toEqual(intent.options)
   })

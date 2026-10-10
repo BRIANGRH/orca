@@ -1,6 +1,7 @@
 import { translate } from '@/i18n/i18n'
 import { AppearanceChatSection } from './AppearanceChatSection'
 import { ChatNamingSetting } from './ChatNamingSetting'
+import { ChatPermissionSetting } from './ChatPermissionSetting'
 import { NativeChatInlineVisualsSetting } from './NativeChatInlineVisualsSetting'
 import { SettingsSection } from './SettingsSection'
 import { SettingsSubsectionHeader } from './SettingsFormControls'
@@ -50,6 +51,11 @@ export function ChatSettingsSection({
     >
       {isMounted ? (
         <div className="space-y-5">
+          <ChatPermissionSetting
+            settings={settings}
+            updateSettings={updateSettings}
+            forceVisible={matchesSettingsSearch(query, [{ title }])}
+          />
           {matchesSettingsSearch(query, [{ title }, ...getChatAppearanceSearchEntries()]) ? (
             <section id="chat-appearance" className="space-y-3">
               <SettingsSubsectionHeader title={appearanceTitle} />

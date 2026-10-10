@@ -12,6 +12,10 @@ import {
 } from '../../../shared/agent-session-wire'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import { decodeStructuredAgentSessionOptionValue } from '../../../shared/structured-agent-session-option-codec'
+import {
+  AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
+  savedChatPermissionMode
+} from '../../../shared/agent-chat-permission-mode'
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
 import { journalOpenReadRefusal } from '../agent-session-journal/journal-open-failure'
 import type { StructuredAgentDefinition } from './structured-agent-definition'
@@ -24,14 +28,27 @@ import type { StructuredAgentSessionMutationContext } from './structured-agent-s
 
 type RestingOptions = Pick<AgentSessionOptionsResult, 'models' | 'fastModeSupport' | 'current'>
 
+/** Whether the agent takes this pick: a permission mode it offers, or an option key it names. */
+function acceptsOptionPick(
+  definition: StructuredAgentDefinition | null,
+  key: string,
+  value: string
+): boolean {
+  return key === AGENT_CHAT_PERMISSION_MODE_OPTION_ID
+    ? definition?.permissionModes?.modes.some((mode) => mode === value) === true
+    : definition?.restingOptions.acceptsKey(key) === true
+}
+
 /** Initial explicit picks follow the same rules as a pick made while the chat is at rest. */
 export function structuredAgentSessionOptionOverridesRefusal(
   agents: Pick<StructuredAgentRegistry, 'definition'>,
   provider: string,
   options: Readonly<Record<string, string>>
 ) {
-  const rules = agents.definition(provider)?.restingOptions
-  const key = Object.keys(options).find((key) => !rules?.acceptsKey(key))
+  const definition = agents.definition(provider)
+  const key = Object.keys(options).find(
+    (key) => !acceptsOptionPick(definition, key, options[key] ?? '')
+  )
   return key === undefined
     ? null
     : refuse(
@@ -104,7 +121,10 @@ export async function recordStructuredAgentSessionOptionIntent(
   input: { key: string; value: string }
 ): Promise<TurnOutcome<AgentSessionOptionResult>> {
   const record = deps.store.getRecord(ctx.sessionId)
-  if (!record || !restingOptionRules(deps.agents, record)?.acceptsKey(input.key)) {
+  if (
+    !record ||
+    !acceptsOptionPick(deps.agents.definition(record.provider), input.key, input.value)
+  ) {
     return {
       ok: false,
       refusal: refuse(
@@ -178,8 +198,17 @@ export async function readStructuredAgentSessionOptions(
   const capabilities = agents.capabilities(agent)
   const floor = session.journal.context.floor()
   const contextFloor = floor ? { contextFloor: floor } : {}
+  // The record's, live or at rest: a child never reports it, and only its next start applies it.
+  const permissionModes = agents.definition(agent)?.permissionModes
+  const permissionMode = permissionModes
+    ? savedChatPermissionMode(
+        permissionModes,
+        store.getRecord(sessionId)?.options?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID]
+      )
+    : undefined
   return {
     ...options,
+    ...(permissionMode ? { current: { ...options.current, permissionMode } } : {}),
     rewind:
       phase === 'prepared' || phase === 'provider-succeeded'
         ? { supported: false, reason: 'outcome-unknown' }

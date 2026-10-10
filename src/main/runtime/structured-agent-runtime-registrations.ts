@@ -147,9 +147,6 @@ function createCodexAdapter(context: StructuredAgentAdapterContext): StructuredA
       resolveWorkspacePath: deps.resolveWorkspacePath,
       resolveEnvironment: context.environment.resolveCodexEnvironment,
       resolveLaunchArgs: () => deps.resolveLaunchArgs('codex'),
-      ...(deps.resolveCodexPermissionPolicy
-        ? { resolvePermissionPolicy: deps.resolveCodexPermissionPolicy }
-        : {}),
       ...(deps.resolveCodexCommand ? { resolveCommand: deps.resolveCodexCommand } : {}),
       ...nativeChatVisualsFor(deps)
     }),
@@ -184,9 +181,6 @@ function createClaudeAdapter(
     resolveClaudeInheritedEnv: context.environment.resolveClaudeInheritedEnv,
     resolveClaudeLaunchArgs: () => deps.resolveLaunchArgs('claude'),
     resolveClaudeAuthPolicy: deps.resolveClaudeAuthPolicy,
-    ...(deps.resolveClaudePermissionMode
-      ? { resolveClaudePermissionMode: deps.resolveClaudePermissionMode }
-      : {}),
     attachmentDirectory: agentSessionAttachmentStoreRoot(deps.stateDirectory),
     onLifecycleEvent: context.deliverLifecycle,
     logger: deps.logger,

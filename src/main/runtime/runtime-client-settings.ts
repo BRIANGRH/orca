@@ -52,6 +52,7 @@ export type RuntimeClientSettings = Pick<
   | 'worktreeVisibilityDefaults'
   | 'agentSkillSharingEnabled'
   | 'machineName'
+  | 'nativeChatPermissionMode'
 > & {
   /** Older clients still read these; neither is persisted or accepted as an update. */
   openAgentTabsInChatByDefault?: boolean
@@ -90,6 +91,7 @@ export type RuntimeClientSettingsUpdate = Pick<
   | 'prBotAuthorOverrides'
   | 'worktreeVisibilityDefaults'
   | 'machineName'
+  | 'nativeChatPermissionMode'
 >
 
 export class RuntimeClientSettingsController {
@@ -140,6 +142,10 @@ export class RuntimeClientSettingsController {
       worktreeVisibilityDefaults: settings.worktreeVisibilityDefaults ?? { external: 'hide' },
       agentSkillSharingEnabled: isAgentSkillSharingEnabled(settings),
       machineName: settings.machineName ?? '',
+      // Why projected: a web client's Settings → Chat edits this host's new-chat default.
+      ...(settings.nativeChatPermissionMode
+        ? { nativeChatPermissionMode: settings.nativeChatPermissionMode }
+        : {}),
       // Why projected: a paired client's AI buttons start these actions' agents, and must honour
       // the agent saved for each one as the desktop does. Absent on older hosts.
       sourceControlAi: projectSourceControlLaunchRecipes(settings),

@@ -50,8 +50,10 @@ export function useMobileStructuredAgentOptions(args: {
   enabled: boolean
   fence: number | null
   mutate: StructuredAgentSessionMutate
+  /** Moves when the host's status says a session option changed; each move re-reads them. */
+  optionStamp?: string
 }): StructuredOptionsController {
-  const { agent, client, enabled, fence, mutate, sessionId } = args
+  const { agent, client, enabled, fence, mutate, optionStamp, sessionId } = args
   // Every agent's seed, as on the desktop: a built-in list or the provider-default pill.
   const optionCatalog = useMemo(
     () => (agent ? structuredAgentSessionSeedCatalog(agent) : null),
@@ -89,10 +91,12 @@ export function useMobileStructuredAgentOptions(args: {
     const previous = optionStateRef.current
     const seeded = createStructuredAgentSessionOptionState(agent ?? 'codex', optionCatalog)
     // A host answer is the account's, not the fence's: keep it rather than fall back to the placeholder.
-    const next =
+    const kept =
       sameSession && (previous.catalogSource === 'host' || previous.catalogSource === 'builtin')
         ? { ...seeded, catalog: previous.catalog, catalogSource: previous.catalogSource }
         : seeded
+    // The chat's own, which a restart for a new mode keeps: the pill never blanks between them.
+    const next = sameSession ? { ...kept, permissionMode: previous.permissionMode } : kept
     optionMutationGeneration.current += 1
     pendingOptionRef.current = null
     optionStateRef.current = next
@@ -141,7 +145,7 @@ export function useMobileStructuredAgentOptions(args: {
     return () => {
       stale = true
     }
-  }, [client, enabled, optionCatalog, sessionId, fence, updateOptionState])
+  }, [client, enabled, optionCatalog, optionStamp, sessionId, fence, updateOptionState])
 
   const optionSnapshot = useMemo(
     () => structuredAgentSessionOptionSnapshot(optionState),
