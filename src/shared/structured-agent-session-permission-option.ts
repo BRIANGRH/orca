@@ -3,11 +3,11 @@
 import {
   AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
   agentChatPermissionModes,
+  chatModelSupportsAutoMode,
   offeredChatPermissionModes,
   type AgentChatPermissionMode
 } from './agent-chat-permission-mode'
 import type { AgentSessionOptionCatalog } from './agent-session-option-catalog'
-import { resolveEffectiveNativeChatModelId } from './native-chat-session-option-snapshot'
 import type { NativeChatSessionOptionRecord } from './native-chat-session-option-state'
 import type { SessionOptionDescriptor } from './native-chat-session-options'
 
@@ -34,16 +34,16 @@ const CODEX_DESCRIPTIONS: Partial<Record<AgentChatPermissionMode, string>> = {
   'full-access': 'Never asks; can edit any file and use the network'
 }
 
-/** Only decides whether the menu offers Approve for me; unknown reads as no. */
+/** Only decides whether the menu offers Approve for me, by the host's own rule. */
 function currentModelSupportsAutoMode(
   catalog: AgentSessionOptionCatalog | null,
   record: NativeChatSessionOptionRecord
 ): boolean {
-  if (!catalog) {
-    return false
-  }
-  const modelId = resolveEffectiveNativeChatModelId(catalog, catalog.models, record)
-  return catalog.models.find((model) => model.id === modelId)?.supportsAutoMode === true
+  const model = record.model?.value
+  return (
+    catalog !== null &&
+    chatModelSupportsAutoMode(catalog.models, typeof model === 'string' ? model : undefined)
+  )
 }
 
 export function structuredAgentSessionPermissionDescriptor(state: {

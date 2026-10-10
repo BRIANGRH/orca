@@ -33,6 +33,8 @@ export type ClaudeListedModel = {
   supportsFastMode: boolean
   /** Absent when the CLI predates the field: unknown, never unsupported. */
   supportsAutoMode?: boolean
+  /** Runs what the CLI's `default` row resolves to: what a chat that names no model runs. */
+  isDefault?: true
 }
 
 const CLAUDE_MODEL_LIST_JSON_LIMITS = {
@@ -88,6 +90,16 @@ function toListedModel(value: unknown): ClaudeListedModel | null {
   }
 }
 
+function valueOf(entry: unknown): unknown {
+  return entry && typeof entry === 'object' && 'value' in entry ? entry.value : undefined
+}
+
+function resolvedModelOf(entry: unknown): string | null {
+  const resolved =
+    entry && typeof entry === 'object' && 'resolvedModel' in entry ? entry.resolvedModel : undefined
+  return typeof resolved === 'string' && resolved.trim() ? resolved : null
+}
+
 export function parseClaudeModelList(stdout: string): ClaudeListedModel[] {
   for (const rawLine of stdout.split(/\r?\n/)) {
     const line = rawLine.trim()
@@ -110,15 +122,17 @@ export function parseClaudeModelList(stdout: string): ClaudeListedModel[] {
     }
     const seen = new Set<string>()
     const listed: ClaudeListedModel[] = []
+    const defaultRuns = resolvedModelOf(models.find((entry) => valueOf(entry) === 'default'))
     for (const entry of models) {
       const model = toListedModel(entry)
       // Why: the `default` row mirrors whichever entry it currently resolves
-      // to; Orca's pickers manage their own default selection.
+      // to; that entry is marked instead.
       if (!model || model.id === 'default' || seen.has(model.id)) {
         continue
       }
       seen.add(model.id)
-      listed.push(model)
+      const runsDefault = defaultRuns !== null && resolvedModelOf(entry) === defaultRuns
+      listed.push(runsDefault ? { ...model, isDefault: true } : model)
     }
     if (listed.length > 0) {
       return listed

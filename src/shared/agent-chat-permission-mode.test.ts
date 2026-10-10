@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AGENT_CHAT_PERMISSION_MODES,
   agentChatPermissionModes,
+  chatModelSupportsAutoMode,
   chatPermissionModeNeedsModelSupport,
   effectiveChatPermissionMode,
   loadedChatPermissionSetting,
@@ -112,5 +113,24 @@ describe('the new-chat setting as loaded', () => {
 
   it.each(['future', null, 42, 'bypass'])('reads an unknown saved %s as Ask', (value) => {
     expect(loadedChatPermissionSetting(value, getDefaultSettings('/tmp'))).toBe('ask')
+  })
+
+  // The catalog shape `claude` 2.1.280 lists: the default row is folded into the row it resolves to.
+  it('reads auto support from the chat model row, or the CLI default when it names none', () => {
+    const models = [
+      { id: 'opus[1m]', isDefault: true, supportsAutoMode: true },
+      { id: 'sonnet', isDefault: false, supportsAutoMode: true },
+      { id: 'haiku', isDefault: false }
+    ]
+    for (const model of [undefined, null, 'default', 'opus[1m]', 'sonnet']) {
+      expect(chatModelSupportsAutoMode(models, model)).toBe(true)
+    }
+    for (const model of ['haiku', 'claude-opus-5-5[1m]', 'retired-model']) {
+      expect(chatModelSupportsAutoMode(models, model)).toBe(false)
+    }
+    // No row the CLI runs by default: unknown, so no auto.
+    expect(chatModelSupportsAutoMode([{ id: 'opus[1m]', supportsAutoMode: true }], undefined)).toBe(
+      false
+    )
   })
 })

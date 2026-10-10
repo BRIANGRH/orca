@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AgentSessionOptionsResult } from './agent-session-wire'
 import { sortNativeChatSessionOptions } from './native-chat-session-option-snapshot'
 import {
+  applyStructuredAgentSessionModelCatalog,
   applyStructuredAgentSessionOptions,
   commitStructuredAgentSessionOption,
   commitStructuredAgentSessionOptionValues,
@@ -89,6 +90,39 @@ describe('the permission mode picker', () => {
       kind: { currentValue: 'auto' }
     })
     expect(offered(false, 'auto')).toEqual(['ask', 'accept-edits', 'auto', 'full-access'])
+  })
+
+  // A new chat names no model: the host's catalog row for the CLI default decides, as the host's does.
+  it('offers Claude auto to a new chat whose CLI default the host lists as running it', () => {
+    const seed = structuredAgentSessionSeedCatalog('claude')
+    const offered = (rows: { id: string; isDefault: boolean; supportsAutoMode?: boolean }[]) => {
+      const state = applyStructuredAgentSessionModelCatalog(
+        createStructuredAgentSessionOptionState('claude', seed),
+        seed,
+        {
+          origin: 'probe',
+          fetchedAt: 1,
+          models: rows.map((row) => ({ ...row, label: row.id, efforts: [] }))
+        },
+        { newLaunch: true }
+      )
+      const descriptor = permission(
+        structuredAgentSessionOptionView(state, { permissionMode: 'ask' }, {})
+      )
+      return descriptor?.kind.type === 'select' && descriptor.kind.choices.map((c) => c.value)
+    }
+    expect(
+      offered([
+        { id: 'opus[1m]', isDefault: true, supportsAutoMode: true },
+        { id: 'haiku', isDefault: false }
+      ])
+    ).toContain('auto')
+    expect(
+      offered([
+        { id: 'opus[1m]', isDefault: false, supportsAutoMode: true },
+        { id: 'haiku', isDefault: true }
+      ])
+    ).not.toContain('auto')
   })
 
   it("shows a held pick over the host's value, and the host's over the seed", () => {

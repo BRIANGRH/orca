@@ -52,6 +52,20 @@ export function savedChatPermissionMode(
   return support.modes.find((mode) => mode === intent) ?? 'ask'
 }
 
+/** The one rule for whether the chat's model runs `auto`: its listed row, or the listed CLI default
+ *  when it names none. The host launches with it and the menu offers with it. */
+export function chatModelSupportsAutoMode(
+  models: readonly { id: string; isDefault?: boolean; supportsAutoMode?: boolean }[],
+  model: string | null | undefined
+): boolean {
+  const row = models.find((entry) =>
+    model === undefined || model === null || model === 'default'
+      ? entry.isDefault === true
+      : entry.id === model
+  )
+  return row?.supportsAutoMode === true
+}
+
 /** Whether the mode a chat runs depends on its model's listed `auto` support. */
 export function chatPermissionModeNeedsModelSupport(
   support: AgentChatPermissionModeSupport,

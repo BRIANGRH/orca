@@ -4,13 +4,14 @@ import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import {
   AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
   agentChatPermissionModes,
+  chatModelSupportsAutoMode,
   chatPermissionModeNeedsModelSupport,
   effectiveChatPermissionMode,
   type AgentChatPermissionMode
 } from '../../../shared/agent-chat-permission-mode'
 import type { StructuredAgentSessionHostDeps } from './structured-agent-session-host-types'
 
-/** Saved catalog only, so a start never waits on a listing; a model it cannot name gets no `auto`. */
+/** Saved catalog only, so a start never waits on a listing. */
 async function listedAutoModeSupport(
   catalog: StructuredAgentSessionHostDeps['modelCatalog'],
   record: AgentSessionRecord
@@ -18,14 +19,12 @@ async function listedAutoModeSupport(
   const listing = await catalog
     ?.read({ agent: record.provider, sessionId: record.sessionId, savedOnly: true })
     .catch(() => null)
-  if (!listing || listing.origin === 'unknown') {
-    return false
-  }
-  const model = record.options?.model
-  const row = listing.models.find((entry) =>
-    model === undefined || model === 'default' ? entry.isDefault : entry.id === model
+  return (
+    listing !== null &&
+    listing !== undefined &&
+    listing.origin !== 'unknown' &&
+    chatModelSupportsAutoMode(listing.models, record.options?.model)
   )
-  return row?.supportsAutoMode === true
 }
 
 /** Null for an agent whose chats offer no modes, or one this runtime did not register. */
