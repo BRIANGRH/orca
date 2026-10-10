@@ -50,9 +50,9 @@ type ProbeProps = { client: RpcClient; fence: number; optionStamp: string }
 const mutate: StructuredAgentSessionMutate = vi.fn()
 
 async function mountOptions(props: ProbeProps) {
-  let rendered: Controller | null = null
+  const rendered: { current: Controller | null } = { current: null }
   function Probe(probe: ProbeProps): null {
-    rendered = useMobileStructuredAgentOptions({
+    rendered.current = useMobileStructuredAgentOptions({
       agent: 'codex',
       client: probe.client,
       sessionId: 'session-1',
@@ -75,7 +75,7 @@ async function mountOptions(props: ProbeProps) {
   await settle()
   return {
     permission: () => {
-      const entry = (rendered as Controller | null)?.optionSnapshot.find(
+      const entry = rendered.current?.optionSnapshot.find(
         (descriptor) => descriptor.id === 'permissionMode'
       )
       return entry?.kind.type === 'select' ? entry.kind.currentValue : null

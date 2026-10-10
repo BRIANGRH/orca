@@ -151,7 +151,16 @@ function resolvedLaunch(permissionMode: AgentChatPermissionMode, launchArgs: str
     resolveWorkspacePath: async () => '/repos/workspace-1',
     resolveCommand: () => FAKE_CLI,
     resolveAuthPolicy: () => ({ account: 'managed' })
-  })({ identity: { sessionId: record.sessionId } as never, permissionMode })
+  })({
+    identity: {
+      sessionId: record.sessionId,
+      workspaceId: 'workspace-1',
+      hostId: LOCAL_EXECUTION_HOST_ID,
+      agent: 'claude',
+      providerHandle: null
+    },
+    permissionMode
+  })
 }
 
 function singleUserTurn(): AsyncIterable<SDKUserMessage> {
