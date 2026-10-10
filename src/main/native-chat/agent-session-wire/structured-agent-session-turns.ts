@@ -45,7 +45,10 @@ import type { StructuredAgentSessionLogger } from './structured-agent-session-lo
 import { isAgentSessionAttachmentExpiredError } from '../agent-session-attachments/agent-session-attachment-claims'
 import { CommandReceiptExistsError } from '../agent-session-journal/command-receipt-transaction'
 import type { StructuredAgentRegistry } from './structured-agent-registry'
-import { selectStoppedHistory } from './structured-agent-session-stopped-history-selection'
+import {
+  NO_STOPPED_HISTORY,
+  selectStoppedHistory
+} from './structured-agent-session-stopped-history-selection'
 export { performSetOption } from './structured-agent-session-turns-options'
 export { performPrompt } from './structured-agent-session-turns-prompt'
 export { performCancel } from './structured-agent-session-turns-cancel'
@@ -223,9 +226,11 @@ export async function handOverSubmission(
     return
   }
   // The message joins the turn running at handover, a steer, or opens its own.
-  const turnScope = ctx.journal.liveTurnScope()
   // Stopped messages it carries are named on this same row, before anything is written.
-  const history = await selectStoppedHistory(ctx, submission, body, turnScope)
+  const selected = await selectStoppedHistory(ctx, submission, body, ctx.journal.liveTurnScope())
+  // Re-read after selection's I/O: a turn opened meanwhile makes this a steer, which carries none.
+  const turnScope = ctx.journal.liveTurnScope()
+  const history = turnScope.kind === 'thread' ? selected : NO_STOPPED_HISTORY
   await ctx.journal.resolveDispatch({
     clientMessageId,
     state: 'pending',

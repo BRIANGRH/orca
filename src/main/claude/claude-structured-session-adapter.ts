@@ -165,7 +165,11 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
   }
 
   dispatch: StructuredAgentSessionAdapter['dispatch'] = (input) =>
-    dispatchClaudeTurn(this.session(input.sessionId), input, input.beforeDispatch)
+    dispatchClaudeTurn(
+      this.session(input.sessionId),
+      { ...input, ...(this.deps.logger ? { logger: this.deps.logger } : {}) },
+      input.beforeDispatch
+    )
 
   historyFits: NonNullable<StructuredAgentSessionAdapter['historyFits']> = (input) =>
     claudeStoppedHistoryFits(input.body, input.history)

@@ -25,6 +25,23 @@ export function stoppedMessageContext(item: AgentJournalMessageItem): string {
     .join('\n')
 }
 
+/** The stopped message with its images left out, its frame saying so. */
+export function stoppedMessageWithoutImages(
+  item: AgentJournalMessageItem
+): AgentJournalMessageItem {
+  const imageCount = images(item).length
+  if (imageCount === 0) {
+    return item
+  }
+  return {
+    ...item,
+    blocks: [
+      { type: 'text', text: `It had ${imageCount} image(s), not attached.` },
+      ...item.blocks.filter((block) => block.type !== 'image-ref')
+    ]
+  }
+}
+
 /** The send with its stopped history in front: the history's images first, then its framed text,
  *  then the send's own blocks. Agents that join text keep the send's words last, as the prompt. */
 export function withStoppedHistory(

@@ -89,7 +89,8 @@ async function stopWhileStarting(...texts: string[]): Promise<string[]> {
     await eventually(async () =>
       expect(await rig.submission(id)).toMatchObject({
         dispatchState: 'rejected',
-        rejection: { kind: 'cancelled' }
+        // Host-held: the Stop's withdrawal proves it never reached the agent.
+        rejection: { kind: 'cancelled', neverReachedAgent: true }
       })
     )
   }
@@ -111,7 +112,9 @@ async function nextSend(body: string, options: Parameters<QueuedMessageTestRig['
 /** How a provider settles a handed-over send, as `settleLateDispatch` takes it. */
 function settle(
   id: string,
-  outcome: { kind: 'rejected'; fact: SubmissionRejectionKind; reached?: true } | { kind: 'unknown' }
+  outcome:
+    | { kind: 'rejected'; fact: SubmissionRejectionKind; neverReached?: true }
+    | { kind: 'unknown' }
 ): Promise<void> {
   return outcome.kind === 'unknown'
     ? rig.host.settleLateDispatch({
@@ -127,12 +130,15 @@ function settle(
         ...agentSessionFailureWords(
           agentSessionFailureFact(
             outcome.fact,
-            outcome.reached ? { mayHaveReachedAgent: true } : {}
+            outcome.neverReached ? { neverReachedAgent: true } : {}
           ),
           { surface: 'rejection' }
         )
       })
 }
+
+/** A second client, attached as the phone is. */
+const PHONE_CALLER = { callerKey: 'phone-1' }
 
 const MAIL = {
   kind: 'agent' as const,
@@ -253,17 +259,17 @@ describe('stopped messages ride with the next send', () => {
     const [first] = await stopWhileStarting('first')
     const carrier = await nextSend('carrier')
     // As Claude reports a queued frame its Stop swept before it started.
-    await settle(carrier, { kind: 'rejected', fact: 'cancelled' })
+    await settle(carrier, { kind: 'rejected', fact: 'cancelled', neverReached: true })
     const next = await nextSend('next')
 
     expect(dispatched()).toEqual(['carrier <- [first]', 'next <- [first, carrier]'])
     expect(journal().stoppedHistoryCarried().get(next)).toEqual([first, carrier])
   })
 
-  it('never carries a send Codex may have recorded when its Stop withdrew it', async () => {
+  it('never carries a withdrawal no one proved unwritten, as Codex writes and old journals hold', async () => {
     await start()
     const sent = await nextSend('sent')
-    await settle(sent, { kind: 'rejected', fact: 'cancelled', reached: true })
+    await settle(sent, { kind: 'rejected', fact: 'cancelled' })
     await nextSend('next')
 
     expect(dispatched()).toEqual(['sent', 'next'])
@@ -283,13 +289,17 @@ describe('stopped messages ride with the next send', () => {
   it('two sends at once, from a phone and a desktop: the first handed over carries them, once', async () => {
     await start()
     await stopWhileStarting('first')
-    const phone = rig.send('from the phone')
-    const desktop = rig.send('from the desktop')
-    expect(await phone.result).toMatchObject({ ok: true })
-    expect(await desktop.result).toMatchObject({ ok: true })
+    const phoneRequest = sendRequest('from the phone')
+    const desktopRequest = sendRequest('from the desktop')
+    const [phone, desktop] = await Promise.all([
+      rig.host.send(PHONE_CALLER, phoneRequest),
+      rig.host.send(QUEUED_RIG_CALLER, desktopRequest)
+    ])
+    expect(phone).toMatchObject({ ok: true })
+    expect(desktop).toMatchObject({ ok: true })
     await rig.proveStart()
     await eventually(() => expect(rig.dispatch).toHaveBeenCalledTimes(1))
-    await rig.settleAccepted(phone.id, 'phone')
+    await rig.settleAccepted(phoneRequest.envelope.clientOperationId, 'phone')
     await eventually(() => expect(rig.dispatch).toHaveBeenCalledTimes(2))
 
     expect(dispatched()).toEqual(['from the phone <- [first]', 'from the desktop'])
@@ -346,5 +356,22 @@ describe('stopped messages ride with the next send', () => {
         'carrier'
       ])
     }
+  })
+
+  it('a real /clear bounds what is owed: what was stopped before it is never carried', async () => {
+    await start()
+    await stopWhileStarting('before clear')
+    const fields = { command: 'clear' as const }
+    expect(
+      await rig.host.conversationCommand(QUEUED_RIG_CALLER, {
+        envelope: rig.envelope(fields, 'agentSession.conversationCommand', hostTestOperationId()),
+        ...fields
+      })
+    ).toMatchObject({ ok: true, value: { command: 'clear', state: 'completed' } })
+    const [after] = await stopWhileStarting('after clear')
+    const next = await nextSend('next')
+
+    expect(dispatched()).toEqual(['next <- [after clear]'])
+    expect(journal().stoppedHistoryCarried().get(next)).toEqual([after])
   })
 })

@@ -48,7 +48,7 @@ function sent(
 
 function rejected(
   kind: SubmissionRejectionKind,
-  extra: { mayHaveReachedAgent?: true } = {}
+  extra: { neverReachedAgent?: true } = {}
 ): Partial<AgentJournalSubmission> {
   return {
     dispatchState: 'rejected',
@@ -59,7 +59,7 @@ function rejected(
 }
 
 /** A Stop's withdrawal with proof the agent never got it. */
-const STOPPED = rejected('cancelled')
+const STOPPED = rejected('cancelled', { neverReachedAgent: true })
 
 function owed(
   submissions: AgentJournalSubmission[],
@@ -75,7 +75,7 @@ function owed(
     clearSequence: options.clearSequence ?? 0,
     body: (id) => options.bodies?.[id] ?? message(id)
   }
-  return agentSessionStoppedHistoryOwed(journal).map((entry) => entry.clientMessageId)
+  return agentSessionStoppedHistoryOwed(journal).map((entry) => entry.submission.clientMessageId)
 }
 
 describe('which stopped messages the agent is owed', () => {
@@ -86,15 +86,15 @@ describe('which stopped messages the agent is owed', () => {
     ])
   })
 
-  it("never owes Codex's unopened withdrawal: Codex may have recorded it", () => {
-    expect(owed([sent('a', 2, rejected('cancelled', { mayHaveReachedAgent: true }))])).toEqual([])
+  it('never owes a withdrawal without proof it never reached the agent, as old journals hold', () => {
+    expect(owed([sent('a', 2, rejected('cancelled'))])).toEqual([])
   })
 
   it('never owes a send in doubt, such as one Claude had started when Stop cancelled it', () => {
     expect(owed([sent('a', 2, { dispatchState: 'unknown', reason: 'doubt' })])).toEqual([])
   })
 
-  it('never owes mail, a task preamble, a queued card, a command or a goal', () => {
+  it('never owes mail, a task preamble, a queued card, a command, a goal or a typed slash command', () => {
     const bodies: Record<string, AgentJournalItemBody> = {
       command: message('/compact', { command: { name: 'compact' } }),
       goal: message('ship it', { sentAs: 'goal' }),
@@ -114,9 +114,10 @@ describe('which stopped messages the agent is owed', () => {
           }),
           sent('card', 4, { ...STOPPED, queuedMessageId: 'card' }),
           sent('command', 5, STOPPED),
-          sent('goal', 6, STOPPED)
+          sent('goal', 6, STOPPED),
+          sent('slash', 7, STOPPED)
         ],
-        { bodies: { ...bodies, mailBody: bodies.mail! } }
+        { bodies: { ...bodies, mailBody: bodies.mail!, slash: message('/review foo') } }
       )
     ).toEqual([])
   })
@@ -129,7 +130,7 @@ describe('which stopped messages the agent is owed', () => {
     ).toEqual(['new'])
   })
 
-  it('a carrier that was accepted, is still pending or is in doubt covers what it carried', () => {
+  it('a carrier accepted, pending, in doubt or refused after a possible write covers what it carried', () => {
     for (const carrier of [
       sent('c', 9, { dispatchState: 'accepted' }),
       sent('c', 9),
@@ -139,9 +140,12 @@ describe('which stopped messages the agent is owed', () => {
         recovered: true
       }),
       sent('c', 9, rejected('providerRejected')),
-      sent('c', 9, rejected('cancelled', { mayHaveReachedAgent: true })),
+      sent('c', 9, rejected('notSignedIn')),
+      sent('c', 9, rejected('providerExited')),
+      sent('c', 9, rejected('hostFault')),
+      sent('c', 9, rejected('cancelled')),
       sent('c', 9, {
-        ...rejected('cancelled'),
+        ...STOPPED,
         answeredInTurn: { turnItemId: 'turn', via: 'start' }
       })
     ]) {
@@ -150,7 +154,13 @@ describe('which stopped messages the agent is owed', () => {
   })
 
   it('a carrier refused before any write leaves what it carried owed again', () => {
-    for (const kind of ['queueFull', 'writeFailed', 'attachmentInvalid', 'emptyMessage'] as const) {
+    for (const kind of [
+      'queueFull',
+      'writeFailed',
+      'attachmentInvalid',
+      'attachmentUnreadable',
+      'emptyMessage'
+    ] as const) {
       expect(
         owed([sent('a', 2, STOPPED), sent('c', 9, rejected(kind))], {
           carried: { c: ['a'] }

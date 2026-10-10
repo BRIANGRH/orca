@@ -82,7 +82,11 @@ export function mutateWithChatStop<TValue>(
         const withdrew = withdrawQueuedForStop(ctx, () =>
           ctx.journal.rejectQueuedSubmissions(
             ctx.fence,
-            agentSessionFailureWords(agentSessionFailureFact('cancelled'), { surface: 'rejection' })
+            // Host-held: none of them left Orca.
+            agentSessionFailureWords(
+              agentSessionFailureFact('cancelled', { neverReachedAgent: true }),
+              { surface: 'rejection' }
+            )
           )
         )
         const child = context.sessions.get(ctx.sessionId)?.child

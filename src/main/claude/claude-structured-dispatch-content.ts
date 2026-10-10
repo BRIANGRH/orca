@@ -216,13 +216,14 @@ export async function claudeStoppedHistoryFits(
  *  refuses a send. */
 export async function claudeDispatchContentWithHistory(
   body: AgentJournalMessageItem,
-  history: readonly AgentJournalMessageItem[] = []
+  history: readonly AgentJournalMessageItem[],
+  reportLeftOut: (error: unknown) => void
 ): Promise<unknown[]> {
   if (history.length > 0) {
     try {
       return await claudeDispatchMessageContent(withStoppedHistory(body, history))
     } catch (error) {
-      console.warn('[claude-dispatch] stopped history left out:', error)
+      reportLeftOut(error)
     }
   }
   return claudeDispatchMessageContent(body)

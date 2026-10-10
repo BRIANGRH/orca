@@ -1,12 +1,7 @@
-// Which stopped messages the agent is still owed: a person's own sends a Stop took back before the
-// agent got them, which ride as history with their next send. Derived from the journal on every
-// handover, never stored; only the execution host reads it.
-//
-// Membership lives on the carrier's `dispatch{pending}` row (`JournalDispatchRow.carries`), and
-// the carrier's own outcome says what became of it: accepted, pending or in doubt covers the
-// history; refused before any write, or withdrawn with proof it was never written, leaves it owed.
+// Stopped messages the agent is still owed, derived from the journal on each handover (host only);
+// membership is the carrier's `dispatch{pending}` row (`carries`), its fate the carrier's outcome.
 
-import { readAgentSessionFailureFact } from './agent-session-failure'
+import { readAgentSessionFailureFact, type SubmissionRejectionKind } from './agent-session-failure'
 import type {
   AgentJournalItemBody,
   AgentJournalMessageItem,
@@ -26,27 +21,46 @@ export type StoppedHistoryJournal = {
   body: (clientMessageId: string) => AgentJournalItemBody | null
 }
 
-/** A person's ordinary message: not a command, a goal, or mail another agent sent. */
+export type OwedStoppedMessage = {
+  submission: AgentJournalSubmission
+  body: AgentJournalMessageItem
+}
+
+/** A person's ordinary message: not a command, a goal, mail another agent sent, or a typed slash
+ *  command, which only reads right as the start of a prompt. */
 function isOrdinaryPersonMessage(
   body: AgentJournalItemBody | null | undefined
 ): body is AgentJournalMessageItem {
-  return (
-    body?.kind === 'message' &&
-    body.role === 'user' &&
-    body.command === undefined &&
-    body.sentAs === undefined &&
-    body.from === undefined
-  )
+  if (
+    body?.kind !== 'message' ||
+    body.role !== 'user' ||
+    body.command !== undefined ||
+    body.sentAs !== undefined ||
+    body.from !== undefined
+  ) {
+    return false
+  }
+  const firstText = body.blocks.find((block) => block.type === 'text' && block.text.length > 0)
+  return !(firstText?.type === 'text' && firstText.text.startsWith('/'))
 }
 
-/** A Stop took it back with proof the agent never got it: never one the agent took into a turn. */
+/** A Stop took it back where Orca proves the agent never received it. */
 function withdrawnUnwritten(submission: AgentJournalSubmission): boolean {
   return (
     dispatchWasWithdrawn(submission) &&
     !submission.answeredInTurn &&
-    readAgentSessionFailureFact(submission.rejection)?.mayHaveReachedAgent !== true
+    readAgentSessionFailureFact(submission.rejection)?.neverReachedAgent === true
   )
 }
+
+// Raised by Orca before any byte reached the agent; any other kind may follow a provider write.
+const REFUSED_BEFORE_WRITE: ReadonlySet<SubmissionRejectionKind> = new Set([
+  'queueFull',
+  'writeFailed',
+  'attachmentInvalid',
+  'attachmentUnreadable',
+  'emptyMessage'
+])
 
 /** Refused before anything reached the agent: what it carried is owed again. */
 function refusedBeforeWrite(carrier: AgentJournalSubmission): boolean {
@@ -54,19 +68,15 @@ function refusedBeforeWrite(carrier: AgentJournalSubmission): boolean {
     return false
   }
   const { kind } = classifyDispatchRejection(carrier)
-  // A provider's own refusal may come after it recorded the input; a fact this build cannot
-  // place proves nothing either.
-  return (
-    kind !== undefined &&
-    kind !== 'providerRejected' &&
-    (kind !== 'cancelled' || withdrawnUnwritten(carrier))
-  )
+  return kind === 'cancelled'
+    ? withdrawnUnwritten(carrier)
+    : kind !== undefined && REFUSED_BEFORE_WRITE.has(kind)
 }
 
 /** The stopped messages owed to the agent, in the order they were sent. */
 export function agentSessionStoppedHistoryOwed(
   journal: StoppedHistoryJournal
-): AgentJournalSubmission[] {
+): OwedStoppedMessage[] {
   const byId = new Map(journal.submissions.map((entry) => [entry.clientMessageId, entry]))
   const covered = new Set<string>()
   for (const [carrierId, carried] of journal.carried) {
@@ -77,31 +87,34 @@ export function agentSessionStoppedHistoryOwed(
     }
   }
   return journal.submissions
-    .filter(
-      (entry) =>
-        entry.acceptedSequence !== undefined &&
-        entry.acceptedSequence > journal.clearSequence &&
-        entry.origin === 'client' &&
-        entry.source?.kind === 'user' &&
-        entry.queuedMessageId === undefined &&
-        !covered.has(entry.clientMessageId) &&
-        withdrawnUnwritten(entry) &&
-        isOrdinaryPersonMessage(journal.body(entry.clientMessageId))
+    .flatMap((submission) => {
+      if (
+        submission.acceptedSequence === undefined ||
+        submission.acceptedSequence <= journal.clearSequence ||
+        submission.origin !== 'client' ||
+        submission.source?.kind !== 'user' ||
+        submission.queuedMessageId !== undefined ||
+        covered.has(submission.clientMessageId) ||
+        !withdrawnUnwritten(submission)
+      ) {
+        return []
+      }
+      const body = journal.body(submission.clientMessageId)
+      return isOrdinaryPersonMessage(body) ? [{ submission, body }] : []
+    })
+    .sort(
+      (left, right) =>
+        (left.submission.acceptedSequence ?? 0) - (right.submission.acceptedSequence ?? 0)
     )
-    .sort((left, right) => (left.acceptedSequence ?? 0) - (right.acceptedSequence ?? 0))
 }
 
-/** Whether this send may carry stopped history: a person's ordinary message (a queued card's
- *  hand-off included) that is not a slash command, which only reads right as the prompt's start. */
+/** Whether this send may carry stopped history: a person's ordinary message, a queued card's
+ *  hand-off included. */
 export function agentSessionCanCarryStoppedHistory(
   submission: Pick<AgentJournalSubmission, 'source' | 'queuedMessageId'>,
   body: AgentJournalItemBody | null | undefined
 ): body is AgentJournalMessageItem {
   // A card's hand-off records no sender; its body's missing `from` says it is the person's.
   const persons = submission.source?.kind === 'user' || submission.queuedMessageId !== undefined
-  if (!persons || !isOrdinaryPersonMessage(body)) {
-    return false
-  }
-  const firstText = body.blocks.find((block) => block.type === 'text' && block.text.length > 0)
-  return !(firstText?.type === 'text' && firstText.text.startsWith('/'))
+  return persons && isOrdinaryPersonMessage(body)
 }

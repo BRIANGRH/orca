@@ -176,7 +176,7 @@ const WITHDRAWN = [
     clientMessageId: 'client-b',
     state: 'rejected',
     reason: DISPATCH_REJECTED_CANCELLED,
-    rejection: { kind: 'cancelled' }
+    rejection: { kind: 'cancelled', neverReachedAgent: true }
   }
 ]
 

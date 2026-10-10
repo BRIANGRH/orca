@@ -191,13 +191,14 @@ export async function piStoppedHistoryFits(
  *  history stopped fitting since `piStoppedHistoryFits`: history never refuses a send. */
 export async function preparePiRpcPromptWithHistory(
   body: AgentJournalMessageItem,
-  history: readonly AgentJournalMessageItem[] = []
+  history: readonly AgentJournalMessageItem[],
+  reportLeftOut: (error: unknown) => void
 ): Promise<PiRpcPrompt> {
   if (history.length > 0) {
     try {
       return await preparePiRpcPrompt(withStoppedHistory(body, history))
     } catch (error) {
-      console.warn('[pi-dispatch] stopped history left out:', error)
+      reportLeftOut(error)
     }
   }
   return preparePiRpcPrompt(body)

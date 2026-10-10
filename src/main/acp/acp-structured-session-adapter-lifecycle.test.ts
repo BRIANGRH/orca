@@ -109,7 +109,12 @@ describe('ACP Stop names a turn', () => {
     expect(rig.sent('session/cancel')).toHaveLength(2)
     expect(rig.settled).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ clientMessageId: 'follow-up', state: 'rejected' })
+        // Held by Orca, never prompted: proof it never reached the agent.
+        expect.objectContaining({
+          clientMessageId: 'follow-up',
+          state: 'rejected',
+          rejection: { kind: 'cancelled', neverReachedAgent: true }
+        })
       ])
     )
   })

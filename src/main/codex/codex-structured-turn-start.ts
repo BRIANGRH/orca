@@ -22,10 +22,7 @@ import {
   codexDispatchRejection,
   codexTurnEndRejection
 } from './codex-structured-turn-end-settlement'
-import {
-  codexStoppedHistoryContext,
-  codexStoppedHistoryInputMessages
-} from './codex-structured-stopped-history'
+import { withStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 // Writing a Codex turn and learning which message landed where, which are not
 // the same event. The answer proves admission and nothing about identity, which
@@ -83,17 +80,29 @@ function turnInputFor(body: AgentJournalMessageItem): Record<string, unknown>[] 
 type CodexTurnInput = {
   clientMessageId: string
   body: AgentJournalMessageItem
-  /** Stopped messages riding in this same request (`codex-structured-stopped-history.ts`). */
+  /** Stopped messages riding in this same request as leading framed input. */
   history?: readonly AgentJournalMessageItem[]
   timeoutMs?: number
 }
 
-/** The send's input, led by the stopped messages that ride as input: all of them `inline`. */
-function turnInputWithHistory(input: CodexTurnInput, inline: boolean): Record<string, unknown>[] {
-  return [
-    ...codexStoppedHistoryInputMessages(input.history ?? [], inline).flatMap(turnInputFor),
-    ...turnInputFor(input.body)
-  ]
+/** The send's input, led by its stopped history. */
+function turnInputWithHistory(input: CodexTurnInput): Record<string, unknown>[] {
+  return turnInputFor(withStoppedHistory(input.body, input.history ?? []))
+}
+
+// Codex's `MAX_USER_INPUT_TEXT_CHARS` (codex-rs/protocol/src/user_input.rs), summed over text items.
+const CODEX_MAX_INPUT_TEXT_CHARS = 1 << 20
+
+/** Within Codex's text limit; UTF-16 length never undercounts Codex's characters. */
+export function codexStoppedHistoryFits(
+  body: AgentJournalMessageItem,
+  history: readonly AgentJournalMessageItem[]
+): boolean {
+  const chars = turnInputFor(withStoppedHistory(body, history)).reduce(
+    (sum, item) => sum + (typeof item.text === 'string' ? item.text.length : 0),
+    0
+  )
+  return chars <= CODEX_MAX_INPUT_TEXT_CHARS
 }
 
 /**
@@ -113,7 +122,7 @@ async function steerCodexTurn(
         threadId: host.threadId,
         expectedTurnId,
         clientUserMessageId: input.clientMessageId,
-        input: turnInputWithHistory(input, true)
+        input: turnInputWithHistory(input)
       },
       { timeoutMs: input.timeoutMs }
     )
@@ -154,31 +163,17 @@ export async function startCodexTurn(
   if (steered) {
     return steered
   }
-  const context = codexStoppedHistoryContext(input.clientMessageId, input.history ?? [])
-  const start = (inline: boolean) =>
-    host.connection.request(
-      'turn/start',
-      {
-        threadId: host.threadId,
-        clientUserMessageId: input.clientMessageId,
-        input: turnInputWithHistory(input, inline),
-        ...(context && !inline ? { additionalContext: context } : {}),
-        // Codex omits a tier the model does not list.
-        ...Object.fromEntries(host.options)
-      },
-      { timeoutMs: input.timeoutMs }
-    )
-  let answer: unknown
-  try {
-    answer = await start(false)
-  } catch (error) {
-    // A Codex without `additionalContext` refuses the request before taking any input, so the
-    // stopped messages ride as input instead: history never refuses a send.
-    if (!context || !isCodexAppServerRequestError(error)) {
-      throw error
-    }
-    answer = await start(true)
-  }
+  const answer = await host.connection.request(
+    'turn/start',
+    {
+      threadId: host.threadId,
+      clientUserMessageId: input.clientMessageId,
+      input: turnInputWithHistory(input),
+      // Codex omits a tier the model does not list.
+      ...Object.fromEntries(host.options)
+    },
+    { timeoutMs: input.timeoutMs }
+  )
   return { turnId: readCodexTurnId(answer), via: 'start' }
 }
 

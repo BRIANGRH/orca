@@ -60,7 +60,10 @@ export function observeClaudeCommandLifecycle(
     rejectClaudeDispatchWaiters(
       session,
       [waiter.sentUuid],
-      agentSessionFailureFact(UNSTARTED_VERDICT[state]),
+      agentSessionFailureFact(
+        UNSTARTED_VERDICT[state],
+        state === 'cancelled' ? { neverReachedAgent: true } : {}
+      ),
       onSettledLate
     )
   }

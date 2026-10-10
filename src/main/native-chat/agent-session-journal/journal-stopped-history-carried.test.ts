@@ -92,9 +92,9 @@ describe('a handover row naming the stopped messages it carries', () => {
     expect(parsed).toMatchObject({ ok: true, row: { kind: 'dispatch', state: 'pending' } })
   })
 
-  it('publishes nothing new: no carried list, and the Codex mark is stripped by the client schema', () => {
+  it('publishes nothing new: no carried list, and the never-reached mark is stripped by the client schema', () => {
     const withdrawn = agentSessionFailureWords(
-      agentSessionFailureFact('cancelled', { mayHaveReachedAgent: true }),
+      agentSessionFailureFact('cancelled', { neverReachedAgent: true }),
       { surface: 'rejection' }
     )
     const state = fold([

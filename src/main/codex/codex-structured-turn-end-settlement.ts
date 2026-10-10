@@ -112,11 +112,7 @@ export function codexTurnEndRejection(
   account?: CodexSession['account']
 ): AgentJournalDispatchRejection | null {
   if (end.status === 'interrupted') {
-    // Codex took it into a turn: it may be in the thread though the turn never ran it.
-    return agentSessionFailureWords(
-      agentSessionFailureFact('cancelled', { mayHaveReachedAgent: true }),
-      { surface: 'rejection' }
-    )
+    return agentSessionFailureWords(agentSessionFailureFact('cancelled'), { surface: 'rejection' })
   }
   if (end.status === 'failed') {
     return codexDispatchRejection(

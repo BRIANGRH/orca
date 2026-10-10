@@ -15,12 +15,16 @@ import {
 } from '../../claude/claude-structured-dispatch-content'
 import { acpDispatchPromptWithHistory, acpStoppedHistoryFits } from '../../acp/acp-prompt-content'
 import { piStoppedHistoryFits, preparePiRpcPromptWithHistory } from '../../pi/rpc-prompt'
-import { startCodexTurn, type CodexTurnHost } from '../../codex/codex-structured-turn-start'
+import {
+  codexStoppedHistoryFits,
+  startCodexTurn,
+  type CodexTurnHost
+} from '../../codex/codex-structured-turn-start'
 import { createCodexDispatchEchoes } from '../../codex/codex-structured-dispatch-echo'
-import { CodexAppServerRequestError } from '../../codex/codex-app-server-request-error'
 import {
   STOPPED_MESSAGE_FRAME,
-  stoppedMessageContext
+  stoppedMessageContext,
+  stoppedMessageWithoutImages
 } from './structured-agent-session-stopped-history-frame'
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
@@ -51,13 +55,26 @@ describe('the shared frame', () => {
     expect(stoppedMessageContext(STOPPED)).toBe(
       `<stopped-message>\n${STOPPED_MESSAGE_FRAME}\ndelete the build folder\n</stopped-message>`
     )
-    expect(stoppedMessageContext(STOPPED_WITH_IMAGE)).toContain('It had 1 image(s)')
+    expect(stoppedMessageContext(STOPPED_WITH_IMAGE)).toContain('It had 1 image(s), attached ahead')
+  })
+
+  it('says when a stopped message rides without its images', () => {
+    const textOnly = stoppedMessageWithoutImages(STOPPED_WITH_IMAGE)
+    expect(textOnly.blocks.some((block) => block.type === 'image-ref')).toBe(false)
+    expect(stoppedMessageContext(textOnly)).toBe(
+      `<stopped-message>\n${STOPPED_MESSAGE_FRAME}\nIt had 1 image(s), not attached.\nlook at this\n</stopped-message>`
+    )
+    expect(stoppedMessageWithoutImages(STOPPED)).toBe(STOPPED)
   })
 })
 
 describe('Claude: one user frame', () => {
   it('leads with the framed history and keeps the send last, as the prompt', async () => {
-    const content = await claudeDispatchContentWithHistory(NEXT, [STOPPED, STOPPED_WITH_IMAGE])
+    const content = await claudeDispatchContentWithHistory(
+      NEXT,
+      [STOPPED, STOPPED_WITH_IMAGE],
+      () => {}
+    )
 
     expect(content.map((part) => field(part, 'type'))).toEqual(['image', 'text'])
     const prompt = String(field(content.at(-1), 'text'))
@@ -67,12 +84,14 @@ describe('Claude: one user frame', () => {
     expect(claudeDispatchInvokesSlashCommand(content)).toBe(false)
   })
 
-  it('does not fit past its image limit, and then sends the send alone', async () => {
+  it('does not fit past its image limit, and then sends the send alone, reported', async () => {
     const many = message(...Array.from({ length: 21 }, () => image))
+    const report = vi.fn()
     expect(await claudeStoppedHistoryFits(NEXT, [many])).toBe(false)
-    expect(await claudeDispatchContentWithHistory(NEXT, [many])).toEqual([
+    expect(await claudeDispatchContentWithHistory(NEXT, [many], report)).toEqual([
       { type: 'text', text: 'what did I send?' }
     ])
+    expect(report).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -89,65 +108,43 @@ describe('Codex: the same turn/start', () => {
     }
   }
 
-  it('sends text-only stopped messages as untrusted context, keyed in send order, and image ones as leading input', async () => {
-    const request = vi.fn<Request>(async () => ({ turn: { id: 'turn-1' } }))
+  it('leads the input with every stopped message, images first, on a start and on a steer', async () => {
     const second = message(text('second'))
-    await startCodexTurn(host(request), {
-      clientMessageId: 'next-1',
-      body: NEXT,
-      history: [STOPPED, STOPPED_WITH_IMAGE, second]
-    })
-
-    const [method, params] = request.mock.calls[0]!
-    expect(method).toBe('turn/start')
-    const context = params?.additionalContext
-    expect(context).toEqual({
-      'orca_stopped_next-1_000': { kind: 'untrusted', value: stoppedMessageContext(STOPPED) },
-      'orca_stopped_next-1_002': { kind: 'untrusted', value: stoppedMessageContext(second) }
-    })
-    // Codex reads the keys in sorted order: that order is send order.
-    const keys = Object.keys(context ?? {})
-    expect([...keys].sort()).toEqual(keys)
-    expect(params?.input).toEqual([
+    const history = [STOPPED, STOPPED_WITH_IMAGE, second]
+    const expected = [
       { type: 'localImage', path: png },
-      { type: 'text', text: stoppedMessageContext(STOPPED_WITH_IMAGE) },
+      {
+        type: 'text',
+        text: [STOPPED, STOPPED_WITH_IMAGE, second].map(stoppedMessageContext).join('\n\n')
+      },
       { type: 'text', text: 'what did I send?' }
-    ])
-  })
-
-  it('a Codex that refuses the field takes them as leading input in a second request', async () => {
-    const request = vi
-      .fn<Request>()
-      .mockRejectedValueOnce(new CodexAppServerRequestError('turn/start', -32602, 'unknown field'))
-      .mockResolvedValueOnce({ turn: { id: 'turn-1' } })
-    await startCodexTurn(host(request), {
-      clientMessageId: 'next-1',
-      body: NEXT,
-      history: [STOPPED]
-    })
-
-    expect(request).toHaveBeenCalledTimes(2)
-    const params = request.mock.calls[1]![1]
-    expect(params?.additionalContext).toBeUndefined()
-    expect(params?.input).toEqual([
-      { type: 'text', text: stoppedMessageContext(STOPPED) },
-      { type: 'text', text: 'what did I send?' }
-    ])
-  })
-
-  it('a send that steers a running turn takes them as leading input', async () => {
-    const request = vi.fn<Request>(async () => ({ turnId: 'turn-1' }))
+    ]
+    const start = vi.fn<Request>(async () => ({ turn: { id: 'turn-1' } }))
+    await startCodexTurn(host(start), { clientMessageId: 'next-1', body: NEXT, history })
+    const steer = vi.fn<Request>(async () => ({ turnId: 'turn-1' }))
     await startCodexTurn(
-      { ...host(request), activeTurnIds: new Set(['turn-1']) },
-      { clientMessageId: 'next-1', body: NEXT, history: [STOPPED] }
+      { ...host(steer), activeTurnIds: new Set(['turn-1']) },
+      { clientMessageId: 'next-2', body: NEXT, history }
     )
 
-    const [method, params] = request.mock.calls[0]!
-    expect(method).toBe('turn/steer')
-    expect(params?.input).toEqual([
-      { type: 'text', text: stoppedMessageContext(STOPPED) },
-      { type: 'text', text: 'what did I send?' }
-    ])
+    for (const [request, method] of [
+      [start, 'turn/start'],
+      [steer, 'turn/steer']
+    ] as const) {
+      expect(request).toHaveBeenCalledTimes(1)
+      const [sent, params] = request.mock.calls[0]!
+      expect(sent).toBe(method)
+      expect(params?.additionalContext).toBeUndefined()
+      expect(params?.input).toEqual(expected)
+    }
+  })
+
+  it("fits only within Codex's text limit, counted across the whole input", () => {
+    const half = message(text('x'.repeat(600_000)))
+    expect(codexStoppedHistoryFits(NEXT, [half])).toBe(true)
+    expect(codexStoppedHistoryFits(NEXT, [half, half])).toBe(false)
+    // Images do not count toward it.
+    expect(codexStoppedHistoryFits(NEXT, [STOPPED_WITH_IMAGE])).toBe(true)
   })
 })
 
@@ -162,7 +159,11 @@ describe('ACP: leading framed blocks', () => {
   const textOnly = { spec: { agent: 'opencode' as const }, connection }
 
   it('leads the prompt with the history images and framed text, then the send', async () => {
-    const blocks = await acpDispatchPromptWithHistory(NEXT, [STOPPED_WITH_IMAGE], session)
+    const blocks = await acpDispatchPromptWithHistory(
+      { body: NEXT, history: [STOPPED_WITH_IMAGE] },
+      session,
+      () => {}
+    )
 
     expect(blocks).toEqual([
       { type: 'image', mimeType: 'image/png', data: PNG.toString('base64') },
@@ -171,17 +172,33 @@ describe('ACP: leading framed blocks', () => {
     ])
   })
 
-  it('does not fit an image the agent cannot take, and sends the send alone', async () => {
+  it('does not fit an image the agent cannot take, and sends the send alone, reported', async () => {
+    const report = vi.fn()
     expect(await acpStoppedHistoryFits(NEXT, [STOPPED_WITH_IMAGE], textOnly)).toBe(false)
-    expect(await acpDispatchPromptWithHistory(NEXT, [STOPPED_WITH_IMAGE], textOnly)).toEqual([
-      { type: 'text', text: 'what did I send?' }
-    ])
+    expect(
+      await acpDispatchPromptWithHistory(
+        { body: NEXT, history: [STOPPED_WITH_IMAGE] },
+        textOnly,
+        report
+      )
+    ).toEqual([{ type: 'text', text: 'what did I send?' }])
+    expect(report).toHaveBeenCalledTimes(1)
+  })
+
+  it('fits once the image is left out', async () => {
+    expect(
+      await acpStoppedHistoryFits(NEXT, [stoppedMessageWithoutImages(STOPPED_WITH_IMAGE)], textOnly)
+    ).toBe(true)
   })
 })
 
 describe('Pi: a framed text prefix and the images', () => {
   it('prefixes the framed history and sends its images', async () => {
-    const prompt = await preparePiRpcPromptWithHistory(NEXT, [STOPPED, STOPPED_WITH_IMAGE])
+    const prompt = await preparePiRpcPromptWithHistory(
+      NEXT,
+      [STOPPED, STOPPED_WITH_IMAGE],
+      () => {}
+    )
 
     expect(prompt.message).toBe(
       `${stoppedMessageContext(STOPPED)}\n\n${stoppedMessageContext(STOPPED_WITH_IMAGE)}\nwhat did I send?`
@@ -194,6 +211,10 @@ describe('Pi: a framed text prefix and the images', () => {
   it('does not fit past its image limit, and sends the send alone', async () => {
     const many = message(...Array.from({ length: 21 }, () => image))
     expect(await piStoppedHistoryFits(NEXT, [many])).toBe(false)
-    expect((await preparePiRpcPromptWithHistory(NEXT, [many])).message).toBe('what did I send?')
+    const report = vi.fn()
+    expect((await preparePiRpcPromptWithHistory(NEXT, [many], report)).message).toBe(
+      'what did I send?'
+    )
+    expect(report).toHaveBeenCalledTimes(1)
   })
 })

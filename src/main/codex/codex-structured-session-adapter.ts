@@ -1,5 +1,4 @@
 import * as codexRewind from './codex-structured-rewind'
-import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { AgentSessionBackgroundTaskState } from '../../shared/agent-session-wire'
 import { isCodexAppServerRequestError } from './codex-app-server-connection'
 import type {
@@ -10,7 +9,11 @@ import type {
   StructuredAgentSessionSetOptionInput
 } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import type { CodexJournalTranslationAdmission } from './codex-structured-journal-translation'
-import { dispatchCodexTurn, isCodexTurnOptionKey } from './codex-structured-turn-start'
+import {
+  codexStoppedHistoryFits,
+  dispatchCodexTurn,
+  isCodexTurnOptionKey
+} from './codex-structured-turn-start'
 import { agentSessionFailureFact, providerDiagnosticOf } from '../../shared/agent-session-failure'
 import { supportsCodexStructuredLocation } from './codex-structured-location-support'
 import { CodexStructuredSessionTeardown } from './codex-structured-session-teardown'
@@ -209,15 +212,9 @@ export class CodexStructuredSessionAdapter implements StructuredAgentSessionAdap
         turnId
       )
 
-  async dispatch(input: {
-    sessionId: string
-    clientMessageId: string
-    body: AgentJournalMessageItem
-    fence: number
-    requestedAt?: number
-    beforeDispatch?: () => Promise<void>
-    history?: readonly AgentJournalMessageItem[]
-  }): Promise<AgentSessionDispatchOutcome> {
+  async dispatch(
+    input: Parameters<StructuredAgentSessionAdapter['dispatch']>[0]
+  ): Promise<AgentSessionDispatchOutcome> {
     const session = this.session(input.sessionId)
     session.dispatchPending = true
     try {
@@ -227,6 +224,9 @@ export class CodexStructuredSessionAdapter implements StructuredAgentSessionAdap
       session.dispatchPending = false
     }
   }
+
+  historyFits: NonNullable<StructuredAgentSessionAdapter['historyFits']> = async (input) =>
+    codexStoppedHistoryFits(input.body, input.history)
 
   cancelTurn: StructuredAgentSessionAdapter['cancelTurn'] = (request) =>
     cancelCodexStructuredTurn({
