@@ -65,10 +65,14 @@ describe('the permission mode picker', () => {
       {
         value: 'ask',
         label: 'Ask for approval',
-        description: 'Works inside the workspace sandbox; asks before going beyond it'
+        description: 'Edits files and runs commands in this workspace; asks before anything else'
       },
       { value: 'auto', label: 'Approve for me', description: 'Reviews approval requests for you' },
-      { value: 'full-access', label: 'Full access', description: 'Never asks; no sandbox' }
+      {
+        value: 'full-access',
+        label: 'Full access',
+        description: 'Never asks; can edit any file and use the network'
+      }
     ])
   })
 

@@ -136,9 +136,7 @@ describe('NativeChatPermissionModePicker', () => {
       within(menu).getByText('Approves file edits and file commands; asks for the rest')
     ).toBeTruthy()
     expect(within(menu).getByText('Reviews approval requests for you')).toBeTruthy()
-    expect(
-      within(menu).getByText('Skips approval prompts; your Claude rules and sandbox still apply')
-    ).toBeTruthy()
+    expect(within(menu).getByText('Never asks before edits or commands')).toBeTruthy()
   })
 
   it("describes Codex's modes as Codex runs them", () => {
@@ -149,19 +147,19 @@ describe('NativeChatPermissionModePicker', () => {
     )
     expect(screen.queryByText('Accept edits')).toBeNull()
     expect(option('ask').textContent).toContain(
-      'Works inside the workspace sandbox; asks before going beyond it'
+      'Edits files and runs commands in this workspace; asks before anything else'
     )
-    expect(option('full-access').textContent).toContain('Never asks; no sandbox')
+    expect(option('full-access').textContent).toContain(
+      'Never asks; can edit any file and use the network'
+    )
   })
 
   it('describes both agents in the new-chat setting', () => {
     render(<NativeChatPermissionModePicker {...props({ agent: null })} />)
     expect(option('ask').textContent).toContain(
-      'Claude asks unless your settings allow it; Codex asks beyond the workspace sandbox'
+      "Asks before edits or commands it isn't already allowed to make"
     )
-    expect(option('full-access').textContent).toContain(
-      'Skips approval prompts; Codex also runs without its sandbox'
-    )
+    expect(option('full-access').textContent).toContain('Never asks before edits or commands')
   })
 
   it('names the current mode on the pill, by category for assistive tech', () => {

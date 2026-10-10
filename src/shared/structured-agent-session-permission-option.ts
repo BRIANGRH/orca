@@ -25,13 +25,13 @@ const MODE_COPY: Readonly<Record<AgentChatPermissionMode, { label: string; descr
     auto: { label: 'Approve for me', description: 'Reviews approval requests for you' },
     'full-access': {
       label: 'Full access',
-      description: 'Skips approval prompts; your Claude rules and sandbox still apply'
+      description: 'Never asks before edits or commands'
     }
   }
 
 const CODEX_DESCRIPTIONS: Partial<Record<AgentChatPermissionMode, string>> = {
-  ask: 'Works inside the workspace sandbox; asks before going beyond it',
-  'full-access': 'Never asks; no sandbox'
+  ask: 'Edits files and runs commands in this workspace; asks before anything else',
+  'full-access': 'Never asks; can edit any file and use the network'
 }
 
 /** Only decides whether the menu offers Approve for me; unknown reads as no. */

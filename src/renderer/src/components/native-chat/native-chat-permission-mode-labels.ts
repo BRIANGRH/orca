@@ -33,13 +33,13 @@ export function nativeChatPermissionModeDescription(
       if (agent === 'codex') {
         return translate(
           'components.native-chat.composer.permissionAskCodexDescription',
-          'Works inside the workspace sandbox; asks before going beyond it'
+          'Edits files and runs commands in this workspace; asks before anything else'
         )
       }
       if (agent !== 'claude') {
         return translate(
           'components.native-chat.composer.permissionAskSharedDescription',
-          'Claude asks unless your settings allow it; Codex asks beyond the workspace sandbox'
+          "Asks before edits or commands it isn't already allowed to make"
         )
       }
       return translate(
@@ -60,18 +60,18 @@ export function nativeChatPermissionModeDescription(
       if (agent === 'codex') {
         return translate(
           'components.native-chat.composer.permissionFullAccessCodexDescription',
-          'Never asks; no sandbox'
+          'Never asks; can edit any file and use the network'
         )
       }
       if (agent !== 'claude') {
         return translate(
           'components.native-chat.composer.permissionFullAccessSharedDescription',
-          'Skips approval prompts; Codex also runs without its sandbox'
+          'Never asks before edits or commands'
         )
       }
       return translate(
         'components.native-chat.composer.permissionFullAccessDescription',
-        'Skips approval prompts; your Claude rules and sandbox still apply'
+        'Never asks before edits or commands'
       )
   }
 }
