@@ -10,6 +10,7 @@ import type {
 import { agentJournalItemKey } from '../../shared/agent-session-journal-item-key'
 import { readAgentJournalTurn } from '../../shared/agent-session-turn-record'
 import { agentSessionStoppedHistoryOwed } from '../../shared/agent-session-stopped-history'
+import { agentSessionFailureFact } from '../../shared/agent-session-failure'
 import { DISPATCH_REJECTED_CANCELLED } from '../../shared/structured-agent-session-dispatch-rejection'
 import type { ClaudeStructuredSessionAdapterDeps } from './claude-structured-session-state'
 import {
@@ -235,9 +236,8 @@ describe('Stop with a follow-up Claude queued behind the running turn', () => {
 
     expect(owed(swept)).toEqual([])
     // Only proof that it never reached Claude would make it owed.
-    expect(owed({ ...swept, rejection: { kind: 'cancelled', neverReachedAgent: true } })).toEqual([
-      'client-b'
-    ])
+    const marked = agentSessionFailureFact('cancelled', { neverReachedAgent: true })
+    expect(owed({ ...swept, rejection: marked })).toEqual(['client-b'])
   })
 
   it('keeps what a turn advertised when a later frame names nothing', async () => {
