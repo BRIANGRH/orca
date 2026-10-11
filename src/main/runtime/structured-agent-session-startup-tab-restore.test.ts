@@ -174,7 +174,7 @@ function startupRuntime(options: { afterInstall?: () => void; profileChats?: str
     ensureStructuredAgentSessionHost(): Promise<unknown>
     refreshMobileSessionPtyRecords(): Promise<Set<string> | null>
     mobileSessionTabsByWorktree: Map<string, RuntimeMobileSessionTabsSnapshot>
-    store: { getWorkspaceSession: () => unknown }
+    store: { getWorkspaceSession: () => unknown; getRepo: () => undefined }
   }
   internal.hasPersistedStructuredAgentSessionStore = () => true
   internal.ensureStructuredAgentSessionHost = async () => {
@@ -194,6 +194,7 @@ function startupRuntime(options: { afterInstall?: () => void; profileChats?: str
   internal.refreshMobileSessionPtyRecords = async () => new Set<string>()
   // A legacy profile's saved chat tabs, which a store with no tab index restores from.
   internal.store = {
+    getRepo: () => undefined,
     getWorkspaceSession: () => ({
       activeRepoId: null,
       activeWorktreeId: 'workspace-1',

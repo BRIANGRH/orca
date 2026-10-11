@@ -174,8 +174,17 @@ it('does not treat a legacy unattributed request as originating desktop intent',
 
 it('carries origin through the later listed-chat branch for a custom tab id', async () => {
   await createChat(HOST_TEST_SESSION, 'custom-chat-tab')
+  const saved = await snapshot()
+  runtime.syncWindowGraph(1, {
+    tabs: [],
+    leaves: [],
+    mobileSessionTabs: [
+      { ...saved, tabs: saved.tabs.map((tab) => ({ ...tab, id: 'custom-chat-tab' })) }
+    ]
+  })
   const { webContents } = attachWindow(true)
-  expect(await closeChat(desktop, 'user', 'custom-chat-tab')).toMatchObject({
+  const response = await closeChat(desktop, 'user', 'custom-chat-tab')
+  expect(response, JSON.stringify(response)).toMatchObject({
     ok: true,
     result: { closed: true }
   })
