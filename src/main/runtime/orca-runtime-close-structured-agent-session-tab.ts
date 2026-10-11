@@ -15,8 +15,13 @@ import { applyBrowserSessionTabSelection } from './browser-session-tab-selection
 import { retireStructuredAgentSessionTabFrom } from './structured-agent-session-tab-retirement'
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import { AGENT_SESSION_CLOSE_PENDING_CODE } from '../../shared/session-tab-close'
+import { structuredAgentSessionIdForTabClose } from './structured-agent-session-tab-close'
 
 export class OrcaRuntimeWithCloseStructuredAgentSessionTab extends OrcaRuntimeWithCloseMobileSessionTab {
+  resolveStructuredAgentSessionTabCloseSessionId(tabId: string): string | null {
+    return structuredAgentSessionIdForTabClose(this, tabId)
+  }
+
   /** Establish chat ownership without startup's terminal census; an unreadable store is not empty. */
   async ensureStructuredAgentSessionHostForClose(): Promise<void> {
     if (getStructuredAgentSessionHost() || !this.hasPersistedStructuredAgentSessionStore()) {

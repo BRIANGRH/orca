@@ -297,6 +297,7 @@ export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaR
         },
         (error) => {
           this.structuredAgentSessionTabRestorePromise = null
+          console.warn('[runtime] restoring saved chat tabs failed', error)
           throw error
         }
       )
@@ -304,6 +305,18 @@ export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaR
   }
 
   prepareStructuredAgentSessionStartupRestoration(): Promise<void> {
+    if (!this.hasPersistedStructuredAgentSessionStore()) {
+      return this.prepareStructuredAgentSessionStartupRestorationStage()
+    }
+    const finished = this.restoreStructuredAgentSessionTabs().catch(() => undefined)
+    return this.prepareStructuredAgentSessionStartupRestorationStage().catch(async (error) => {
+      // A retry must start a fresh full operation after the failed participant has ended.
+      await finished
+      throw error
+    })
+  }
+
+  protected prepareStructuredAgentSessionStartupRestorationStage(): Promise<void> {
     this.structuredAgentSessionStartupRestorePromise ??=
       this.prepareStructuredAgentSessionStartupRestorationOnce().catch((error) => {
         this.structuredAgentSessionStartupRestorePromise = null

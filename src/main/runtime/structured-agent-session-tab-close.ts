@@ -13,6 +13,7 @@ import type {
 } from '../../shared/runtime-types'
 import {
   AGENT_SESSION_WORKTREE_MISMATCH_CODE,
+  SESSION_TAB_CLOSE_CANCELED_ERROR,
   SESSION_TAB_NOT_FOUND_ERROR
 } from '../../shared/session-tab-close'
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
@@ -68,6 +69,59 @@ export type StructuredAgentSessionTabCloseOptions = {
   reason?: RuntimeSessionTabCloseReason
   structuredCloseRequest?: StructuredAgentSessionCloseRequest
   originatingWindowId?: number
+}
+
+/** Owned aliases take precedence over the spelling of an unlisted canonical id. */
+export function structuredAgentSessionIdForTabClose(
+  host: Pick<StructuredAgentSessionTabCloseHost, 'mobileSessionTabsByWorktree'>,
+  tabId: string
+): string | null {
+  return (
+    ownedStructuredAgentSessionIdForTab(host, tabId) ?? structuredAgentSessionIdFromHostTabId(tabId)
+  )
+}
+
+function ownedStructuredAgentSessionIdForTab(
+  host: Pick<StructuredAgentSessionTabCloseHost, 'mobileSessionTabsByWorktree'>,
+  tabId: string
+): string | null {
+  const store = getStructuredAgentSessionHost()?.deps.store
+  const owned = store?.getSessionIdForTab?.(tabId)
+  if (owned) {
+    return owned
+  }
+  for (const snapshot of host.mobileSessionTabsByWorktree.values()) {
+    const tab = snapshot.tabs.find((candidate) => candidate.id === tabId)
+    if (tab?.type === 'agent-session') {
+      return tab.sessionId
+    }
+  }
+  return null
+}
+
+function assertOriginalCloseTarget(
+  host: StructuredAgentSessionTabCloseHost,
+  tabId: string,
+  request?: StructuredAgentSessionCloseRequest,
+  listedSessionId?: string
+): void {
+  if (!request) {
+    return
+  }
+  const current = ownedStructuredAgentSessionIdForTab(host, tabId)
+  const retargeted = [...host.mobileSessionTabsByWorktree.values()].some((snapshot) =>
+    snapshot.tabs.some(
+      (tab) =>
+        tab.id === tabId && tab.type === 'agent-session' && tab.sessionId !== request.sessionId
+    )
+  )
+  if (
+    retargeted ||
+    (listedSessionId !== undefined && listedSessionId !== request.sessionId) ||
+    (current !== null && current !== request.sessionId)
+  ) {
+    throw new Error(SESSION_TAB_CLOSE_CANCELED_ERROR)
+  }
 }
 
 /**
@@ -137,6 +191,7 @@ export async function closeListedStructuredAgentSessionTab(
   tab: RuntimeMobileSessionAgentTab,
   options: StructuredAgentSessionTabCloseOptions
 ): Promise<void> {
+  assertOriginalCloseTarget(host, tab.id, options.structuredCloseRequest, tab.sessionId)
   if (host.notifier?.closeSessionTab) {
     try {
       // Why: a reopened chat's window tab id is not derivable from its session; the window maps ours.
@@ -152,6 +207,7 @@ export async function closeListedStructuredAgentSessionTab(
       }
     }
   }
+  assertOriginalCloseTarget(host, tab.id, options.structuredCloseRequest, tab.sessionId)
   await closeStructuredAgentSessionOnHost(
     host,
     tab.sessionId,
@@ -174,6 +230,7 @@ export async function closeStructuredAgentSessionTabForUser(
   const cause = structuredAgentSessionTabCloseCause(options.reason)
   const request = options.structuredCloseRequest
   await host.ensureStructuredAgentSessionHostForClose()
+  assertOriginalCloseTarget(host, tabId, request)
   const tab = host.mobileSessionTabsByWorktree
     .get(worktreeId)
     ?.tabs.find(
@@ -184,7 +241,7 @@ export async function closeStructuredAgentSessionTabForUser(
     await closeListedStructuredAgentSessionTab(host, worktreeId, tab, options)
     return
   }
-  const sessionId = structuredAgentSessionIdFromHostTabId(tabId)
+  const sessionId = request?.sessionId ?? structuredAgentSessionIdFromHostTabId(tabId)
   if (sessionId === null) {
     throw new Error('tab_not_found')
   }

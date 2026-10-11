@@ -15,7 +15,6 @@ import {
   getStructuredAgentSessionClosesInFlight,
   type StructuredAgentSessionCloseRequest
 } from '../../structured-agent-session-closes-in-flight'
-import { structuredAgentSessionIdFromHostTabId } from '../../structured-agent-session-tab-close'
 
 export const SESSION_TAB_CLOSE_METHODS = [
   defineMethod({
@@ -23,7 +22,7 @@ export const SESSION_TAB_CLOSE_METHODS = [
     permission: 'workspace',
     params: CloseTab,
     handler: (params, context) => {
-      const sessionId = structuredAgentSessionIdFromHostTabId(params.tabId)
+      const sessionId = context.runtime.resolveStructuredAgentSessionTabCloseSessionId(params.tabId)
       // Why on arrival: a reveal of this chat that lands during any await below must wait for it.
       return sessionId === null
         ? closeSessionTab(params, context)
@@ -100,7 +99,7 @@ async function closeSessionTab(
   context: RpcContext,
   structuredCloseRequest?: StructuredAgentSessionCloseRequest
 ): Promise<RuntimeMobileSessionTabCloseResult> {
-  await admitRemoteSessionTabClose(params, context)
+  await admitRemoteSessionTabClose(params, context, structuredCloseRequest?.sessionId)
   const requiresIntent =
     context.clientKind === undefined ||
     (context.clientKind === 'runtime' &&

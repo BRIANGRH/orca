@@ -67,7 +67,13 @@ describe('structured session cold restoration', () => {
     const refresh = vi.fn(async () => new Set<string>())
     const ensureHost = vi.fn(async () => undefined)
     const reconcileRestartLeases = vi.fn(async () => undefined)
-    const restoreReadableSessions = vi.fn(async () => undefined)
+    let finishHistory!: () => void
+    const restoreReadableSessions = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishHistory = resolve
+        })
+    )
     const internal = runtime as unknown as {
       hasPersistedStructuredAgentSessionStore(): boolean
       refreshMobileSessionPtyRecords(): Promise<Set<string> | null>
@@ -76,14 +82,21 @@ describe('structured session cold restoration', () => {
     internal.hasPersistedStructuredAgentSessionStore = () => true
     internal.refreshMobileSessionPtyRecords = refresh
     internal.ensureStructuredAgentSessionHost = ensureHost
-    setStructuredAgentSessionHost({ reconcileRestartLeases, restoreReadableSessions } as never)
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the preparation and completion paths read only these host methods; index reads are optional.
+    setStructuredAgentSessionHost({
+      reconcileRestartLeases,
+      restoreReadableSessions,
+      listSessionTabs: () => []
+    } as never)
 
     await runtime.prepareStructuredAgentSessionStartupRestoration()
 
     expect(ensureHost).toHaveBeenCalledOnce()
     expect(refresh).toHaveBeenCalledOnce()
     expect(reconcileRestartLeases).toHaveBeenCalledOnce()
-    expect(restoreReadableSessions).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(restoreReadableSessions).toHaveBeenCalledOnce())
+    finishHistory()
+    await runtime.restoreStructuredAgentSessionTabs()
   })
 
   it('loads records, inventories PTYs, restores ownership, then projects tabs exactly once', async () => {

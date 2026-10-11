@@ -334,6 +334,10 @@ describe('startup and other non-chat work without a structured host', () => {
       vi.spyOn(host, 'listSessionTabs').mockReturnValue([
         { workspaceId: 'workspace-1', sessionId: 'claude-1', agent: 'claude' }
       ])
+      vi.spyOn(host, 'getPersistedVisibleSessionTabIndex').mockReturnValue({
+        present: true,
+        sessionIds: ['claude-1']
+      })
       vi.spyOn(host, 'setSessionTabVisibility').mockResolvedValue(undefined)
       const frames = await listInventory(runtime)
       unsubscribe()

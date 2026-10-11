@@ -36,7 +36,7 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
       runtime: this,
       getHost: getStructuredAgentSessionHost,
       profileIds,
-      prepare: () => this.prepareStructuredAgentSessionStartupRestoration(),
+      prepare: () => this.prepareStructuredAgentSessionStartupRestorationStage(),
       hydrate: () => {
         for (const worktreeId of this.getKnownWorkspaceSessionWorktreeIds()) {
           this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId, {

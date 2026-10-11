@@ -137,6 +137,9 @@ export class AgentSessionRecordStore {
   getSessionTabId = (sessionId: string): string | null =>
     this.state.sessionTabs?.tabIdFor(sessionId) ?? null
 
+  getSessionIdForTab = (tabId: string): string | null =>
+    this.state.sessionTabs?.sessionIdFor(tabId) ?? null
+
   /**
    * Persist the user-visible tab reference separately from the rollback-sensitive profile tabs.
    * Showing keeps a tab the session already has; `tabId` puts a hidden one back under its old id.

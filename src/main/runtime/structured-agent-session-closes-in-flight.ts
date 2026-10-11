@@ -10,6 +10,7 @@ import { AGENT_SESSION_NOT_ATTACHED } from '../native-chat/agent-session-wire/st
 export const STRUCTURED_AGENT_SESSION_CLOSE_WAIT_MS = 3_000
 
 export type StructuredAgentSessionCloseRequest = {
+  sessionId: string
   cancelEarlierPublications: () => void
 }
 
@@ -84,6 +85,7 @@ export class StructuredAgentSessionClosesInFlight {
   private closeRequest(sessionId: string): StructuredAgentSessionCloseRequest {
     const earlier = [...this.publications]
     return {
+      sessionId,
       cancelEarlierPublications: () => {
         for (const attempt of earlier) {
           attempt.cancel(sessionId)

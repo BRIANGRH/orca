@@ -24,12 +24,13 @@ function clientMayCloseUnlistedChat(context: RpcContext, sessionId: string): boo
  */
 export async function admitRemoteSessionTabClose(
   params: { worktree: string; tabId: string },
-  context: RpcContext
+  context: RpcContext,
+  receiptSessionId?: string
 ): Promise<void> {
   if (!context.clientKind) {
     return
   }
-  const sessionId = structuredAgentSessionIdFromHostTabId(params.tabId)
+  const sessionId = receiptSessionId ?? structuredAgentSessionIdFromHostTabId(params.tabId)
   if (sessionId !== null && supportsStructuredAgentSessions(context)) {
     await context.runtime.ensureStructuredAgentSessionHostForClose()
   }
