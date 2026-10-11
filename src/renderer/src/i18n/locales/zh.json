@@ -4077,7 +4077,12 @@
             "checkTooltip": "重启后 Orca 未能恢复或未能确认已恢复的聊天。点击查看详情。",
             "resumingTooltip": "正在恢复中断的聊天并请它们继续…",
             "resumingProgressLabel": "正在恢复聊天 {{value0}}/{{value1}}",
-            "resumingProgressAria": "正在恢复聊天，已完成 {{value0}}/{{value1}}。点击查看详情。"
+            "resumingProgressAria": "正在恢复聊天，已完成 {{value0}}/{{value1}}。点击查看详情。",
+            "resumedLabelOne": "已恢复 1 个聊天",
+            "resumedLabel": "已恢复 {{value0}} 个聊天",
+            "resumedAriaOne": "已恢复 1 个聊天。点击查看。",
+            "resumedAria": "已恢复 {{value0}} 个聊天。点击查看。",
+            "resumedTooltip": "重启后 Orca 恢复的聊天。点击查看。"
           },
           "provider": {
             "extra": {

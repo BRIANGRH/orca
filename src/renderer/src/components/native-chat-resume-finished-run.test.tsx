@@ -107,20 +107,56 @@ it('keeps the unseen summary when a view was opened and closed only during the r
   expect(runStatus('Prompt b')).toBe('Prompt b: Couldn’t confirm the chat was resumed')
 })
 
-it('shows the all-success summary from its toast without a status entry', async () => {
+it.each(['status entry', 'toast Show'] as const)(
+  'keeps a resumed entry until the all-success summary is seen from %s',
+  async (source) => {
+    fakeHost()
+    await mountSurfaces()
+    await act(async () => button('Resume 2 chats').click())
+    expect(dialog()).toBeUndefined()
+    expect(button('2 chats resumed. Click to see them.').textContent).toBe('2 chats resumed')
+    await act(async () =>
+      source === 'status entry' ? button('2 chats resumed').click() : lastToastShow()?.()
+    )
+    expect(dialog()).toContain('Resumed 2 of 2 chats')
+    expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
+    expect(runStatus('Prompt b')).toBe('Prompt b: Resumed')
+    await act(async () => button('Done').click())
+    expect(document.body.textContent).not.toContain('chat')
+    await act(async () => lastToastShow()?.())
+    expect(dialog()).toBeUndefined()
+  }
+)
+
+it('shows the resumed entry after a launch that resumed without asking', async () => {
+  useAppStore.setState((state) => ({
+    settings: { ...state.settings!, nativeChatResumeWorkOnRestart: true }
+  }))
   fakeHost()
   await mountSurfaces()
-  await act(async () => button('Resume 2 chats').click())
   expect(dialog()).toBeUndefined()
-  expect(document.body.textContent).not.toContain('chat')
-  expect(lastToastShow()).toBeDefined()
-  await act(async () => lastToastShow()?.())
+  await act(async () => button('2 chats resumed').click())
   expect(dialog()).toContain('Resumed 2 of 2 chats')
-  expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
-  expect(runStatus('Prompt b')).toBe('Prompt b: Resumed')
+})
+
+it('adds no resumed entry for a run watched to the end in the dialog', async () => {
+  const host = fakeHost()
+  host.hold('a', 'b')
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => button('Resuming chats 0/2').click())
+  await host.release('a', 'b')
+  expect(dialog()).toContain('Resumed 2 of 2 chats')
   await act(async () => button('Done').click())
-  await act(async () => lastToastShow()?.())
-  expect(dialog()).toBeUndefined()
+  expect(document.body.textContent).not.toContain('chat')
+})
+
+it('leaves the resumed chats to the failure entry when one could not resume', async () => {
+  fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'refused'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  expect(button('1 chat failed to resume')).toBeTruthy()
+  expect(document.body.textContent).not.toContain('resumed')
 })
 
 it('replaces the finished summary when Retry starts a new run', async () => {

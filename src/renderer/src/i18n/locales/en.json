@@ -4330,7 +4330,12 @@
             "checkTooltip": "Chats Orca couldn’t resume, or couldn’t confirm it resumed, after the restart. Click for details.",
             "resumingTooltip": "Restoring interrupted chats and asking them to carry on…",
             "resumingProgressLabel": "Resuming chats {{value0}}/{{value1}}",
-            "resumingProgressAria": "Resuming chats, {{value0}} of {{value1}} done. Click to open details."
+            "resumingProgressAria": "Resuming chats, {{value0}} of {{value1}} done. Click to open details.",
+            "resumedLabelOne": "1 chat resumed",
+            "resumedLabel": "{{value0}} chats resumed",
+            "resumedAriaOne": "1 chat resumed. Click to see it.",
+            "resumedAria": "{{value0}} chats resumed. Click to see them.",
+            "resumedTooltip": "Chats Orca resumed after the restart. Click to see them."
           },
           "StatusBarUsageChangeNotices": {
             "compactTitle": "Usage display is now compact",
