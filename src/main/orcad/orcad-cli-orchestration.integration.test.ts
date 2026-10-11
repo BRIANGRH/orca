@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -12,6 +20,10 @@ import {
 } from '../../shared/orcad-artifacts'
 import { ORCHESTRATION_CONTRACT_RUNTIME_CAPABILITY } from '../../shared/protocol-version'
 import { buildUnixCliLauncher } from '../cli/cli-dev-launcher'
+import {
+  ORCAD_WINDOWS_CLI_LAUNCHER_CONFIG_FILENAME,
+  buildWindowsCliLauncherConfig
+} from './orcad-cli-launcher'
 import { resolveBundledOrcadRuntime } from './orcad-bundled-runtime'
 import { skipForMissingInputs } from './orcad-node-slot-fixture'
 
@@ -30,7 +42,15 @@ const skip = skipForMissingInputs('artifact', hasCli ? [] : ['the packaged serve
 /** The launcher the server would hand its children, pinned to `userData`. */
 function serverCliLauncher(userData: string): string {
   if (process.platform === 'win32') {
-    return windowsLauncher
+    const binDir = join(userData, 'cli', 'bin')
+    const launcher = join(binDir, 'orca.exe')
+    mkdirSync(binDir, { recursive: true })
+    copyFileSync(windowsLauncher, launcher)
+    writeFileSync(
+      join(binDir, ORCAD_WINDOWS_CLI_LAUNCHER_CONFIG_FILENAME),
+      buildWindowsCliLauncherConfig(runtime!, cliEntry, userData)
+    )
+    return launcher
   }
   const launcher = join(userData, 'orca')
   writeFileSync(launcher, buildUnixCliLauncher(runtime!, cliEntry, userData, 'node'), {

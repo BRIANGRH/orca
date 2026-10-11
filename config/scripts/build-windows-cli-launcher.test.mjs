@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest'
 import {
   shouldReuseCompiledWindowsCliLauncher,
   windowsCliLauncherFileVersion,
+  windowsCliLauncherRustTarget,
   windowsCliLauncherFingerprint
 } from './build-windows-cli-launcher.mjs'
 import { findDynamicVcRuntimeImports, readPeImportedDllNames } from './windows-pe-imports.mjs'
@@ -186,45 +187,6 @@ describe('Windows CLI launcher', () => {
     ).toBe(false)
   })
 
-  itWindows('runs a server CLI with pinned Node and preserves multiline arguments', () => {
-    const root = mkdtempSync(join(tmpdir(), 'orca server launcher '))
-    try {
-      const slot = join(root, 'slot')
-      const launcher = join(slot, 'bin', 'orca.exe')
-      const runtime = join(root, 'runtimes', `node-${'a'.repeat(64)}`, 'node.exe')
-      mkdirSync(dirname(launcher), { recursive: true })
-      mkdirSync(dirname(runtime), { recursive: true })
-      copyFileSync(process.execPath, runtime)
-      writeFileSync(join(slot, '.runtime-node'), `${'a'.repeat(64)}\n`)
-      mkdirSync(join(slot, 'out', 'cli'), { recursive: true })
-      writeFileSync(
-        join(slot, 'out', 'cli', 'index.js'),
-        'console.log(JSON.stringify({argv:process.argv.slice(2),profile:process.env.ORCA_USER_DATA_PATH,launcher:process.env.ORCA_CLI_COMMAND,owningHost:process.env.ORCA_CLI_OWNING_HOST,desktopMarker:process.env.ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER??null}))'
-      )
-      const build = spawnSync(
-        process.execPath,
-        ['config/scripts/build-windows-cli-launcher.mjs', '--output', launcher],
-        { cwd: projectRoot, encoding: 'utf8' }
-      )
-      expect(build.status, build.stderr).toBe(0)
-      const body = 'line one\n\nline two'
-      const child = spawnSync(launcher, ['orchestration', 'send', '--body', body], {
-        encoding: 'utf8',
-        env: { ...process.env, ORCA_USER_DATA_PATH: root, ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER: '1' }
-      })
-      expect(child.status, child.stderr).toBe(0)
-      expect(JSON.parse(child.stdout)).toEqual({
-        argv: ['orchestration', 'send', '--body', body],
-        profile: root,
-        launcher,
-        owningHost: '1',
-        desktopMarker: null
-      })
-    } finally {
-      removeFixtureTree(root)
-    }
-  })
-
   itWindows('preserves a multiline argument from PowerShell through the native launcher', () => {
     const appRoot = mkdtempSync(join(tmpdir(), 'orca cli launcher '))
     try {
@@ -281,6 +243,86 @@ describe('Windows CLI launcher', () => {
       })
     } finally {
       removeFixtureTree(appRoot)
+    }
+  })
+
+  it('cross-compiles only the architectures the orcad template ships', () => {
+    expect(windowsCliLauncherRustTarget(undefined)).toBeNull()
+    expect(windowsCliLauncherRustTarget('x64')).toBe('x86_64-pc-windows-msvc')
+    expect(windowsCliLauncherRustTarget('arm64')).toBe('aarch64-pc-windows-msvc')
+    expect(() => windowsCliLauncherRustTarget('ia32')).toThrow('Unsupported')
+  })
+
+  itWindows('runs a server profile CLI on pinned Node with argv and profile intact', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orca server launcher '))
+    try {
+      const profile = join(root, 'server profile')
+      const launcherPath = join(profile, 'cli', 'bin', 'orca.exe')
+      const cliPath = join(root, 'server slot', 'out', 'cli', 'index.js')
+      mkdirSync(dirname(cliPath), { recursive: true })
+      writeFileSync(
+        cliPath,
+        `process.stdout.write(JSON.stringify({
+  argv: process.argv.slice(2),
+  profile: process.env.ORCA_USER_DATA_PATH,
+  electronRunAsNode: process.env.ELECTRON_RUN_AS_NODE ?? null,
+  nodeOptions: process.env.NODE_OPTIONS ?? null,
+  owningHost: process.env.ORCA_CLI_OWNING_HOST ?? null,
+  desktopMarker: process.env.ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER ?? null
+}))\n`,
+        'utf8'
+      )
+      const build = spawnSync(
+        process.execPath,
+        ['config/scripts/build-windows-cli-launcher.mjs', '--output', launcherPath],
+        { cwd: projectRoot, encoding: 'utf8' }
+      )
+      expect(build.status, `${build.stdout}\n${build.stderr}`).toBe(0)
+      writeFileSync(
+        join(dirname(launcherPath), 'orca-launcher.cfg'),
+        `node=${process.execPath}\ncli=${cliPath}\nuser-data=${profile}\n`
+      )
+
+      const inherited = {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        NODE_OPTIONS: '--require C:\\missing\\preload.js',
+        ORCA_USER_DATA_PATH: 'C:\\another\\owner',
+        ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER: '1',
+        ORCA_TEST_LAUNCHER: launcherPath
+      }
+      const expected = (body) => ({
+        argv: ['orchestration', 'send', '--body', body, '--json'],
+        profile,
+        electronRunAsNode: null,
+        nodeOptions: null,
+        owningHost: '1',
+        desktopMarker: null
+      })
+      // Windows PowerShell 5.1 itself drops embedded double quotes, so its body has none.
+      const shellBody = 'line one & %PATH% ^caret\n\nline three'
+      const powershell = spawnSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          '& $env:ORCA_TEST_LAUNCHER orchestration send --body $env:ORCA_TEST_BODY --json'
+        ],
+        { encoding: 'utf8', env: { ...inherited, ORCA_TEST_BODY: shellBody } }
+      )
+      expect(powershell.status, powershell.stderr).toBe(0)
+      expect(JSON.parse(powershell.stdout)).toEqual(expected(shellBody))
+
+      const body = 'line one "quoted" \\"escaped\\" & %PATH% ^caret\\\n\nline three\\'
+      const direct = spawnSync(launcherPath, expected(body).argv, {
+        encoding: 'utf8',
+        env: inherited
+      })
+      expect(direct.status, direct.stderr).toBe(0)
+      expect(JSON.parse(direct.stdout)).toEqual(expected(body))
+    } finally {
+      removeFixtureTree(root)
     }
   })
 

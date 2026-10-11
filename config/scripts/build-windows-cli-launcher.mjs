@@ -40,6 +40,20 @@ function defaultOutputPath(projectRoot) {
   return join(projectRoot, 'native', 'windows-cli-launcher', '.build', 'orca.exe')
 }
 
+// Why explicit triples: the orcad template ships both, cross-compiled from one x64 runner.
+const RUST_TARGETS = { x64: 'x86_64-pc-windows-msvc', arm64: 'aarch64-pc-windows-msvc' }
+
+export function windowsCliLauncherRustTarget(arch) {
+  if (arch === undefined) {
+    return null
+  }
+  const target = RUST_TARGETS[arch]
+  if (!target) {
+    throw new Error(`Unsupported Windows CLI launcher architecture: ${arch}`)
+  }
+  return target
+}
+
 function readArg(name) {
   const index = process.argv.indexOf(name)
   return index !== -1 ? process.argv[index + 1] : undefined
@@ -55,18 +69,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
 
   const repoRoot = resolve(import.meta.dirname, '../..')
-  const arch = readArg('--arch')
-  const rustTarget =
-    arch === 'arm64' ? 'aarch64-pc-windows-msvc' : arch === 'x64' ? 'x86_64-pc-windows-msvc' : null
-  if (arch && !rustTarget) {
-    throw new Error(`Unsupported Windows launcher architecture: ${arch}`)
-  }
   const crateRoot = join(repoRoot, 'native', 'windows-cli-launcher')
   const manifestPath = join(crateRoot, 'Cargo.toml')
   const iconPath = join(repoRoot, 'resources', 'build', 'icon.ico')
   const { version } = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'))
   // Throws on a version the PE cannot represent, before anything is compiled.
   windowsCliLauncherFileVersion(version)
+  const rustTarget = windowsCliLauncherRustTarget(readArg('--arch'))
   const fingerprint = windowsCliLauncherFingerprint(
     [
       join(crateRoot, 'src', 'main.rs'),
@@ -77,7 +86,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       iconPath,
       join(repoRoot, 'config/scripts/build-windows-cli-launcher.mjs')
     ],
-    `${version}:${rustTarget ?? 'host'}`
+    rustTarget ? `${version}\0${rustTarget}` : version
   )
   const outputPath = readArg('--output') ?? defaultOutputPath(repoRoot)
 
@@ -126,9 +135,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(result.status ?? 1)
   }
 
-  const builtPath = rustTarget
-    ? join(targetDirectory, rustTarget, 'release', 'orca.exe')
-    : join(targetDirectory, 'release', 'orca.exe')
+  const builtPath = join(
+    targetDirectory,
+    ...(rustTarget ? [rustTarget] : []),
+    'release',
+    'orca.exe'
+  )
   const vcRuntimeImports = findDynamicVcRuntimeImports(
     readPeImportedDllNames(readFileSync(builtPath))
   )

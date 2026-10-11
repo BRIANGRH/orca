@@ -9,17 +9,29 @@
 //! user-writable directory that mutates environment variables and proxies a
 //! child process is the shape antivirus MSIL heuristics are trained on, and it
 //! was flagged as exactly that across several vendors (#23383).
+//!
+//! On a Windows server host, orcad copies this binary into its profile and
+//! writes `orca-launcher.cfg` beside it; that file selects the server mode.
 
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
 
+const SERVER_CONFIG_FILENAME: &str = "orca-launcher.cfg";
+
 fn main() {
     let launcher = match env::current_exe() {
         Ok(path) => path,
         Err(error) => fail(&format!("Unable to start the Orca CLI: {error}")),
     };
+    if let Some(config) = launcher
+        .parent()
+        .map(|directory| directory.join(SERVER_CONFIG_FILENAME))
+        .filter(|config| config.is_file())
+    {
+        run_server_cli(&config);
+    }
 
     let Some(resources_directory) = launcher.parent().and_then(Path::parent) else {
         fail(&format!(
@@ -27,60 +39,30 @@ fn main() {
             launcher.display()
         ))
     };
-    // A headless server slot ships the CLI at out/cli/index.js beside its pinned Node reference.
-    let server_cli_path = resources_directory.join("out").join("cli").join("index.js");
-    let (runtime_path, cli_path, headless) = if server_cli_path.is_file() {
-        let runtime_sha = fs::read_to_string(resources_directory.join(".runtime-node"))
-            .unwrap_or_else(|error| fail(&format!("Unable to read the Orca runtime: {error}")));
-        let runtime_sha = runtime_sha.trim();
-        if runtime_sha.len() != 64 || !runtime_sha.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            fail("Invalid Orca runtime reference");
-        }
-        if env::var_os("ORCA_USER_DATA_PATH").is_none_or(|value| value.is_empty()) {
-            fail("The Orca server data path is required");
-        }
-        (
-            resources_directory
-                .join("..")
-                .join("runtimes")
-                .join(format!("node-{runtime_sha}"))
-                .join("node.exe"),
-            server_cli_path,
-            true,
-        )
-    } else {
-        let Some(app_directory) = resources_directory.parent() else {
-            fail(&format!(
-                "Unable to locate Orca.exe next to \"{}\"",
-                resources_directory.display()
-            ))
-        };
-
-        let electron_path = app_directory.join("Orca.exe");
-        if !electron_path.is_file() {
-            fail(&format!(
-                "Unable to locate Orca.exe next to \"{}\"",
-                resources_directory.display()
-            ));
-        }
-
-        let cli_path: PathBuf = resources_directory
-            .join("app.asar.unpacked")
-            .join("out")
-            .join("cli")
-            .join("index.js");
-        if !cli_path.is_file() {
-            fail(&format!(
-                "Unable to locate the Orca CLI entrypoint at \"{}\"",
-                cli_path.display()
-            ));
-        }
-        (electron_path, cli_path, false)
-    };
-    if !runtime_path.is_file() {
+    let Some(app_directory) = resources_directory.parent() else {
         fail(&format!(
-            "Unable to locate the Orca runtime at \"{}\"",
-            runtime_path.display()
+            "Unable to locate Orca.exe next to \"{}\"",
+            resources_directory.display()
+        ))
+    };
+
+    let electron_path = app_directory.join("Orca.exe");
+    if !electron_path.is_file() {
+        fail(&format!(
+            "Unable to locate Orca.exe next to \"{}\"",
+            resources_directory.display()
+        ));
+    }
+
+    let cli_path: PathBuf = resources_directory
+        .join("app.asar.unpacked")
+        .join("out")
+        .join("cli")
+        .join("index.js");
+    if !cli_path.is_file() {
+        fail(&format!(
+            "Unable to locate the Orca CLI entrypoint at \"{}\"",
+            cli_path.display()
         ));
     }
 
@@ -93,29 +75,77 @@ fn main() {
         "NODE_REPL_EXTERNAL_MODULE",
         "ORCA_NODE_REPL_EXTERNAL_MODULE",
     );
-    if !headless {
-        env::set_var("ELECTRON_RUN_AS_NODE", "1");
-        env::set_var("ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER", "1");
-    } else {
-        env::remove_var("ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER");
-        env::set_var("ORCA_CLI_OWNING_HOST", "1");
-    }
+    env::set_var("ELECTRON_RUN_AS_NODE", "1");
+    env::set_var("ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER", "1");
     let requested_command = env::var("ORCA_CLI_COMMAND").unwrap_or_default();
     env::set_var(
         "ORCA_CLI_COMMAND",
-        if headless {
-            launcher.to_string_lossy().into_owned()
-        } else if requested_command == "orca-ide" {
-            "orca-ide".into()
+        if requested_command == "orca-ide" {
+            "orca-ide"
         } else {
-            "orca".into()
+            "orca"
         },
     );
 
+    run_cli(&electron_path, &cli_path)
+}
+
+/// The server mode: the pinned Node runs the active slot's CLI under the
+/// server's profile, as the POSIX launcher does.
+fn run_server_cli(config_path: &Path) -> ! {
+    let config = fs::read_to_string(config_path).unwrap_or_else(|error| {
+        fail(&format!(
+            "Unable to read the Orca CLI configuration at \"{}\": {error}",
+            config_path.display()
+        ))
+    });
+    let node_path = PathBuf::from(config_value(&config, "node", config_path));
+    let cli_path = PathBuf::from(config_value(&config, "cli", config_path));
+    let user_data_path = config_value(&config, "user-data", config_path);
+    for path in [&node_path, &cli_path] {
+        if !path.is_file() {
+            fail(&format!(
+                "Unable to locate \"{}\"; reconnect to the Orca server to refresh the CLI",
+                path.display()
+            ));
+        }
+    }
+    env::set_var("ORCA_USER_DATA_PATH", user_data_path);
+    // Binds the CLI to this server over an inherited ORCA_ENVIRONMENT, as the POSIX launcher does.
+    env::set_var("ORCA_CLI_OWNING_HOST", "1");
+    for name in [
+        "NODE_OPTIONS",
+        "NODE_REPL_EXTERNAL_MODULE",
+        "ELECTRON_RUN_AS_NODE",
+        // The desktop marker would make orchestration demand a bare `orca` resume command.
+        "ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER",
+    ] {
+        env::remove_var(name);
+    }
+    run_cli(&node_path, &cli_path)
+}
+
+fn config_value<'a>(config: &'a str, key: &str, config_path: &Path) -> &'a str {
+    config
+        .lines()
+        .find_map(|line| {
+            line.split_once('=')
+                .filter(|(name, value)| *name == key && !value.is_empty())
+                .map(|(_, value)| value)
+        })
+        .unwrap_or_else(|| {
+            fail(&format!(
+                "The Orca CLI configuration at \"{}\" has no {key}",
+                config_path.display()
+            ))
+        })
+}
+
+fn run_cli(program: &Path, cli_path: &Path) -> ! {
     // Each argument stays its own argv entry, so a body holding newlines reaches
     // the CLI intact.
-    let mut command = Command::new(&runtime_path);
-    command.arg(&cli_path).args(env::args_os().skip(1));
+    let mut command = Command::new(program);
+    command.arg(cli_path).args(env::args_os().skip(1));
 
     match command.status() {
         Ok(status) => exit(status.code().unwrap_or(1)),

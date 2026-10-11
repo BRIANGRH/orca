@@ -1,50 +1,66 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
-import { ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME } from '../../src/shared/orcad-artifacts.ts'
-import { stageOrcadWindowsCliLauncher } from './orcad-windows-cli-launcher.mjs'
-import { peImage } from './windows-pe-image-fixture.mjs'
-
-// Staging is checked on a non-Windows host so the test never compiles the launcher.
-const crossHost = { platform: 'linux' }
+import { dirname, join } from 'node:path'
+import { afterEach, expect, it, vi } from 'vitest'
+import {
+  orcadWindowsCliLauncherSource,
+  stageOrcadWindowsCliLauncher
+} from './orcad-windows-cli-launcher.mjs'
 
 const roots = []
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })))
 
-function fixture(arch, image) {
+function peImage(machine) {
+  const bytes = Buffer.alloc(0x90)
+  bytes.write('MZ')
+  bytes.writeUInt32LE(0x80, 0x3c)
+  bytes.write('PE\0\0', 0x80)
+  bytes.writeUInt16LE(machine, 0x84)
+  return bytes
+}
+
+function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'orcad-cli-launcher-'))
   roots.push(root)
   const output = join(root, 'output')
-  if (image) {
-    mkdirSync(join(root, '.build/windows-cli-launcher', arch), { recursive: true })
-    writeFileSync(join(root, '.build/windows-cli-launcher', arch, 'orca.exe'), image)
-  }
+  mkdirSync(output)
   return { root, output }
 }
 
-it('stages the launcher built for the target machine', () => {
-  const image = peImage({ arch: 'arm64' })
-  const { root, output } = fixture('arm64', image)
-  stageOrcadWindowsCliLauncher(root, output, 'win32-arm64', crossHost)
-  expect(readFileSync(join(output, ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME))).toEqual(image)
+function prepare(root, arch, machine) {
+  const source = orcadWindowsCliLauncherSource(root, arch)
+  mkdirSync(dirname(source), { recursive: true })
+  writeFileSync(source, peImage(machine))
+  return source
+}
+
+it('stages the prepared launcher for the requested machine at the slot command path', () => {
+  const { root, output } = fixture()
+  const source = prepare(root, 'arm64', 0xaa64)
+  stageOrcadWindowsCliLauncher(root, output, 'win32-arm64', { platform: 'linux' })
+  expect(readFileSync(join(output, 'bin', 'orca.exe'))).toEqual(readFileSync(source))
 })
 
-it('rejects a launcher built for another machine', () => {
-  const { root, output } = fixture('x64', peImage({ arch: 'arm64' }))
-  expect(() => stageOrcadWindowsCliLauncher(root, output, 'win32-x64', crossHost)).toThrow(
-    'CLI launcher has machine 0xaa64'
-  )
+it('rejects a launcher built for the wrong machine', () => {
+  const { root, output } = fixture()
+  prepare(root, 'x64', 0xaa64)
+  expect(() => stageOrcadWindowsCliLauncher(root, output, 'win32-x64')).toThrow('machine 0xaa64')
 })
 
-it('names the build command when the launcher artifact is missing', () => {
-  const { root, output } = fixture('x64')
-  expect(() => stageOrcadWindowsCliLauncher(root, output, 'win32-x64', crossHost)).toThrow(
-    'build-windows-cli-launcher.mjs --arch x64'
-  )
+it('refuses a missing launcher off Windows and compiles it on Windows', () => {
+  const { root, output } = fixture()
+  expect(() =>
+    stageOrcadWindowsCliLauncher(root, output, 'win32-x64', { platform: 'darwin' })
+  ).toThrow('native CLI launcher')
+  const compile = vi.fn((_root, arch, path) => {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, peImage(arch === 'x64' ? 0x8664 : 0xaa64))
+  })
+  stageOrcadWindowsCliLauncher(root, output, 'win32-x64', { platform: 'win32' }, compile)
+  expect(compile).toHaveBeenCalledWith(root, 'x64', orcadWindowsCliLauncherSource(root, 'x64'))
+  expect(readFileSync(join(output, 'bin', 'orca.exe'))).toEqual(peImage(0x8664))
 })
 
-it('ignores non-Windows targets', () => {
-  const { root, output } = fixture('x64')
-  expect(() => stageOrcadWindowsCliLauncher(root, output, 'linux-x64', crossHost)).not.toThrow()
+it('ignores POSIX targets', () => {
+  expect(() => stageOrcadWindowsCliLauncher('absent', 'absent', 'linux-x64-glibc')).not.toThrow()
 })

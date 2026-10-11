@@ -13,6 +13,8 @@ export const ORCAD_BUN_RUNTIME_FILENAME = 'bun-runtime'
 export const ORCAD_WINDOWS_BUN_RUNTIME_FILENAME = 'bun-runtime.exe'
 export const ORCAD_BUILD_TARGET_FILENAME = '.build-target'
 export const ORCAD_WINDOWS_PROCESS_TREE_FILENAME = 'windows-process-tree.node'
+/** native/windows-cli-launcher: cmd.exe and .ps1 shims cannot carry every argv intact. */
+export const ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME = 'bin/orca.exe'
 
 export function orcadBunRuntimeFilename(target: string): string {
   return isWindowsTarget(target) ? ORCAD_WINDOWS_BUN_RUNTIME_FILENAME : ORCAD_BUN_RUNTIME_FILENAME
@@ -61,7 +63,6 @@ export const ORCAD_ADDON_NAPI_VERSION = 8
 export const ORCAD_NODE_PTY_DIR = 'node_modules/node-pty'
 export const ORCAD_CLI_ENTRY_FILENAME = 'out/cli/index.js'
 export const ORCAD_CLI_PACKAGE_FILENAME = 'out/package.json'
-export const ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME = 'bin/orca.exe'
 // Test files and sources stay out; these are every module the runtime path requires.
 export const ORCAD_NODE_PTY_JS_ARTIFACTS = [
   'package.json',

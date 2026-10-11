@@ -6,10 +6,7 @@ import { installFakeAppEnvironment } from '../../../config/scripts/vitest-host-p
 import { runProcess, spawnProcess } from '@orca/process-host'
 import { structuredSessionChildIdentityEnv } from '../runtime/structured-session-child-identity-env'
 import { resolveBundledOrcadRuntime } from './orcad-bundled-runtime'
-import {
-  ORCAD_NODE_RUNTIME_MARKER_FILENAME,
-  ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME
-} from '../../shared/orcad-artifacts'
+import { ORCAD_NODE_RUNTIME_MARKER_FILENAME } from '../../shared/orcad-artifacts'
 import { skipForMissingInputs } from './orcad-node-slot-fixture'
 import {
   killChildAndWait,
@@ -89,11 +86,12 @@ it.skipIf(skip)(
           reject(new Error(`server exited ${String(code)}: ${stderr.slice(-2000)}`))
         })
       })
-      // The server writes its profile launcher on Unix; Windows ships a native one in the slot.
-      const launcher =
-        process.platform === 'win32'
-          ? join(slotDir, ...ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME.split('/'))
-          : join(userData, 'cli', 'bin', 'orca')
+      const launcher = join(
+        userData,
+        'cli',
+        'bin',
+        process.platform === 'win32' ? 'orca.exe' : 'orca'
+      )
       expect(existsSync(launcher)).toBe(true)
       installFakeAppEnvironment({
         getPath: () => userData,
