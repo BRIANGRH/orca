@@ -141,13 +141,13 @@ describe('capability gating', () => {
     )
   })
 
-  it('does not stop the provider when durable tab retirement fails', async () => {
+  it('still stops the provider when durable tab retirement fails', async () => {
     hostCalls.setSessionTabVisibility.mockRejectedValueOnce(new Error('visibility write failed'))
 
     const response = await call('agentSession.close', { sessionId: SESSION }, STRUCTURED_CLIENT)
 
-    expect(response).toMatchObject({ ok: false })
-    expect(hostCalls.close).not.toHaveBeenCalled()
+    expect(response).toMatchObject({ ok: true, result: { ok: true } })
+    expect(hostCalls.close).toHaveBeenCalledWith(SESSION, 'user-close')
   })
 
   it('advertises the capability without bumping the protocol version', () => {

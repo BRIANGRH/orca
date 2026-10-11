@@ -1,7 +1,7 @@
 /**
  * Removing a structured agent session's chat tab from a live workspace tab snapshot.
  *
- * Extracted from `closeStructuredAgentSessionTab` so that user-initiated tab closes and
+ * Extracted from `closeStructuredAgentSessionOnHost` so that user-initiated tab closes and
  * orchestration settlements (stop / release / discard) retire the same tab the same way, rather
  * than orchestration leaving a dead chat tab behind that re-attaches the session when opened.
  */

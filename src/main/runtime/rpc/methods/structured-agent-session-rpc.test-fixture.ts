@@ -70,9 +70,7 @@ export const hostCalls: Record<string, ReturnType<typeof vi.fn>> = {}
 export const runtimeCalls: Record<string, ReturnType<typeof vi.fn>> = {}
 
 function reset(record: Record<string, ReturnType<typeof vi.fn>>): void {
-  for (const key of Object.keys(record)) {
-    delete record[key]
-  }
+  Object.keys(record).forEach((key) => delete record[key])
 }
 
 export const STATUS_SESSION = 'session-status'
@@ -253,6 +251,7 @@ export function dispatcher(
     registerSubscriptionCleanup: vi.fn(),
     cleanupSubscription: vi.fn(),
     cleanupSubscriptionsByPrefix: vi.fn(),
+    retireStructuredAgentSessionTabFromSnapshot: vi.fn(() => false),
     ...runtimeCalls,
     ...runtimeOverrides
   }

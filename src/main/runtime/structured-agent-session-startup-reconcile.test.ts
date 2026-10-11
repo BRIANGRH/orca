@@ -17,6 +17,7 @@ import {
 } from './agent-session-record-store-test-harness'
 import { closeTestJournalHostDatabases } from '../native-chat/agent-session-journal/journal-host-database-test-support'
 import { OrcaRuntimeService } from './orca-runtime'
+import { closeStructuredAgentSessionOnHost } from './structured-agent-session-tab-close'
 import {
   ensureStructuredAgentSessionHost,
   stopStructuredAgentSessionRuntime
@@ -133,13 +134,9 @@ it('closes a chat tab over records a newer Orca wrote, reporting the index it ca
   await runtime.prepareStructuredAgentSessionStartupRestoration()
   const host = getStructuredAgentSessionHost()
   const close = vi.spyOn(host!, 'close')
-  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the runtime's own protected close path, reached with the one field it reads.
-  const internal = runtime as unknown as {
-    closeStructuredAgentSessionTab(tab: { sessionId: string }, cause: 'user-close'): Promise<void>
-  }
 
   await expect(
-    internal.closeStructuredAgentSessionTab({ sessionId }, 'user-close')
+    closeStructuredAgentSessionOnHost(runtime, sessionId, 'user-close')
   ).resolves.toBeUndefined()
 
   expect(log.entries).toContainEqual({

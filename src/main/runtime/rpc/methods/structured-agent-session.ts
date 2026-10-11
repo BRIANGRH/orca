@@ -58,6 +58,7 @@ import {
   UnsubscribeParams
 } from './structured-agent-session-schemas'
 import { sendStructuredAgentSessionForClient } from './structured-agent-session-send-compatibility'
+import { closeStructuredAgentSessionOnHost } from '../../structured-agent-session-tab-close'
 
 export const STRUCTURED_AGENT_SESSION_METHODS = [
   defineMethod({
@@ -131,13 +132,10 @@ export const STRUCTURED_AGENT_SESSION_METHODS = [
     permission: 'workspace',
     params: OptionsParams,
     handler: async (params, ctx) => {
-      const host = requireStructuredCleanupHost(ctx)
-      // Terminal-disposal closes use this RPC without the session-tabs retirement RPC.
-      if (typeof host.setSessionTabVisibility === 'function') {
-        await host.setSessionTabVisibility(params.sessionId, false)
-      }
-      // Clients call this only when the user closes this chat's tab or cancels its launch.
-      await host.close(params.sessionId, 'user-close')
+      requireStructuredCleanupHost(ctx)
+      // Clients call this only when the user closes this chat's tab or cancels its launch; the same
+      // host close as `session.tabs.close`, for older clients and launch cancellations.
+      await closeStructuredAgentSessionOnHost(ctx.runtime, params.sessionId, 'user-close')
       return { ok: true as const }
     }
   }),

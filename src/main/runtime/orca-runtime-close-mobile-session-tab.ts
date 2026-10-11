@@ -18,12 +18,16 @@ import {
 } from './mobile-session-tab-close-outcome'
 import { getRuntimeBrowserPageRegistry } from './runtime-browser-page-registry'
 import type { RuntimeCommandSurfaceHost } from './orca-runtime-core'
-import { SESSION_TAB_NOT_FOUND_ERROR } from '../../shared/session-tab-close'
 import { rendererPublicationThrottle } from '../window/renderer-publication-throttle'
 import { structuredAgentSessionTabCloseCause } from './structured-agent-session-tab-close-cause'
 import { retireHeadlessMobileSessionEditorTab } from './mobile-session-editor-projection'
 import { closeRelayedMobileSessionTab } from './mobile-session-relayed-tab-close'
 import { captureTerminalTabListRetirement } from './mobile-session-terminal-tab-retirement'
+import {
+  closeListedStructuredAgentSessionTab,
+  closeStructuredAgentSessionTabForUser,
+  isUserStructuredAgentSessionTabClose
+} from './structured-agent-session-tab-close'
 
 export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseUnattributedMobileSessionTabClose {
   async closeMobileSessionTab(
@@ -43,6 +47,15 @@ export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseU
     const explicitWorktreeId = this.getValidatedExplicitWorktreeIdSelector(worktreeSelector)
     const worktreeId =
       explicitWorktreeId ?? (await this.resolveWorktreeSelector(worktreeSelector)).id
+    // Why before the hydrate: a chat close needs no terminal process scan, which can wait on SSH.
+    if (isUserStructuredAgentSessionTabClose(tabId, options)) {
+      if (graphEpoch !== null) {
+        this.assertStableReadyGraph(graphEpoch)
+      }
+      const cause = structuredAgentSessionTabCloseCause(options.reason)
+      await closeStructuredAgentSessionTabForUser(this, worktreeId, tabId, cause)
+      return committedMobileSessionTabClose(this.clientSessionTabSelections, worktreeId, [tabId])
+    }
     this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId)
     const observedPtyIds = await this.refreshMobileSessionPtyRecords()
     if (graphEpoch !== null) {
@@ -298,21 +311,8 @@ export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseU
         await closeRelayedMobileSessionTab(this, worktreeId, tab)
       }
     } else if (tab.type === 'agent-session') {
-      if (this.notifier?.closeSessionTab) {
-        try {
-          // Why: a reopened chat's window tab id is not derivable from its session; the window maps ours.
-          await this.notifier.closeSessionTab(tab.id, worktreeId)
-        } catch (error) {
-          // The renderer already having removed the tab is an idempotent close, not a veto.
-          if (!(error instanceof Error && error.message === SESSION_TAB_NOT_FOUND_ERROR)) {
-            throw error
-          }
-        }
-      }
-      await this.closeStructuredAgentSessionTab(
-        tab,
-        structuredAgentSessionTabCloseCause(options.reason)
-      )
+      const cause = structuredAgentSessionTabCloseCause(options.reason)
+      await closeListedStructuredAgentSessionTab(this, worktreeId, tab, cause)
     } else if (!this.notifier?.closeSessionTab) {
       // Why: a headless host listed this editor from its own session, so it retires it there.
       if (!retireHeadlessMobileSessionEditorTab(this, worktreeId, tab, options.force)) {
