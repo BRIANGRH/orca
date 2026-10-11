@@ -258,6 +258,7 @@ describe('structured session cold restoration', () => {
     internal.hydrateHeadlessMobileSessionTabsFromWorkspaceSession = () => new Set()
     internal.refreshMobileSessionPtyRecords = async () => new Set()
     internal.ensureStructuredAgentSessionHost = async () => undefined
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: restoration and listed close read only these host methods; no provider is invoked.
     setStructuredAgentSessionHost({
       reconcileRestartLeases: async () => undefined,
       restoreReadableSessions: async () => undefined,
@@ -377,6 +378,7 @@ describe('structured session cold restoration', () => {
     internal.hydrateHeadlessMobileSessionTabsFromWorkspaceSession = () => new Set()
     internal.refreshMobileSessionPtyRecords = async () => new Set()
     internal.ensureStructuredAgentSessionHost = async () => undefined
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this restoration stub implements every host method the title projection reads.
     setStructuredAgentSessionHost({
       getPersistedVisibleSessionTabIndex: () => ({
         present: true,
