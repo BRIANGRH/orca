@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { NATIVE_CHAT_VISUAL_MAX_BYTES } from '../../../src/shared/native-chat-visual-directive'
+import {
+  NATIVE_CHAT_VISUAL_MAX_BYTES,
+  type NativeChatVisualDirective
+} from '../../../src/shared/native-chat-visual-directive'
 import { bindDeferredRpcOperation, defineRpcOperation } from '../transport/rpc-operation'
 import { rpcResultVariant } from '../transport/rpc-operation-result-reader'
 import { isMobileMethodUnavailableError } from '../transport/mobile-method-unavailable'
@@ -10,6 +13,10 @@ export type MobileNativeChatVisualSource = {
   client: RpcClient
   sessionId: string
 }
+
+/** One page a reply names: relative to the chat's folder, or a bare name in an older host's
+ *  per-chat visuals folder when `legacy`. */
+export type MobileNativeChatVisualPage = Pick<NativeChatVisualDirective, 'path' | 'legacy'>
 
 export type MobileNativeChatVisualRead =
   | { kind: 'ready'; html: string; revision: string }
@@ -57,14 +64,14 @@ const inFlight = new Map<string, Promise<MobileNativeChatVisualRead>>()
 const clientKeys = new WeakMap<RpcClient, number>()
 let nextClientKey = 0
 
-function cacheKey(source: MobileNativeChatVisualSource, file: string): string {
+function cacheKey(source: MobileNativeChatVisualSource, page: MobileNativeChatVisualPage): string {
   let clientKey = clientKeys.get(source.client)
   if (clientKey === undefined) {
     nextClientKey += 1
     clientKey = nextClientKey
     clientKeys.set(source.client, clientKey)
   }
-  return JSON.stringify([clientKey, source.sessionId, file])
+  return JSON.stringify([clientKey, source.sessionId, page.legacy, page.path])
 }
 
 function remember(key: string, entry: CachedVisual): void {
@@ -90,14 +97,14 @@ function remember(key: string, entry: CachedVisual): void {
 /** What this phone already holds for a visual, to paint before revalidating. */
 export function cachedMobileNativeChatVisual(
   source: MobileNativeChatVisualSource,
-  file: string
+  page: MobileNativeChatVisualPage
 ): CachedVisual | null {
-  return cache.get(cacheKey(source, file)) ?? null
+  return cache.get(cacheKey(source, page)) ?? null
 }
 
 async function readOnce(
   source: MobileNativeChatVisualSource,
-  file: string,
+  page: MobileNativeChatVisualPage,
   key: string
 ): Promise<MobileNativeChatVisualRead> {
   const known = cache.get(key)
@@ -107,7 +114,8 @@ async function readOnce(
       source.client,
       {
         sessionId: source.sessionId,
-        file,
+        // Why `file` for legacy lines: only an older host can serve them, and it names it `file`.
+        ...(page.legacy ? { file: page.path } : { path: page.path }),
         ...(known ? { knownRevision: known.revision } : {})
       },
       { timeoutMs: READ_TIMEOUT_MS, budgetSpansConnect: true }
@@ -148,14 +156,14 @@ async function readOnce(
  */
 export function readMobileNativeChatVisual(
   source: MobileNativeChatVisualSource,
-  file: string
+  page: MobileNativeChatVisualPage
 ): Promise<MobileNativeChatVisualRead> {
-  const key = cacheKey(source, file)
+  const key = cacheKey(source, page)
   const pending = inFlight.get(key)
   if (pending) {
     return pending
   }
-  const read = readOnce(source, file, key).finally(() => {
+  const read = readOnce(source, page, key).finally(() => {
     inFlight.delete(key)
   })
   inFlight.set(key, read)

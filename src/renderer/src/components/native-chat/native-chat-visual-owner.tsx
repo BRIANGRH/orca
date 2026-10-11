@@ -7,6 +7,8 @@ export type NativeChatVisualOwner = {
   target: RuntimeClientTarget
   sessionId: string
   worktreeId: string
+  /** The chat's tab, whose folder a visual's path is relative to. */
+  tabId: string
 }
 
 export const NativeChatVisualOwnerContext = createContext<NativeChatVisualOwner | null>(null)
@@ -38,10 +40,11 @@ export function NativeChatVisualOwnerProvider({
             target:
               environmentId === null ? { kind: 'local' } : { kind: 'environment', environmentId },
             sessionId,
-            worktreeId
+            worktreeId,
+            tabId
           }
         : null,
-    [environmentId, sessionId, worktreeId]
+    [environmentId, sessionId, tabId, worktreeId]
   )
   return (
     <NativeChatVisualOwnerContext.Provider value={owner}>

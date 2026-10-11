@@ -42,7 +42,7 @@ export const MobileNativeChatVisual = memo(function MobileNativeChatVisual({
   directive: NativeChatVisualDirective
   source: MobileNativeChatVisualSource
 }) {
-  const { state, retry } = useMobileNativeChatVisual(source, directive.file)
+  const { state, retry } = useMobileNativeChatVisual(source, directive.path, directive.legacy)
   // A frame that navigated away or kept crashing; cleared by the reader's retry.
   const [frameFailed, setFrameFailed] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)

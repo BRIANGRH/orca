@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   NATIVE_CHAT_VISUAL_DIRECTIVE_MAX_LINE_LENGTH,
   NATIVE_CHAT_VISUAL_FILE_MAX_LENGTH,
+  NATIVE_CHAT_VISUAL_PATH_MAX_LENGTH,
   NATIVE_CHAT_VISUAL_TITLE_MAX_LENGTH,
   isNativeChatVisualFileName,
+  isNativeChatVisualPath,
   isPendingNativeChatVisualDirectiveTail,
   parseNativeChatVisualDirectiveLine,
   withoutNativeChatVisualDirectiveLines,
@@ -11,21 +13,43 @@ import {
 } from './native-chat-visual-directive'
 
 describe('parseNativeChatVisualDirectiveLine', () => {
+  it('parses a workspace path and title', () => {
+    expect(
+      parseNativeChatVisualDirectiveLine(
+        '::orca-visual{path="reports/usage.html" title="Usage by day"}'
+      )
+    ).toEqual({ path: 'reports/usage.html', legacy: false, title: 'Usage by day' })
+  })
+
+  it('prefers path over a legacy file name on the same line', () => {
+    expect(
+      parseNativeChatVisualDirectiveLine('::orca-visual{file="old.html" path="new/page.htm"}')
+    ).toEqual({ path: 'new/page.htm', legacy: false, title: null })
+  })
+
+  it('refuses a path that is invalid even when a valid file name is present', () => {
+    expect(
+      parseNativeChatVisualDirectiveLine('::orca-visual{file="old.html" path="../escape.html"}')
+    ).toBeNull()
+  })
+
   it('parses file and title', () => {
     expect(
       parseNativeChatVisualDirectiveLine(
         '::orca-visual{file="usage-3f2a.html" title="Usage by day"}'
       )
-    ).toEqual({ file: 'usage-3f2a.html', title: 'Usage by day' })
+    ).toEqual({ path: 'usage-3f2a.html', legacy: true, title: 'Usage by day' })
   })
 
   it('treats title as optional and trims it', () => {
     expect(parseNativeChatVisualDirectiveLine('::orca-visual{file="a.html"}')).toEqual({
-      file: 'a.html',
+      path: 'a.html',
+      legacy: true,
       title: null
     })
     expect(parseNativeChatVisualDirectiveLine('::orca-visual{file="a.html" title="  "}')).toEqual({
-      file: 'a.html',
+      path: 'a.html',
+      legacy: true,
       title: null
     })
   })
@@ -33,12 +57,13 @@ describe('parseNativeChatVisualDirectiveLine', () => {
   it('accepts attributes in any order, with spaces and tabs around them', () => {
     expect(
       parseNativeChatVisualDirectiveLine('::orca-visual{ \ttitle="T"   file="a.html"\t }')
-    ).toEqual({ file: 'a.html', title: 'T' })
+    ).toEqual({ path: 'a.html', legacy: true, title: 'T' })
   })
 
   it('accepts up to 3 leading spaces, trailing whitespace, and CRLF or LF endings', () => {
     expect(parseNativeChatVisualDirectiveLine('   ::orca-visual{file="a.html"}  \t\r\n')).toEqual({
-      file: 'a.html',
+      path: 'a.html',
+      legacy: true,
       title: null
     })
     expect(parseNativeChatVisualDirectiveLine('::orca-visual{file="a.html"}\n')).not.toBeNull()
@@ -48,7 +73,7 @@ describe('parseNativeChatVisualDirectiveLine', () => {
 
   it('ignores unknown attributes but refuses a repeated one', () => {
     expect(parseNativeChatVisualDirectiveLine('::orca-visual{file="a.html" height="300"}')).toEqual(
-      { file: 'a.html', title: null }
+      { path: 'a.html', legacy: true, title: null }
     )
     expect(
       parseNativeChatVisualDirectiveLine('::orca-visual{file="a.html" file="b.html"}')
@@ -63,7 +88,7 @@ describe('parseNativeChatVisualDirectiveLine', () => {
       parseNativeChatVisualDirectiveLine(
         '::orca-visual{file="a.html" title="Cost {USD} *by* <team>"}'
       )
-    ).toEqual({ file: 'a.html', title: 'Cost {USD} *by* <team>' })
+    ).toEqual({ path: 'a.html', legacy: true, title: 'Cost {USD} *by* <team>' })
   })
 
   it.each([
@@ -217,5 +242,45 @@ describe('withoutNativeChatVisualDirectiveLines', () => {
     expect(withoutNativeChatVisualDirectiveLines('  plain\n\n\n text  ')).toBe(
       '  plain\n\n\n text  '
     )
+  })
+})
+
+describe('isNativeChatVisualPath', () => {
+  it('accepts relative html paths with nested folders', () => {
+    for (const path of [
+      'a.html',
+      'reports/2026/usage.HTM',
+      'out/chart.v2.html',
+      'my report.html'
+    ]) {
+      expect(isNativeChatVisualPath(path)).toBe(true)
+    }
+  })
+
+  it('refuses absolute, home, drive, dot, empty and non-html paths', () => {
+    for (const path of [
+      '',
+      '/etc/page.html',
+      '~/page.html',
+      'C:/page.html',
+      '../page.html',
+      'a/../page.html',
+      './page.html',
+      'a//page.html',
+      'reports/',
+      'page.htmlx',
+      'page.md',
+      'page.html:stream',
+      'con/page.html',
+      'reports/nul.html'
+    ]) {
+      expect(isNativeChatVisualPath(path)).toBe(false)
+    }
+  })
+
+  it('caps the length', () => {
+    const long = `${'a'.repeat(NATIVE_CHAT_VISUAL_PATH_MAX_LENGTH - 5)}.html`
+    expect(isNativeChatVisualPath(long)).toBe(true)
+    expect(isNativeChatVisualPath(`a${long}`)).toBe(false)
   })
 })

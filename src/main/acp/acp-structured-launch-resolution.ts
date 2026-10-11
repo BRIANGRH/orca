@@ -31,10 +31,6 @@ import {
 } from '../native-chat/agent-session-timeline/provider-timeline-identity'
 import type { AgentSessionRecordStore } from '../runtime/agent-session-record-store'
 import { resolveAgentSessionLaunchDirectory } from '../runtime/agent-session-launch-directory'
-import {
-  NATIVE_CHAT_VISUALS_DIR_ENV,
-  withNativeChatVisualsEnv
-} from '../native-chat/native-chat-visuals-delivery'
 import type { AcpLaunchSpec } from './acp-launch-specs'
 import { acpSessionNotRestoredItem } from './acp-session-reopen-failure'
 import { loadAcpVisualsSkill, type AcpLaunchVisualsDeps } from './acp-structured-launch-visuals'
@@ -220,8 +216,6 @@ export function createAcpStructuredLaunchResolver(
           inherited: deps.inheritedEnv ?? process.env
         })
       : null
-    // Without visuals, a folder Orca itself inherited (started from a chat) names another chat's.
-    const childEnv = withNativeChatVisualsEnv({ ...env, ...skill?.env }, skill ? visuals : null)
     const fullAccess = deps.resolveFullAccess?.(spec.agent) ?? false
     const head = agentSessionProviderHandleChainHead(record.providerHandleChain)
     return {
@@ -229,8 +223,8 @@ export function createAcpStructuredLaunchResolver(
       command,
       args: spec.args({ fullAccess, pluginDir: skill?.pluginDir ?? null }),
       cwd,
-      env: childEnv,
-      envToDelete: skill ? envToDelete : [...envToDelete, NATIVE_CHAT_VISUALS_DIR_ENV],
+      env: { ...env, ...skill?.env },
+      envToDelete,
       fullAccess,
       resume: head
         ? {

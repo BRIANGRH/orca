@@ -15,9 +15,10 @@ const AUTO_RETRY_DELAYS_MS = [1_500, 5_000] as const
 
 function initialState(
   source: MobileNativeChatVisualSource,
-  file: string
+  path: string,
+  legacy: boolean
 ): MobileNativeChatVisualState {
-  const cached = cachedMobileNativeChatVisual(source, file)
+  const cached = cachedMobileNativeChatVisual(source, { path, legacy })
   return cached ? { kind: 'ready', ...cached } : { kind: 'loading' }
 }
 
@@ -28,16 +29,17 @@ function initialState(
  */
 export function useMobileNativeChatVisual(
   source: MobileNativeChatVisualSource,
-  file: string
+  path: string,
+  legacy: boolean
 ): { state: MobileNativeChatVisualState; retry: () => void } {
-  const [state, setState] = useState(() => initialState(source, file))
+  const [state, setState] = useState(() => initialState(source, path, legacy))
   // `round` is a reader's retry; `retriesUsed` counts automatic re-asks within it.
   const [request, setRequest] = useState({ round: 0, retriesUsed: 0 })
   const [retryInMs, setRetryInMs] = useState<number | null>(null)
 
   useEffect(() => {
     let disposed = false
-    void readMobileNativeChatVisual(source, file).then((read) => {
+    void readMobileNativeChatVisual(source, { path, legacy }).then((read) => {
       if (disposed) {
         return
       }
@@ -64,7 +66,7 @@ export function useMobileNativeChatVisual(
     return () => {
       disposed = true
     }
-  }, [source, file, request])
+  }, [source, path, legacy, request])
 
   useEffect(() => {
     if (retryInMs === null) {

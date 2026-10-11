@@ -75,7 +75,7 @@ export function useNativeChatVisualDocument(
   enabled: boolean,
   refreshKey?: unknown
 ): NativeChatVisualDocumentState {
-  const { sessionId, file } = identity
+  const { sessionId, path, legacy } = identity
   const environmentId =
     identity.target.kind === 'environment' ? identity.target.environmentId : null
   const [state, setState] = useState<NativeChatVisualDocumentState>(() => {
@@ -90,12 +90,13 @@ export function useNativeChatVisualDocument(
     const identityNow: NativeChatVisualIdentity = {
       target: environmentId === null ? { kind: 'local' } : { kind: 'environment', environmentId },
       sessionId,
-      file
+      path,
+      legacy
     }
     const abort = new AbortController()
     void loadWithRetries(identityNow, abort.signal, setState)
     return () => abort.abort()
-  }, [enabled, environmentId, file, sessionId, refreshKey])
+  }, [enabled, environmentId, legacy, path, sessionId, refreshKey])
 
   return state
 }

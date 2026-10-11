@@ -27,7 +27,7 @@ const source = { client: {} as RpcClient, sessionId: 'session-1' }
 
 let latest: { state: MobileNativeChatVisualState; retry: () => void } | null = null
 function Probe() {
-  latest = useMobileNativeChatVisual(source, 'chart.html')
+  latest = useMobileNativeChatVisual(source, 'chart.html', false)
   return null
 }
 

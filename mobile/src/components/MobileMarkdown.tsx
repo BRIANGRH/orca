@@ -265,7 +265,7 @@ function MobileMarkdownContent({
         if (block.type === 'visual') {
           const directive = directives[block.index]
           return directive && renderVisual ? (
-            <Fragment key={`visual:${block.index}:${directive.file}`}>
+            <Fragment key={`visual:${block.index}:${directive.path}`}>
               {renderVisual(directive, block.index)}
             </Fragment>
           ) : null

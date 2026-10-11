@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,15 +9,7 @@ import {
 } from '../../shared/native-chat-visual-directive'
 import { NATIVE_CHAT_VISUAL_THEME_TOKENS } from '../../shared/native-chat-visual-shell'
 import { ORCAD_NATIVE_CHAT_VISUALS_ARTIFACTS } from '../../shared/orcad-artifacts'
-import {
-  createNativeChatVisualsDelivery,
-  NATIVE_CHAT_VISUALS_DIR_ENV,
-  withNativeChatVisualsEnv
-} from './native-chat-visuals-delivery'
-import { nativeChatVisualsFolderFor, nativeChatVisualsRootFor } from './native-chat-visuals-folder'
-import { buildClaudeChildProcessEnv } from '../claude/claude-child-process-environment'
-import { codexStructuredChildEnvironment } from '../codex/codex-structured-child-environment'
-import { resolveProviderChildEnv } from '../provider-process/provider-process-launch'
+import { createNativeChatVisualsDelivery } from './native-chat-visuals-delivery'
 import {
   NATIVE_CHAT_VISUALS_SKILL_NAME,
   resetNativeChatVisualsSkillLocationForTests,
@@ -49,111 +41,44 @@ const logger = () => ({ warn: vi.fn(), error: vi.fn() })
 
 describe('preparing a chat for visuals', () => {
   it('reads the preference for each launch and prepares nothing while it is off', async () => {
-    const state = tempDir()
     let enabled = false
     const resolveSkill = vi.fn(async () => SKILL)
     const prepare = createNativeChatVisualsDelivery({
-      stateDirectory: state,
       logger: logger(),
       isEnabled: () => enabled,
       resolveSkill
     })
     await expect(prepare('disabled-chat')).resolves.toBeNull()
     expect(resolveSkill).not.toHaveBeenCalled()
-    expect(existsSync(nativeChatVisualsRootFor(state))).toBe(false)
     enabled = true
-    const launched = await prepare('enabled-chat')
-    expect(launched).toEqual({
-      folder: nativeChatVisualsFolderFor(state, 'enabled-chat'),
-      skill: SKILL
-    })
+    await expect(prepare('enabled-chat')).resolves.toEqual({ skill: SKILL })
     enabled = false
     await expect(prepare('next-chat')).resolves.toBeNull()
     expect(resolveSkill).toHaveBeenCalledOnce()
-    expect(existsSync(nativeChatVisualsFolderFor(state, 'next-chat'))).toBe(false)
-    expect(existsSync(launched!.folder)).toBe(true)
   })
 
-  it("creates the chat's own private folder and hands back the skill", async () => {
-    const state = tempDir()
-    const prepare = createNativeChatVisualsDelivery({
-      stateDirectory: state,
-      logger: logger(),
-      resolveSkill: async () => SKILL
-    })
-    const prepared = await prepare('chat-1')
-    expect(prepared).toEqual({ folder: nativeChatVisualsFolderFor(state, 'chat-1'), skill: SKILL })
-    const mode = statSync(prepared!.folder).mode & 0o777
-    expect(process.platform === 'win32' || mode === 0o700).toBe(true)
-    // A second launch of the same chat reuses it.
-    await expect(prepare('chat-1')).resolves.toEqual(prepared)
-  })
-
-  it('leaves the chat without visuals when the skill is missing or the folder fails', async () => {
+  it('leaves the chat without visuals when the skill is missing or cannot be found', async () => {
     const missingSkill = logger()
     await expect(
       createNativeChatVisualsDelivery({
-        stateDirectory: tempDir(),
         logger: missingSkill,
         resolveSkill: async () => null
       })('chat-1')
     ).resolves.toBeNull()
     expect(missingSkill.warn).toHaveBeenCalledOnce()
-    // A file where the visuals root should be makes every mkdir fail.
-    const state = tempDir()
-    writeFileSync(join(state, 'native-chat-visuals'), 'not a folder')
-    const failedFolder = logger()
+    const failed = logger()
     await expect(
       createNativeChatVisualsDelivery({
-        stateDirectory: state,
-        logger: failedFolder,
-        resolveSkill: async () => SKILL
+        logger: failed,
+        resolveSkill: async () => {
+          throw new Error('unreadable install')
+        }
       })('chat-1')
     ).resolves.toBeNull()
-    expect(failedFolder.warn).toHaveBeenCalledWith(
-      'native-chat visuals folder could not be prepared',
-      expect.objectContaining({ scope: 'nativeChatVisuals.folder', sessionId: 'chat-1' })
+    expect(failed.warn).toHaveBeenCalledWith(
+      'native-chat visuals skill could not be prepared',
+      expect.objectContaining({ scope: 'nativeChatVisuals.skill', sessionId: 'chat-1' })
     )
-  })
-
-  it("never hands a chat another chat's folder that Orca itself inherited", () => {
-    const inherited = { PATH: '/bin', [NATIVE_CHAT_VISUALS_DIR_ENV]: '/parent-chat' }
-    const visuals = { folder: '/mine', skill: SKILL }
-    for (const platform of ['darwin', 'win32'] as const) {
-      const claude = (configured: Record<string, string>) =>
-        buildClaudeChildProcessEnv(configured, { inheritedEnv: inherited, platform })
-      expect(claude({})).not.toHaveProperty(NATIVE_CHAT_VISUALS_DIR_ENV)
-      expect(claude(withNativeChatVisualsEnv({}, visuals))[NATIVE_CHAT_VISUALS_DIR_ENV]).toBe(
-        '/mine'
-      )
-    }
-    const codex = (withVisuals: boolean) =>
-      resolveProviderChildEnv(
-        codexStructuredChildEnvironment(
-          {
-            command: 'codex',
-            args: ['app-server'],
-            cwd: '/w',
-            codexHome: null,
-            resumeThreadId: null,
-            ...(withVisuals ? { visuals } : {})
-          },
-          'spawn-token',
-          'chat-1'
-        ),
-        inherited
-      )
-    expect(codex(false)).not.toHaveProperty(NATIVE_CHAT_VISUALS_DIR_ENV)
-    expect(codex(true)[NATIVE_CHAT_VISUALS_DIR_ENV]).toBe('/mine')
-  })
-
-  it('names only this chat folder to the agent', () => {
-    const inherited = { PATH: '/bin', [NATIVE_CHAT_VISUALS_DIR_ENV]: '/other-chat' }
-    expect(withNativeChatVisualsEnv(inherited, { folder: '/mine', skill: SKILL })).toEqual({
-      PATH: '/bin',
-      [NATIVE_CHAT_VISUALS_DIR_ENV]: '/mine'
-    })
-    expect(withNativeChatVisualsEnv(inherited, null)).toEqual({ PATH: '/bin' })
   })
 })
 
@@ -180,12 +105,13 @@ describe('the bundled skill', () => {
   it('teaches the reply line the renderer parses, with its limits', () => {
     const example = SKILL_TEXT.split('\n').find((line) => line.startsWith('::orca-visual{'))
     expect(example && parseNativeChatVisualDirectiveLine(example)).toEqual({
-      file: 'latency-by-region-7c1e.html',
+      path: 'reports/latency-by-region.html',
+      legacy: false,
       title: 'Latency by region'
     })
     expect(SKILL_TEXT).toContain(`At most ${NATIVE_CHAT_VISUAL_MAX_PER_MESSAGE} per reply`)
     expect(SKILL_TEXT).toContain(`under ${NATIVE_CHAT_VISUAL_MAX_BYTES / 1024} KB`)
-    expect(SKILL_TEXT).toContain(NATIVE_CHAT_VISUALS_DIR_ENV)
+    expect(SKILL_TEXT).not.toContain('ORCA_CHAT_VISUALS_DIR')
     expect(SKILL_TEXT).toMatch(new RegExp(`^name: ${NATIVE_CHAT_VISUALS_SKILL_NAME}$`, 'm'))
   })
 

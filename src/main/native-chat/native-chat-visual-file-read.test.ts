@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { NATIVE_CHAT_VISUAL_MAX_BYTES } from '../../shared/native-chat-visual-directive'
-import { nativeChatVisualsFolderFor } from './native-chat-visuals-folder'
 import { nativeChatVisualRevision, readNativeChatVisualFile } from './native-chat-visual-file-read'
 
 const posixIt = process.platform === 'win32' ? it.skip : it
@@ -14,22 +13,12 @@ let folder: string
 
 beforeEach(async () => {
   stateDirectory = await mkdtemp(join(tmpdir(), 'orca-visual-read-'))
-  folder = nativeChatVisualsFolderFor(stateDirectory, 'session-alpha')
+  folder = join(stateDirectory, 'workspace')
   await mkdir(folder, { recursive: true })
 })
 
 afterEach(async () => {
   await rm(stateDirectory, { recursive: true, force: true })
-})
-
-describe('nativeChatVisualsFolderFor', () => {
-  it('places each chat in its own hashed folder under the state directory', () => {
-    const alpha = nativeChatVisualsFolderFor('/state', 'session-alpha')
-    const beta = nativeChatVisualsFolderFor('/state', 'session-beta')
-    expect(alpha).toMatch(/native-chat-visuals[\\/][0-9a-f]{32}$/)
-    expect(alpha.startsWith(join('/state', 'native-chat-visuals'))).toBe(true)
-    expect(alpha).not.toBe(beta)
-  })
 })
 
 describe('readNativeChatVisualFile', () => {
@@ -64,68 +53,71 @@ describe('readNativeChatVisualFile', () => {
       ok: false,
       error: 'not_found'
     })
-    const absent = nativeChatVisualsFolderFor(stateDirectory, 'session-never')
+    const absent = join(stateDirectory, 'never-created')
     expect(await readNativeChatVisualFile(absent, 'chart.html')).toEqual({
       ok: false,
       error: 'not_found'
     })
   })
 
-  it('refuses names that are not a bare visual file name', async () => {
+  it('reads a page in a folder below the chat folder', async () => {
+    await mkdir(join(folder, 'reports', '2026'), { recursive: true })
+    await writeFile(join(folder, 'reports', '2026', 'usage.htm'), '<p>usage</p>')
+    expect(await readNativeChatVisualFile(folder, 'reports/2026/usage.htm')).toMatchObject({
+      ok: true,
+      html: '<p>usage</p>'
+    })
+    expect(await readNativeChatVisualFile(folder, 'reports/missing.html')).toEqual({
+      ok: false,
+      error: 'not_found'
+    })
+  })
+
+  it('refuses paths that escape the folder or are not html', async () => {
     await mkdir(join(stateDirectory, 'other'), { recursive: true })
     await writeFile(join(stateDirectory, 'other', 'secret.html'), 'secret')
-    for (const name of ['../other/secret.html', '/etc/hosts', 'chart.txt', 'sub/chart.html']) {
-      expect(await readNativeChatVisualFile(folder, name)).toEqual({
+    for (const path of ['../other/secret.html', '/etc/hosts', 'chart.txt', 'a/../chart.html']) {
+      expect(await readNativeChatVisualFile(folder, path)).toEqual({
         ok: false,
         error: 'outside_folder'
       })
     }
   })
 
-  posixIt('refuses a symlink to a sibling chat folder or another workspace', async () => {
-    const sibling = nativeChatVisualsFolderFor(stateDirectory, 'session-beta')
-    await mkdir(sibling, { recursive: true })
-    await writeFile(join(sibling, 'theirs.html'), '<p>other chat</p>')
-    const worktree = join(stateDirectory, 'worktree')
-    await mkdir(worktree)
-    await writeFile(join(worktree, 'index.html'), '<p>repo</p>')
+  posixIt('follows symlinks inside the folder and refuses ones that lead out of it', async () => {
+    const outside = join(stateDirectory, 'other-workspace')
+    await mkdir(outside)
+    await writeFile(join(outside, 'index.html'), '<p>other</p>')
+    await mkdir(join(folder, 'out'))
+    await writeFile(join(folder, 'out', 'real.html'), '<p>mine</p>')
 
-    await symlink(join(sibling, 'theirs.html'), join(folder, 'theirs.html'))
-    await symlink(join(worktree, 'index.html'), join(folder, 'repo.html'))
+    await symlink(join(folder, 'out', 'real.html'), join(folder, 'alias.html'))
+    await symlink(join(folder, 'out'), join(folder, 'latest'))
+    await symlink(join(outside, 'index.html'), join(folder, 'theirs.html'))
+    await symlink(outside, join(folder, 'linked-dir'))
     await symlink(join(folder, 'missing-target.html'), join(folder, 'dangling.html'))
 
-    for (const name of ['theirs.html', 'repo.html', 'dangling.html']) {
-      expect(await readNativeChatVisualFile(folder, name)).toEqual({
+    expect(await readNativeChatVisualFile(folder, 'alias.html')).toMatchObject({ ok: true })
+    expect(await readNativeChatVisualFile(folder, 'latest/real.html')).toMatchObject({ ok: true })
+    for (const path of ['theirs.html', 'linked-dir/index.html']) {
+      expect(await readNativeChatVisualFile(folder, path)).toEqual({
         ok: false,
         error: 'outside_folder'
       })
     }
-  })
-
-  posixIt('refuses a visuals folder replaced by a symlink', async () => {
-    const elsewhere = join(stateDirectory, 'elsewhere')
-    await mkdir(elsewhere)
-    await writeFile(join(elsewhere, 'chart.html'), '<p>elsewhere</p>')
-    await rm(folder, { recursive: true })
-    await symlink(elsewhere, folder)
-    expect(await readNativeChatVisualFile(folder, 'chart.html')).toEqual({
+    expect(await readNativeChatVisualFile(folder, 'dangling.html')).toEqual({
       ok: false,
-      error: 'outside_folder'
+      error: 'not_found'
     })
   })
 
-  posixIt('refuses when the shared visuals root is a symlink', async () => {
-    const root = join(stateDirectory, 'native-chat-visuals')
-    const moved = join(stateDirectory, 'moved-root')
-    await rm(root, { recursive: true })
-    await mkdir(join(moved, 'x'), { recursive: true })
-    await symlink(moved, root)
-    await mkdir(folder, { recursive: true })
-    await writeFile(join(folder, 'chart.html'), '<p>a</p>')
-    expect(await readNativeChatVisualFile(folder, 'chart.html')).toEqual({
-      ok: false,
-      error: 'outside_folder'
-    })
+  posixIt('reads a chat folder that is itself reached through a symlink', async () => {
+    const real = join(stateDirectory, 'real-workspace')
+    await mkdir(real)
+    await writeFile(join(real, 'chart.html'), '<p>a</p>')
+    const linked = join(stateDirectory, 'linked-workspace')
+    await symlink(real, linked)
+    expect(await readNativeChatVisualFile(linked, 'chart.html')).toMatchObject({ ok: true })
   })
 
   it('refuses a directory named like a visual', async () => {
@@ -167,7 +159,7 @@ describe('readNativeChatVisualFile', () => {
     })
   })
 
-  it('reads a hard link the agent made inside its own folder', async () => {
+  it('reads a hard link inside the folder', async () => {
     // A hard link grants nothing a copy would not: the agent could write the same bytes itself.
     await writeFile(join(folder, 'a.html'), '<p>a</p>')
     await link(join(folder, 'a.html'), join(folder, 'b.html'))

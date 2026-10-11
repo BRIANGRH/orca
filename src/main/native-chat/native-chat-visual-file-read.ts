@@ -1,14 +1,16 @@
-// Reading one visual out of a chat's visuals folder. This is the boundary, not the renderer: the
-// file must sit directly in the folder both lexically and canonically, be a regular file reached
-// without a symlink, and be UTF-8 text within the byte cap.
+// Reading one visual out of a chat's folder (its worktree, folder workspace or pinned floating
+// folder). This is the boundary, not the renderer: the page must resolve, canonically, inside that
+// folder, be a regular file, and be UTF-8 text within the byte cap. Symlinks inside the folder are
+// followed like any workspace file; one that leads out of it is refused.
 
 import { createHash } from 'node:crypto'
 import { constants, type Stats } from 'node:fs'
 import { lstat, open, realpath, type FileHandle } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { isPathInsideOrEqual } from '../../shared/cross-platform-path'
 import {
   NATIVE_CHAT_VISUAL_MAX_BYTES,
-  isNativeChatVisualFileName
+  isNativeChatVisualPath
 } from '../../shared/native-chat-visual-directive'
 import type {
   AgentSessionReadVisualResult,
@@ -17,8 +19,9 @@ import type {
 import { isENOENT } from '../ipc/filesystem-path-containment'
 import { readLocalFileBounded } from '../ipc/filesystem/local-regular-file-read'
 
-// Why O_NOFOLLOW: refuses a final-component symlink at open, so no swap after a check can redirect
-// the read. Windows has no such flag; there the lstat and post-open identity checks hold the line.
+// Why O_NOFOLLOW on the resolved path: a final component swapped for a symlink after the realpath
+// fails the open instead of redirecting it. Windows has no such flag; the post-open identity check
+// holds the line there.
 const VISUAL_OPEN_FLAGS =
   constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0)
 
@@ -40,51 +43,43 @@ function errorCode(error: unknown): string | undefined {
     : undefined
 }
 
+function isAbsence(error: unknown): boolean {
+  return isENOENT(error) || errorCode(error) === 'ENOTDIR'
+}
+
 function sameFile(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino
 }
 
-/**
- * The folder and its parent are Orca's own directories below the trusted state directory. Either
- * one replaced by a symlink would aim every read somewhere else, so a link there is refused.
- */
-async function canonicalFolder(folder: string): Promise<string> {
+async function canonical(path: string): Promise<string> {
   try {
-    // Parent first, so the answer for a broken path does not depend on which check settles first.
-    const parentStats = await lstat(dirname(folder))
-    const owned = [parentStats, await lstat(folder)]
-    if (owned.some((stats) => stats.isSymbolicLink())) {
-      refuse('outside_folder')
-    }
-    if (owned.some((stats) => !stats.isDirectory())) {
-      refuse('not_found')
-    }
-    return await realpath(folder)
+    return await realpath(path)
   } catch (error) {
-    if (error instanceof VisualReadRefusal) {
-      throw error
-    }
-    if (isENOENT(error) || errorCode(error) === 'ENOTDIR') {
+    if (isAbsence(error)) {
       refuse('not_found')
     }
     throw error
   }
 }
 
-async function openVisual(candidate: string): Promise<FileHandle> {
+/** The page's canonical path, refused unless it lies strictly inside the canonical folder. */
+async function containedPage(folder: string, path: string): Promise<string> {
+  const folderReal = await canonical(folder)
+  const page = await canonical(join(folderReal, ...path.split('/')))
+  if (page === folderReal || !isPathInsideOrEqual(folderReal, page)) {
+    refuse('outside_folder')
+  }
+  return page
+}
+
+async function openPage(page: string): Promise<FileHandle> {
   try {
-    if ((await lstat(candidate)).isSymbolicLink()) {
-      refuse('outside_folder')
-    }
-    return await open(candidate, VISUAL_OPEN_FLAGS)
+    return await open(page, VISUAL_OPEN_FLAGS)
   } catch (error) {
-    if (error instanceof VisualReadRefusal) {
-      throw error
-    }
-    if (isENOENT(error) || errorCode(error) === 'ENOTDIR') {
+    if (isAbsence(error)) {
       refuse('not_found')
     }
-    // ELOOP: the path became a symlink between the lstat and the open.
+    // ELOOP: the resolved path became a symlink between the realpath and the open.
     if (errorCode(error) === 'ELOOP' || errorCode(error) === 'EMLINK') {
       refuse('outside_folder')
     }
@@ -95,51 +90,24 @@ async function openVisual(candidate: string): Promise<FileHandle> {
   }
 }
 
-/**
- * After the open: the handle must still be the file directly inside the canonical folder, and the
- * folder that canonical path names must still be the real directory at Orca's own path (a symlink
- * swapped in and out around the first check would otherwise aim `folderReal` elsewhere).
- */
-async function assertStillContained(
-  folder: string,
-  candidate: string,
-  folderReal: string,
-  file: string,
-  opened: Stats
-): Promise<void> {
-  let resolved: string
+/** After the open: the handle must still be the file the contained canonical path names. */
+async function assertStillContained(page: string, opened: Stats): Promise<void> {
   let current: Stats
   try {
-    const [parentNow, folderNow, canonicalFolderNow] = await Promise.all([
-      lstat(dirname(folder)),
-      lstat(folder),
-      lstat(folderReal)
-    ])
-    if (
-      parentNow.isSymbolicLink() ||
-      folderNow.isSymbolicLink() ||
-      !sameFile(folderNow, canonicalFolderNow)
-    ) {
+    if ((await realpath(page)) !== page) {
       refuse('outside_folder')
     }
-    resolved = await realpath(candidate)
-    current = await lstat(candidate)
+    current = await lstat(page)
   } catch (error) {
     if (error instanceof VisualReadRefusal) {
       throw error
     }
-    if (isENOENT(error)) {
+    if (isAbsence(error)) {
       refuse('not_found')
     }
     throw error
   }
-  // Why compare names case-insensitively: a case-insensitive volume may report the stored case.
-  if (
-    dirname(resolved) !== folderReal ||
-    basename(resolved).toLowerCase() !== file.toLowerCase() ||
-    current.isSymbolicLink() ||
-    !sameFile(current, opened)
-  ) {
+  if (current.isSymbolicLink() || !sameFile(current, opened)) {
     refuse('outside_folder')
   }
 }
@@ -161,18 +129,14 @@ export function nativeChatVisualRevision(buffer: Buffer): string {
 
 async function readContained(
   folder: string,
-  file: string,
+  path: string,
   knownRevision: string | undefined
 ): Promise<AgentSessionReadVisualResult> {
-  if (!isNativeChatVisualFileName(file)) {
+  if (!isNativeChatVisualPath(path)) {
     refuse('outside_folder')
   }
-  const folderReal = await canonicalFolder(folder)
-  const candidate = join(folderReal, file)
-  if (dirname(candidate) !== folderReal) {
-    refuse('outside_folder')
-  }
-  const handle = await openVisual(candidate)
+  const page = await containedPage(folder, path)
+  const handle = await openPage(page)
   try {
     const stats = await handle.stat()
     if (!stats.isFile()) {
@@ -181,7 +145,7 @@ async function readContained(
     if (stats.size > NATIVE_CHAT_VISUAL_MAX_BYTES) {
       refuse('too_large')
     }
-    await assertStillContained(folder, candidate, folderReal, file, stats)
+    await assertStillContained(page, stats)
     let buffer: Buffer
     try {
       buffer = await readLocalFileBounded(handle, NATIVE_CHAT_VISUAL_MAX_BYTES, stats.size)
@@ -203,17 +167,17 @@ async function readContained(
 }
 
 /**
- * The visual `file` from `folder`, or the refusal the host observed. Unexpected filesystem faults
- * still throw, so the client reads them as unavailable rather than as a verdict about the file; the
- * thrown error names only the error code, never a host path.
+ * The visual at `path` under the chat's `folder`, or the refusal the host observed. Unexpected
+ * filesystem faults still throw, so the client reads them as unavailable rather than as a verdict
+ * about the file; the thrown error names only the error code, never a host path.
  */
 export async function readNativeChatVisualFile(
   folder: string,
-  file: string,
+  path: string,
   knownRevision?: string
 ): Promise<AgentSessionReadVisualResult> {
   try {
-    return await readContained(folder, file, knownRevision)
+    return await readContained(folder, path, knownRevision)
   } catch (error) {
     if (error instanceof VisualReadRefusal) {
       return { ok: false, error: error.refusal }

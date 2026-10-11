@@ -9,7 +9,6 @@ import type { AgentSessionJournalIdentity } from '../../shared/agent-session-jou
 import { agentSessionRecordFixture } from '../native-chat/agent-session-record-test-fixture'
 import { claudeProviderHandle } from '../../shared/agent-session-provider-handle-encoding'
 import { createNativeChatVisualsDelivery } from '../native-chat/native-chat-visuals-delivery'
-import { nativeChatVisualsFolderFor } from '../native-chat/native-chat-visuals-folder'
 import { NATIVE_CHAT_VISUALS_SKILL_NAME } from '../native-chat/native-chat-visuals-skill-location'
 import { createClaudeCliFlagSupport } from './claude-cli-flag-support'
 import { readClaudeInit } from './claude-structured-init-proof'
@@ -32,12 +31,11 @@ const suiteTitle = `Claude real CLI chat visuals${realClaudeCliGate.skipReason ?
 
 describe.skipIf(!realClaudeAvailable)(suiteTitle, () => {
   it.skipIf(!realClaudeAuthenticated)(
-    "loads the visuals skill through Orca's launch and grants the chat folder",
+    "loads the visuals skill through Orca's launch",
     async () => {
       const claudeConfigDir = process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude')
       const scratch = await mkdtemp(join(tmpdir(), 'orca-real-cli-visuals-'))
       const cwd = join(scratch, 'workspace')
-      const stateDirectory = join(scratch, 'state')
       const record = agentSessionRecordFixture({
         sessionId: SESSION_ID,
         location: { workspaceId: 'real-cli-visuals-workspace' },
@@ -54,7 +52,7 @@ describe.skipIf(!realClaudeAvailable)(suiteTitle, () => {
         resolveAuthPolicy: () => ({ account: 'system' }),
         hasTranscript: async () => false,
         cliFlags: createClaudeCliFlagSupport(),
-        prepareVisuals: createNativeChatVisualsDelivery({ stateDirectory, logger })
+        prepareVisuals: createNativeChatVisualsDelivery({ logger })
       })
       const identity: AgentSessionJournalIdentity = {
         sessionId: SESSION_ID,
@@ -75,8 +73,7 @@ describe.skipIf(!realClaudeAvailable)(suiteTitle, () => {
       try {
         await mkdir(cwd, { recursive: true })
         const launch = await resolveLaunch({ identity })
-        const folder = nativeChatVisualsFolderFor(stateDirectory, SESSION_ID)
-        expect(launch.options.additionalDirectories).toEqual([folder])
+        expect(launch.options).not.toHaveProperty('additionalDirectories')
         expect(launch.options.plugins).toHaveLength(1)
         await adapter.acquire({
           identity: {

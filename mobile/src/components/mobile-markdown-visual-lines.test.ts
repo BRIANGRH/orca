@@ -18,7 +18,7 @@ describe('native-chat visual lines in mobile markdown', () => {
     const { directives, blocks } = blocksOf(
       'Here is the chart.\n::orca-visual{file="usage-3f2a.html" title="Usage"}\nIt shows a dip.'
     )
-    expect(directives).toEqual([{ file: 'usage-3f2a.html', title: 'Usage' }])
+    expect(directives).toEqual([{ path: 'usage-3f2a.html', legacy: true, title: 'Usage' }])
     expect(blocks).toEqual([
       { type: 'paragraph', text: 'Here is the chart.' },
       { type: 'visual', index: 0 },
@@ -28,7 +28,7 @@ describe('native-chat visual lines in mobile markdown', () => {
 
   it('keeps the title exactly as written, before entity decoding and tag stripping', () => {
     const { directives } = blocksOf('::orca-visual{file="a.html" title="<b>Q1</b> &amp; Q2"}')
-    expect(directives).toEqual([{ file: 'a.html', title: '<b>Q1</b> &amp; Q2' }])
+    expect(directives).toEqual([{ path: 'a.html', legacy: true, title: '<b>Q1</b> &amp; Q2' }])
   })
 
   it('accepts CRLF line endings and up to three leading spaces', () => {
@@ -50,7 +50,7 @@ describe('native-chat visual lines in mobile markdown', () => {
 
   it('resumes recognizing directives after a fence closes', () => {
     const { directives } = blocksOf('```\ncode\n```\n::orca-visual{file="after.html"}')
-    expect(directives).toEqual([{ file: 'after.html', title: null }])
+    expect(directives).toEqual([{ path: 'after.html', legacy: true, title: null }])
   })
 
   it('leaves malformed or path-like directives as literal text', () => {

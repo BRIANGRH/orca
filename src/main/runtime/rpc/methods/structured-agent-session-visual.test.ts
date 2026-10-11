@@ -1,11 +1,11 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentSessionRecord } from '../../../../shared/agent-session-record'
 import { agentSessionRecordFixture } from '../../../../shared/agent-session-record.test-fixture'
+import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 import { setStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
-import { nativeChatVisualsFolderFor } from '../../../native-chat/native-chat-visuals-folder'
 import { ALL_RPC_METHODS } from '.'
 import { STRUCTURED_AGENT_SESSION_VISUAL_METHODS } from './structured-agent-session-visual'
 import {
@@ -22,19 +22,19 @@ function call(method: string, params: unknown, client: CallClient) {
   return callStructured(method, params, client, {}, STRUCTURED_AGENT_SESSION_VISUAL_METHODS)
 }
 
-let stateDirectory: string
-vi.mock('../../../orca-profiles/profile-storage-paths', () => ({
-  getProfileUserDataPath: () => stateDirectory
-}))
+let root: string
 let record: AgentSessionRecord | null
+const resolveWorkspacePath = vi.fn(async (workspaceId: string) => join(root, workspaceId))
 
 beforeEach(async () => {
-  stateDirectory = await mkdtemp(join(tmpdir(), 'orca-visual-rpc-'))
+  root = await mkdtemp(join(tmpdir(), 'orca-visual-rpc-'))
   record = { ...agentSessionRecordFixture(), sessionId: SESSION }
+  resolveWorkspacePath.mockClear()
   setStructuredAgentSessionHost(
     Object.assign(hostStub(), {
       deps: {
-        store: { getRecord: (id: string) => (record?.sessionId === id ? record : null) }
+        store: { getRecord: (id: string) => (record?.sessionId === id ? record : null) },
+        resolveWorkspacePath
       }
     })
   )
@@ -42,13 +42,14 @@ beforeEach(async () => {
 
 afterEach(async () => {
   clearStructuredHostStub()
-  await rm(stateDirectory, { recursive: true, force: true })
+  await rm(root, { recursive: true, force: true })
 })
 
-async function writeVisual(name: string, html: string): Promise<void> {
-  const folder = nativeChatVisualsFolderFor(stateDirectory, SESSION)
-  await mkdir(folder, { recursive: true })
-  await writeFile(join(folder, name), html)
+/** Writes a page into the chat's workspace, the folder the host resolves for its record. */
+async function writeVisual(path: string, html: string, folder?: string): Promise<void> {
+  const target = join(folder ?? join(root, record?.location.workspaceId ?? ''), path)
+  await mkdir(dirname(target), { recursive: true })
+  await writeFile(target, html)
 }
 
 describe('agentSession.readVisual', () => {
@@ -56,24 +57,44 @@ describe('agentSession.readVisual', () => {
     expect(ALL_RPC_METHODS.map((method) => method.name)).toContain('agentSession.readVisual')
   })
 
-  it("reads a file from the chat's own folder under the host's state directory", async () => {
-    await writeVisual('chart.html', '<p>chart</p>')
+  it("reads a page from the chat's workspace", async () => {
+    await writeVisual('reports/chart.html', '<p>chart</p>')
     const reply = await call(
       'agentSession.readVisual',
-      { sessionId: SESSION, file: 'chart.html' },
+      { sessionId: SESSION, path: 'reports/chart.html' },
       STRUCTURED_CLIENT
     )
     expect(reply).toMatchObject({
       ok: true,
       result: { ok: true, html: '<p>chart</p>', sizeBytes: 12 }
     })
+    expect(resolveWorkspacePath).toHaveBeenCalledWith(record?.location.workspaceId)
+  })
+
+  it('reads a floating chat from the folder it was pinned to', async () => {
+    const base = agentSessionRecordFixture()
+    const pinned = join(root, 'pinned-folder')
+    record = {
+      ...base,
+      sessionId: SESSION,
+      location: { ...base.location, workspaceId: FLOATING_TERMINAL_WORKTREE_ID },
+      launchDirectory: pinned
+    }
+    await writeVisual('chart.html', '<p>pinned</p>', pinned)
+    const reply = await call(
+      'agentSession.readVisual',
+      { sessionId: SESSION, path: 'chart.html' },
+      STRUCTURED_CLIENT
+    )
+    expect(reply).toMatchObject({ ok: true, result: { ok: true, html: '<p>pinned</p>' } })
+    expect(resolveWorkspacePath).not.toHaveBeenCalled()
   })
 
   it('answers unchanged for the revision the client holds', async () => {
     await writeVisual('chart.html', '<p>chart</p>')
     const first = await call(
       'agentSession.readVisual',
-      { sessionId: SESSION, file: 'chart.html' },
+      { sessionId: SESSION, path: 'chart.html' },
       STRUCTURED_CLIENT
     )
     const result: unknown = first.ok ? first.result : null
@@ -83,7 +104,7 @@ describe('agentSession.readVisual', () => {
         : ''
     const again = await call(
       'agentSession.readVisual',
-      { sessionId: SESSION, file: 'chart.html', knownRevision: revision },
+      { sessionId: SESSION, path: 'chart.html', knownRevision: revision },
       STRUCTURED_CLIENT
     )
     expect(again).toMatchObject({ ok: true, result: { ok: true, unchanged: true, revision } })
@@ -97,7 +118,7 @@ describe('agentSession.readVisual', () => {
     record = null
     const reply = await call(
       'agentSession.readVisual',
-      { sessionId: SESSION, file: 'chart.html' },
+      { sessionId: SESSION, path: 'chart.html' },
       STRUCTURED_CLIENT
     )
     expect(reply).toMatchObject({ ok: true, result: { ok: false, error: 'session_not_found' } })
@@ -112,7 +133,7 @@ describe('agentSession.readVisual', () => {
     }
     const ssh = await call(
       'agentSession.readVisual',
-      { sessionId: SESSION, file: 'chart.html' },
+      { sessionId: SESSION, path: 'chart.html' },
       STRUCTURED_CLIENT
     )
     expect(ssh).toMatchObject({ ok: true, result: { ok: false, error: 'unsupported_location' } })
@@ -120,28 +141,40 @@ describe('agentSession.readVisual', () => {
     record = { ...base, sessionId: SESSION, location: { ...base.location, wslDistro: 'Ubuntu' } }
     const wsl = await call(
       'agentSession.readVisual',
-      { sessionId: SESSION, file: 'chart.html' },
+      { sessionId: SESSION, path: 'chart.html' },
       STRUCTURED_CLIENT
     )
     expect(wsl).toMatchObject({ ok: true, result: { ok: false, error: 'unsupported_location' } })
   })
 
   it.each([
-    ['a path', { sessionId: SESSION, file: '../chart.html' }],
-    ['a non-html file', { sessionId: SESSION, file: 'chart.txt' }],
-    ['a bad session id', { sessionId: '../x', file: 'chart.html' }],
-    ['an unknown field', { sessionId: SESSION, file: 'chart.html', path: '/etc' }],
-    ['a malformed revision', { sessionId: SESSION, file: 'chart.html', knownRevision: 'zz' }]
+    ['an escaping path', { sessionId: SESSION, path: '../chart.html' }],
+    ['an absolute path', { sessionId: SESSION, path: '/etc/chart.html' }],
+    ['a non-html file', { sessionId: SESSION, path: 'chart.txt' }],
+    ['a bad session id', { sessionId: '../x', path: 'chart.html' }],
+    ['a legacy file name that is a path', { sessionId: SESSION, file: 'reports/chart.html' }],
+    ['both path and file', { sessionId: SESSION, path: 'chart.html', file: 'chart.html' }],
+    ['a malformed revision', { sessionId: SESSION, path: 'chart.html', knownRevision: 'zz' }]
   ])('rejects %s as invalid params', async (_name, params) => {
     const reply = await call('agentSession.readVisual', params, STRUCTURED_CLIENT)
     expect(reply).toMatchObject({ ok: false, error: { code: 'invalid_argument' } })
+  })
+
+  it('answers a legacy file read as not found: only an older host keeps per-chat visuals', async () => {
+    await writeVisual('chart.html', '<p>chart</p>')
+    const reply = await call(
+      'agentSession.readVisual',
+      { sessionId: SESSION, file: 'chart.html' },
+      STRUCTURED_CLIENT
+    )
+    expect(reply).toMatchObject({ ok: true, result: { ok: false, error: 'not_found' } })
   })
 
   it('is refused to a client that cannot read structured sessions', async () => {
     await writeVisual('chart.html', '<p>chart</p>')
     const reply = await call(
       'agentSession.readVisual',
-      { sessionId: SESSION, file: 'chart.html' },
+      { sessionId: SESSION, path: 'chart.html' },
       { clientKind: 'runtime', clientCapabilities: [] }
     )
     expect(reply.ok).toBe(false)

@@ -61,7 +61,7 @@ import {
   type AgentSessionReserveRequest,
   type AgentSessionReserveResult
 } from './agent-session-reservation-admission'
-import { heldAgentSessionIds, type AgentSessionStoreState } from './agent-session-store-state'
+import type { AgentSessionStoreState } from './agent-session-store-state'
 import {
   agentSessionVisibleTabIndex,
   listVisibleAgentSessionIds,
@@ -121,9 +121,6 @@ export class AgentSessionRecordStore {
 
   /** The runtimes this one replaced for a chat, as found at load; absent for a chat it began. */
   replacedRuntime = (sessionId: string) => this.transactions.replacedRuntimes.get(sessionId)
-
-  /** Every chat this host holds a row for, readable or not. */
-  listHeldSessionIds = (): string[] => heldAgentSessionIds(this.state)
 
   /** Whether this host has recorded a chat, readable or not. Nothing removes a record row. */
   holdsRecords = (): boolean => this.state.records.size > 0 || this.state.unreadableRecords.size > 0

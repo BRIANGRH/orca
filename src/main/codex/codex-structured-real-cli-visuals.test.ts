@@ -1,6 +1,6 @@
 // The installed Codex, driven through Orca's own visuals setup in an isolated CODEX_HOME: Codex must
-// list the bundled skill and open the thread with the chat folder beside the user's own writable
-// root. Opt-in (ORCA_REAL_CODEX_CLI_TEST=1); no account is used, nothing reaches a model.
+// list the bundled skill and open the thread with only the user's own writable roots. Opt-in
+// (ORCA_REAL_CODEX_CLI_TEST=1); no account is used, nothing reaches a model.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,20 +8,19 @@ import { describe, expect, it } from 'vitest'
 import { resolveCodexCommand } from '../codex-cli/command'
 import { NATIVE_CHAT_VISUALS_SKILL_NAME } from '../native-chat/native-chat-visuals-skill-location'
 import { openCodexAppServerConnection } from './codex-app-server-connection'
-import { withCodexVisualsThreadConfig } from './codex-structured-visuals'
+import { setUpCodexVisualsSkill } from './codex-structured-visuals'
 
 const enabled = process.env.ORCA_REAL_CODEX_CLI_TEST === '1'
 const MANUAL = { approvalPolicy: 'on-request', sandbox: 'workspace-write' } as const
 
 describe.skipIf(!enabled)('Codex real app-server chat visuals', () => {
-  it('lists the visuals skill and grants the chat folder beside the user writable roots', async () => {
+  it('lists the visuals skill and adds no writable root of its own', async () => {
     const base = mkdtempSync(join(tmpdir(), 'orca-real-codex-visuals-'))
     try {
       const codexHome = join(base, 'codex-home')
       const cwd = join(base, 'workspace')
       const userRoot = join(base, 'user-root')
-      const folder = join(base, 'state', 'native-chat-visuals', 'chat')
-      for (const dir of [codexHome, cwd, folder]) {
+      for (const dir of [codexHome, cwd]) {
         mkdirSync(dir, { recursive: true })
       }
       writeFileSync(
@@ -36,13 +35,9 @@ describe.skipIf(!enabled)('Codex real app-server chat visuals', () => {
         env: { HOME: base, CODEX_HOME: codexHome }
       })
       try {
-        const launch = await withCodexVisualsThreadConfig(
+        await setUpCodexVisualsSkill(
           connection,
-          {
-            cwd,
-            permissionPolicy: MANUAL,
-            visuals: { folder, skill: { pluginDir, skillsRoot: join(pluginDir, 'skills') } }
-          },
+          { skill: { pluginDir, skillsRoot: join(pluginDir, 'skills') } },
           { sessionId: 'real-codex-visuals' }
         )
         const skills = JSON.stringify(
@@ -53,11 +48,11 @@ describe.skipIf(!enabled)('Codex real app-server chat visuals', () => {
         )
         const opened = await connection.request(
           'thread/start',
-          { cwd, ...MANUAL, ...(launch.threadConfig ? { config: launch.threadConfig } : {}) },
+          { cwd, ...MANUAL },
           { timeoutMs: 20_000 }
         )
         expect(opened).toMatchObject({
-          sandbox: { type: 'workspaceWrite', writableRoots: [userRoot, folder] }
+          sandbox: { type: 'workspaceWrite', writableRoots: [userRoot] }
         })
       } finally {
         await connection.close()

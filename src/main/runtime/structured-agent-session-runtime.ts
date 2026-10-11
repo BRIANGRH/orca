@@ -68,10 +68,6 @@ import {
   type RuntimeAgentAccountHomeResolver
 } from './structured-agent-model-catalog-wiring'
 import type { ClaudeCliFlagSupport } from '../claude/claude-cli-flag-support'
-import {
-  scheduleNativeChatVisualsSweep,
-  type NativeChatVisualsSweepDeps
-} from '../native-chat/native-chat-visuals-sweep'
 
 /** Whether this profile holds a structured chat: a record or tab in the journal database. */
 export function hasPersistedStructuredAgentSessionStore(
@@ -104,12 +100,11 @@ export type StructuredAgentSessionRuntimeDeps = {
   openPiConnection?: PiRpcSessionDeps['openConnection']
   /** Which version-gated flags a Claude CLI takes; absent never passes one. */
   claudeCliFlags?: ClaudeCliFlagSupport
-  /** Gives each chat a visuals folder and the skill that teaches it, and sweeps folders whose chat
-   *  is gone. Wired by the real hosts only, so a test runtime never loads the bundled skill. */
+  /** Gives each chat the skill that teaches inline visuals. Wired by the real hosts only, so a
+   *  test runtime never loads the bundled skill. */
   nativeChatVisuals?: {
     /** Read this host's preference when a chat starts a provider process. */
     isEnabled: () => boolean
-    workspaceVerdicts: NonNullable<NativeChatVisualsSweepDeps['workspaceVerdicts']>
   }
   /** Provider transports are overridden only to drive the runtime against scripted children. */
   openCodexConnection?: CodexStructuredSessionAdapterDeps['openConnection']
@@ -359,22 +354,12 @@ async function installOnJournal(
     journalDatabase,
     logger: deps.logger
   })
-  const stopVisualsSweep = deps.nativeChatVisuals
-    ? scheduleNativeChatVisualsSweep({
-        stateDirectory: deps.stateDirectory,
-        listHeldSessionIds: () => (store.readOnly ? null : store.listHeldSessionIds()),
-        locationOf: (sessionId) => store.getRecord(sessionId)?.location ?? null,
-        workspaceVerdicts: deps.nativeChatVisuals.workspaceVerdicts,
-        logger: deps.logger
-      })
-    : undefined
   return {
     host,
     adapter,
     journalDatabase,
     waitForRecovery: lifecycle.drain,
     stopBackgroundWork: () => {
-      stopVisualsSweep?.()
       modelCatalog?.stop()
     }
   }

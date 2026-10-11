@@ -1,5 +1,4 @@
 import { CLAUDE_AUTH_ENV_VARS, applyClaudeEnvPatch } from '../claude-accounts/environment'
-import { NATIVE_CHAT_VISUALS_DIR_ENV } from '../native-chat/native-chat-visuals-delivery'
 
 const CLAUDE_CHILD_SESSION_STAMP_ENV_KEYS = [
   'CLAUDE_CODE_CHILD_SESSION',
@@ -70,8 +69,6 @@ export function buildClaudeChildProcessEnv(
       }
     }
   }
-  // Only the launch names a chat's visuals folder: an inherited one belongs to another chat.
-  stripEnvKeys(env, [NATIVE_CHAT_VISUALS_DIR_ENV], platform)
   if (options.scrubConfiguredChildSessionStamps) {
     return stripClaudeChildSessionStamps({ ...env, ...configuredEnv }, platform)
   }

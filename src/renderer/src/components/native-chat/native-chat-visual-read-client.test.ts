@@ -12,11 +12,17 @@ import {
   readNativeChatVisual
 } from './native-chat-visual-read-client'
 
-const local = { target: { kind: 'local' as const }, sessionId: 'session-alpha', file: 'a.html' }
+const local = {
+  target: { kind: 'local' as const },
+  sessionId: 'session-alpha',
+  path: 'a.html',
+  legacy: false
+}
 const remote = {
   target: { kind: 'environment' as const, environmentId: 'env-1' },
   sessionId: 'session-alpha',
-  file: 'a.html'
+  path: 'a.html',
+  legacy: false
 }
 
 beforeEach(() => {
@@ -29,7 +35,7 @@ afterEach(() => {
 })
 
 describe('readNativeChatVisual', () => {
-  it("reads through the chat's own runtime with only the session and file name", async () => {
+  it("reads through the chat's own runtime with only the session and page path", async () => {
     callRuntimeRpc.mockResolvedValueOnce({ ok: true, revision: 'r1', sizeBytes: 3, html: '<p>' })
     expect(await readNativeChatVisual(remote)).toEqual({
       ok: true,
@@ -38,7 +44,7 @@ describe('readNativeChatVisual', () => {
     expect(callRuntimeRpc).toHaveBeenCalledWith(
       remote.target,
       'agentSession.readVisual',
-      { sessionId: 'session-alpha', file: 'a.html' },
+      { sessionId: 'session-alpha', path: 'a.html' },
       expect.any(Object)
     )
   })
@@ -58,7 +64,7 @@ describe('readNativeChatVisual', () => {
     })
     expect(callRuntimeRpc.mock.calls[1][2]).toEqual({
       sessionId: 'session-alpha',
-      file: 'a.html',
+      path: 'a.html',
       knownRevision: 'r1'
     })
   })
@@ -134,10 +140,10 @@ describe('readNativeChatVisual', () => {
         sizeBytes: 1,
         html: 'x'
       })
-      await readNativeChatVisual({ ...local, file: `f${index}.html` })
+      await readNativeChatVisual({ ...local, path: `f${index}.html` })
     }
-    expect(peekCachedNativeChatVisual({ ...local, file: 'f0.html' })).toBeNull()
-    expect(peekCachedNativeChatVisual({ ...local, file: 'f29.html' })?.revision).toBe('r29')
+    expect(peekCachedNativeChatVisual({ ...local, path: 'f0.html' })).toBeNull()
+    expect(peekCachedNativeChatVisual({ ...local, path: 'f29.html' })?.revision).toBe('r29')
   })
 })
 
@@ -147,5 +153,19 @@ describe('isRetryableNativeChatVisualFailure', () => {
     expect(isRetryableNativeChatVisualFailure('not_found')).toBe(true)
     expect(isRetryableNativeChatVisualFailure('outside_folder')).toBe(false)
     expect(isRetryableNativeChatVisualFailure('too_large')).toBe(false)
+  })
+})
+
+describe('legacy visuals', () => {
+  it('asks an older host for its per-chat folder page by the field it knows, cached apart from a path', async () => {
+    callRuntimeRpc.mockResolvedValueOnce({ ok: true, revision: 'r1', sizeBytes: 3, html: '<p>' })
+    await readNativeChatVisual({ ...remote, legacy: true })
+    expect(callRuntimeRpc).toHaveBeenCalledWith(
+      remote.target,
+      'agentSession.readVisual',
+      { sessionId: 'session-alpha', file: 'a.html' },
+      expect.any(Object)
+    )
+    expect(peekCachedNativeChatVisual(remote)).toBeNull()
   })
 })

@@ -18,9 +18,10 @@ function Probe(props: ComponentProps<'div'> & ExtraProps): React.JSX.Element {
     return <div className={props.className}>{props.children}</div>
   }
   const title = 'data-orca-visual-title' in props ? props['data-orca-visual-title'] : undefined
-  const file = 'data-orca-visual-file' in props ? props['data-orca-visual-file'] : undefined
+  const path = 'data-orca-visual-path' in props ? props['data-orca-visual-path'] : undefined
+  const legacy = 'data-orca-visual-legacy' in props ? props['data-orca-visual-legacy'] : undefined
   return (
-    <span data-visual={String(file)}>
+    <span data-visual={String(path)} data-legacy={String(legacy === 'true')}>
       {typeof title === 'string' ? `[${title}]` : '[untitled]'}
     </span>
   )
@@ -42,30 +43,37 @@ function mountedFiles(markup: string): string[] {
   return [...markup.matchAll(/data-visual="([^"]+)"/g)].map((match) => match[1])
 }
 
-const LINE = '::orca-visual{file="usage.html" title="Usage by day"}'
+const LINE = '::orca-visual{path="reports/usage.html" title="Usage by day"}'
 
 describe('remarkNativeChatVisuals', () => {
   it('mounts a directive on its own line with its title', () => {
     const markup = render(`Here it is:\n\n${LINE}\n\nThat is the trend.`)
-    expect(mountedFiles(markup)).toEqual(['usage.html'])
+    expect(mountedFiles(markup)).toEqual(['reports/usage.html'])
     expect(markup).toContain('[Usage by day]')
     expect(markup).not.toContain('::orca-visual')
     expect(markup).toContain('That is the trend.')
   })
 
+  it("marks an older host's file line as legacy and a path line as not", () => {
+    expect(render('::orca-visual{file="old.html"}')).toContain('data-legacy="true"')
+    expect(render(LINE)).toContain('data-legacy="false"')
+  })
+
   it('splits a paragraph that runs straight into and out of the directive', () => {
     const markup = render(`Here it is:\n${LINE}\nThat is the trend.`)
-    expect(mountedFiles(markup)).toEqual(['usage.html'])
+    expect(mountedFiles(markup)).toEqual(['reports/usage.html'])
     expect(markup).toContain('Here it is:')
     expect(markup).toContain('That is the trend.')
   })
 
   it('mounts at the very end of the reply without a trailing newline', () => {
-    expect(mountedFiles(render(`Intro\n\n${LINE}`))).toEqual(['usage.html'])
+    expect(mountedFiles(render(`Intro\n\n${LINE}`))).toEqual(['reports/usage.html'])
   })
 
   it('accepts CRLF line endings and up to three spaces of indent', () => {
-    expect(mountedFiles(render(`Intro\r\n\r\n   ${LINE}\r\n\r\nAfter`))).toEqual(['usage.html'])
+    expect(mountedFiles(render(`Intro\r\n\r\n   ${LINE}\r\n\r\nAfter`))).toEqual([
+      'reports/usage.html'
+    ])
   })
 
   it.each([
@@ -77,8 +85,8 @@ describe('remarkNativeChatVisuals', () => {
     ['a list item', `- ${LINE}`],
     ['an ordered list item', `1. ${LINE}`],
     ['mid-sentence', `See ${LINE} here`],
-    ['a malformed directive', '::orca-visual{file="../usage.html"}'],
-    ['an unclosed directive', '::orca-visual{file="usage.html"'],
+    ['a malformed directive', '::orca-visual{path="../usage.html"}'],
+    ['an unclosed directive', '::orca-visual{path="usage.html"'],
     ['trailing prose on the line', `${LINE} done`]
   ])('leaves it as text inside %s', (_name, content) => {
     const markup = render(content)
@@ -88,7 +96,7 @@ describe('remarkNativeChatVisuals', () => {
 
   it('does not mount a raw HTML placeholder forged without the nonce', () => {
     const markup = render(
-      '<div data-orca-visual="guess" data-orca-visual-file="usage.html">x</div>\n\nafter'
+      '<div data-orca-visual="guess" data-orca-visual-path="usage.html">x</div>\n\nafter'
     )
     expect(mountedFiles(markup)).toEqual([])
   })
@@ -96,7 +104,7 @@ describe('remarkNativeChatVisuals', () => {
   it('mounts a raw HTML placeholder only if it knew the nonce, which the reply cannot', () => {
     // The nonce is per rendered message and never part of the reply, so this cannot be authored.
     const markup = render(
-      `<div data-orca-visual="${NONCE}" data-orca-visual-file="usage.html">x</div>`
+      `<div data-orca-visual="${NONCE}" data-orca-visual-path="usage.html">x</div>`
     )
     expect(mountedFiles(markup)).toEqual(['usage.html'])
   })
@@ -104,7 +112,7 @@ describe('remarkNativeChatVisuals', () => {
   it('caps how many visuals one reply mounts and shows the rest as text', () => {
     const lines = Array.from(
       { length: 10 },
-      (_, index) => `::orca-visual{file="chart-${index}.html"}`
+      (_, index) => `::orca-visual{path="chart-${index}.html"}`
     )
     const markup = render(lines.join('\n\n'))
     expect(mountedFiles(markup)).toEqual(
@@ -116,13 +124,13 @@ describe('remarkNativeChatVisuals', () => {
 
   it('keeps reference links defined after the directive working', () => {
     const markup = render(`See [the docs][d].\n\n${LINE}\n\n[d]: https://example.com/docs`)
-    expect(mountedFiles(markup)).toEqual(['usage.html'])
+    expect(mountedFiles(markup)).toEqual(['reports/usage.html'])
     expect(markup).toContain('href="https://example.com/docs"')
   })
 
   it('renders other markdown unchanged around it', () => {
     const markup = render(`# Title\n\n${LINE}\n\n| a | b |\n| - | - |\n| 1 | 2 |`)
-    expect(mountedFiles(markup)).toEqual(['usage.html'])
+    expect(mountedFiles(markup)).toEqual(['reports/usage.html'])
     expect(markup).toContain('<table')
   })
 })

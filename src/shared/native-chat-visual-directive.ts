@@ -1,14 +1,16 @@
-// The one grammar for a native-chat visual: an assistant reply line naming an HTML file in that
-// chat's visuals folder. Desktop/web (a markdown syntax extension) and mobile both parse with it.
+// The one grammar for a native-chat visual: an assistant reply line naming an HTML file in the
+// chat's workspace. Desktop/web (a markdown syntax extension) and mobile both parse with it.
 //
-//   ::orca-visual{file="usage-chart-3f2a.html" title="Usage by day"}
+//   ::orca-visual{path="reports/usage-by-day.html" title="Usage by day"}
 //
 // - The line may carry up to 3 leading spaces and any trailing spaces/tabs; a trailing CR is
 //   ignored. Nothing else may share the line.
 // - Attributes are `key="value"`, separated by spaces/tabs. Values have no escapes: they cannot
 //   contain `"`, `\`, or control characters. Keys are lowercase ASCII letters.
-// - `file` is required. `title` is optional. A repeated key refuses the line. Other keys are
-//   ignored, so a newer agent's extra attribute still renders on this viewer.
+// - `path` (relative to the chat's folder) is required. `title` is optional. A repeated key refuses
+//   the line. Other keys are ignored, so a newer agent's extra attribute still renders on this viewer.
+// - Older hosts' agents wrote `file`, a bare name in that host's per-chat visuals folder; a line with
+//   `file` and no `path` still parses, as a legacy visual only an older host can serve.
 // - The name is case-sensitive.
 
 export const NATIVE_CHAT_VISUAL_DIRECTIVE_MARKER = '::orca-visual{'
@@ -16,6 +18,7 @@ export const NATIVE_CHAT_VISUAL_DIRECTIVE_MARKER = '::orca-visual{'
 /** Longest line the grammar considers. Bounds parsing and the streaming-tail check. */
 export const NATIVE_CHAT_VISUAL_DIRECTIVE_MAX_LINE_LENGTH = 512
 export const NATIVE_CHAT_VISUAL_FILE_MAX_LENGTH = 128
+export const NATIVE_CHAT_VISUAL_PATH_MAX_LENGTH = 256
 export const NATIVE_CHAT_VISUAL_TITLE_MAX_LENGTH = 120
 
 /**
@@ -29,7 +32,10 @@ export const NATIVE_CHAT_VISUAL_MAX_PER_MESSAGE = 8
 export const NATIVE_CHAT_VISUAL_MAX_BYTES = 512 * 1024
 
 export type NativeChatVisualDirective = {
-  file: string
+  /** The page, relative to the chat's folder; a bare name when `legacy`. */
+  path: string
+  /** A `file` line from an older host, naming its per-chat visuals folder instead of the workspace. */
+  legacy: boolean
   title: string | null
 }
 
@@ -39,9 +45,35 @@ const WINDOWS_DEVICE_BASE_NAME = /^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²
 const ATTRIBUTE_PATTERN = /^([a-z]+)="([^"]*)"/
 const LINE_SPACE = /^[ \t]*/
 
+const PATH_SEGMENT_PATTERN = /^[^/:*?<>|]+$/
+const HTML_PATH_PATTERN = /\.html?$/i
+
 /**
- * A single file name inside the chat's visuals folder: no directories, separators, `..`, drive,
- * UNC, device or stream forms, ending in `.html`.
+ * A relative path inside the chat's folder, `/`-separated: no absolute, drive, home, `.` or `..`
+ * segments, no stream or device names, ending in `.html` or `.htm`. Backslashes and control
+ * characters never reach here; the attribute grammar refuses them.
+ */
+export function isNativeChatVisualPath(path: string): boolean {
+  if (
+    path.length === 0 ||
+    path.length > NATIVE_CHAT_VISUAL_PATH_MAX_LENGTH ||
+    path.startsWith('~') ||
+    !HTML_PATH_PATTERN.test(path)
+  ) {
+    return false
+  }
+  return path.split('/').every((segment) => {
+    if (segment === '.' || segment === '..' || !PATH_SEGMENT_PATTERN.test(segment)) {
+      return false
+    }
+    const dot = segment.indexOf('.')
+    return !WINDOWS_DEVICE_BASE_NAME.test(dot === -1 ? segment : segment.slice(0, dot))
+  })
+}
+
+/**
+ * A single file name inside an older host's per-chat visuals folder: no directories, separators,
+ * `..`, drive, UNC, device or stream forms, ending in `.html`.
  */
 export function isNativeChatVisualFileName(name: string): boolean {
   if (
@@ -122,15 +154,24 @@ export function parseNativeChatVisualDirectiveLine(
   }
   const body = trimmedEnd.slice(indent + NATIVE_CHAT_VISUAL_DIRECTIVE_MARKER.length, -1)
   const attributes = parseAttributes(body)
-  const file = attributes?.get('file')
-  if (!attributes || file === undefined || !isNativeChatVisualFileName(file)) {
+  if (!attributes) {
+    return null
+  }
+  const path = attributes.get('path')
+  const file = attributes.get('file')
+  const legacy = path === undefined
+  const named = path ?? file
+  if (
+    named === undefined ||
+    !(legacy ? isNativeChatVisualFileName(named) : isNativeChatVisualPath(named))
+  ) {
     return null
   }
   const title = attributes.get('title')?.trim() ?? ''
   if (title.length > NATIVE_CHAT_VISUAL_TITLE_MAX_LENGTH) {
     return null
   }
-  return { file, title: title.length > 0 ? title : null }
+  return { path: named, legacy, title: title.length > 0 ? title : null }
 }
 
 /**

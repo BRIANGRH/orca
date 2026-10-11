@@ -21,10 +21,7 @@ import {
 import { claudeStructuredLaunchArgs } from './claude-structured-launch-args'
 import type { ClaudeCliFlagSupport } from './claude-cli-flag-support'
 import { resolveClaudeLaunchFlags } from './claude-structured-launch-flags'
-import {
-  withNativeChatVisualsEnv,
-  type PrepareNativeChatVisuals
-} from '../native-chat/native-chat-visuals-delivery'
+import type { PrepareNativeChatVisuals } from '../native-chat/native-chat-visuals-delivery'
 import {
   claudeLaunchResumesTranscript,
   resolveClaudeStructuredLaunchHome
@@ -215,8 +212,7 @@ export function createClaudeStructuredLaunchResolver(
     const { thinkingDisplayArgs, visuals } = await launchFlags
     const additionalDirectories = [
       ...configured.additionalDirectories,
-      ...(deps.attachmentDirectory ? [deps.attachmentDirectory] : []),
-      ...(visuals ? [visuals.visuals.folder] : [])
+      ...(deps.attachmentDirectory ? [deps.attachmentDirectory] : [])
     ]
     const permission = claudeStructuredPermissionOptions(
       (await deps.resolvePermissionMode?.()) ?? 'default'
@@ -240,17 +236,11 @@ export function createClaudeStructuredLaunchResolver(
       deps,
       (base) =>
         // Every structured session speaks orchestration as itself: its injected id and the Orca CLI.
-        structuredSessionChildIdentityEnv(
-          record.sessionId,
-          withNativeChatVisualsEnv(
-            {
-              ...base,
-              // The turn translator relies on Claude's authoritative idle frame when no result arrives.
-              [CLAUDE_SESSION_STATE_EVENTS_ENV]: '1'
-            },
-            visuals?.visuals ?? null
-          )
-        ),
+        structuredSessionChildIdentityEnv(record.sessionId, {
+          ...base,
+          // The turn translator relies on Claude's authoritative idle frame when no result arrives.
+          [CLAUDE_SESSION_STATE_EVENTS_ENV]: '1'
+        }),
       sources
     )
     const launchHome = await resolveClaudeStructuredLaunchHome(router, env, accountHome.path)

@@ -26,17 +26,20 @@ const VIRTUAL_SPACE = -1
 
 // Hast properties the placeholder carries through sanitize to the React component.
 const NONCE_PROPERTY = 'dataOrcaVisual'
-const FILE_PROPERTY = 'dataOrcaVisualFile'
+const PATH_PROPERTY = 'dataOrcaVisualPath'
+const LEGACY_PROPERTY = 'dataOrcaVisualLegacy'
 const TITLE_PROPERTY = 'dataOrcaVisualTitle'
 export const NATIVE_CHAT_VISUAL_PLACEHOLDER_PROPERTIES = [
   NONCE_PROPERTY,
-  FILE_PROPERTY,
+  PATH_PROPERTY,
+  LEGACY_PROPERTY,
   TITLE_PROPERTY
 ] as const
 
 export type NativeChatVisualNode = {
   type: 'nativeChatVisual'
-  file: string
+  path: string
+  legacy: boolean
   title: string | null
   /** The line as written, for a directive shown as text instead. */
   source: string
@@ -87,7 +90,10 @@ const visualMicromarkExtension: MicromarkExtension = { flow: { [COLON]: visualLi
 const visualFromMarkdown: FromMarkdownExtension = {
   enter: {
     [TOKEN_TYPE](token) {
-      this.enter({ type: 'nativeChatVisual', file: '', title: null, source: '' }, token)
+      this.enter(
+        { type: 'nativeChatVisual', path: '', legacy: false, title: null, source: '' },
+        token
+      )
     }
   },
   exit: {
@@ -96,7 +102,8 @@ const visualFromMarkdown: FromMarkdownExtension = {
       const source = this.sliceSerialize(token)
       const directive = parseNativeChatVisualDirectiveLine(source)
       if (node?.type === 'nativeChatVisual' && directive) {
-        node.file = directive.file
+        node.path = directive.path
+        node.legacy = directive.legacy
         node.title = directive.title
         node.source = source
       }
@@ -135,7 +142,8 @@ function placeVisuals(
         hName: 'div',
         hProperties: {
           [NONCE_PROPERTY]: nonce,
-          [FILE_PROPERTY]: child.file,
+          [PATH_PROPERTY]: child.path,
+          ...(child.legacy ? { [LEGACY_PROPERTY]: 'true' } : {}),
           ...(child.title ? { [TITLE_PROPERTY]: child.title } : {})
         }
       }

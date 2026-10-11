@@ -15,7 +15,9 @@ import {
 export type NativeChatVisualIdentity = {
   target: RuntimeClientTarget
   sessionId: string
-  file: string
+  /** Relative to the chat's folder; a bare name in an older host's visuals folder when `legacy`. */
+  path: string
+  legacy: boolean
 }
 
 export type NativeChatVisualDocument = { revision: string; html: string }
@@ -35,7 +37,7 @@ const inFlight = new Map<string, Promise<NativeChatVisualReadOutcome>>()
 export function nativeChatVisualKey(identity: NativeChatVisualIdentity): string {
   const runtime =
     identity.target.kind === 'local' ? 'local' : `environment:${identity.target.environmentId}`
-  return JSON.stringify([runtime, identity.sessionId, identity.file])
+  return JSON.stringify([runtime, identity.sessionId, identity.legacy, identity.path])
 }
 
 export function peekCachedNativeChatVisual(
@@ -93,6 +95,15 @@ function interpret(
   return { ok: false, reason: isKnownReadError(result.error) ? result.error : 'unavailable' }
 }
 
+// Why `file` for legacy lines: only an older host can serve them, and it names its field `file`.
+function readParams(identity: NativeChatVisualIdentity, knownRevision?: string) {
+  return {
+    sessionId: identity.sessionId,
+    ...(identity.legacy ? { file: identity.path } : { path: identity.path }),
+    ...(knownRevision ? { knownRevision } : {})
+  }
+}
+
 async function readOnce(
   key: string,
   identity: NativeChatVisualIdentity
@@ -102,11 +113,7 @@ async function readOnce(
     const result = await callRuntimeRpc<AgentSessionReadVisualResult>(
       identity.target,
       'agentSession.readVisual',
-      {
-        sessionId: identity.sessionId,
-        file: identity.file,
-        ...(known ? { knownRevision: known } : {})
-      },
+      readParams(identity, known),
       { timeoutMs: READ_TIMEOUT_MS }
     )
     const outcome = interpret(key, result)
@@ -118,7 +125,7 @@ async function readOnce(
         await callRuntimeRpc<AgentSessionReadVisualResult>(
           identity.target,
           'agentSession.readVisual',
-          { sessionId: identity.sessionId, file: identity.file },
+          readParams(identity),
           { timeoutMs: READ_TIMEOUT_MS }
         )
       )

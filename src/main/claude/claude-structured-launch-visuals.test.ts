@@ -2,10 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionJournalIdentity } from '../../shared/agent-session-journal-types'
 import { agentSessionRecordFixture } from '../native-chat/agent-session-record-test-fixture'
 import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
-import {
-  NATIVE_CHAT_VISUALS_DIR_ENV,
-  type NativeChatVisualsLaunch
-} from '../native-chat/native-chat-visuals-delivery'
+import type { NativeChatVisualsLaunch } from '../native-chat/native-chat-visuals-delivery'
 import {
   CLAUDE_CLI_FLAG_PROBE_KILL_AFTER_MS,
   CLAUDE_PLUGIN_DIR_FLAG,
@@ -15,7 +12,6 @@ import { createClaudeStructuredLaunchResolver } from './claude-structured-launch
 
 const SESSION_ID = 'orca-session-visuals'
 const VISUALS: NativeChatVisualsLaunch = {
-  folder: '/state/native-chat-visuals/abc',
   skill: { pluginDir: '/app/native-chat-visuals', skillsRoot: '/app/native-chat-visuals/skills' }
 }
 
@@ -50,7 +46,7 @@ function launch(options: {
 }
 
 describe('a Claude chat launch with inline visuals', () => {
-  it('loads the skill plugin, grants the chat folder beside the user directories, and names it', async () => {
+  it('loads the skill plugin and grants no folder beyond the user directories', async () => {
     const prepareVisuals = vi.fn(async () => VISUALS)
     const resolved = await launch({
       prepareVisuals,
@@ -59,50 +55,38 @@ describe('a Claude chat launch with inline visuals', () => {
     })
     expect(prepareVisuals).toHaveBeenCalledWith(SESSION_ID)
     expect(resolved.options.plugins).toEqual([{ type: 'local', path: VISUALS.skill.pluginDir }])
-    expect(resolved.options.additionalDirectories).toEqual(['/shared/notes', VISUALS.folder])
-    expect(resolved.env?.[NATIVE_CHAT_VISUALS_DIR_ENV]).toBe(VISUALS.folder)
+    // Pages are written into the chat's own workspace, which needs no extra grant.
+    expect(resolved.options.additionalDirectories).toEqual(['/shared/notes'])
   })
 
   it.each([
-    {
-      name: 'prepared visuals',
-      visuals: VISUALS,
-      directories: ['/shared/notes', '/state/agent-session-attachments', VISUALS.folder]
-    },
-    {
-      name: 'unavailable visuals',
-      visuals: null,
-      directories: ['/shared/notes', '/state/agent-session-attachments']
-    }
-  ])('keeps user folders and attachment access with $name', async ({ visuals, directories }) => {
+    { name: 'prepared visuals', visuals: VISUALS },
+    { name: 'unavailable visuals', visuals: null }
+  ])('keeps user folders and attachment access with $name', async ({ visuals }) => {
     const resolved = await launch({
       prepareVisuals: async () => visuals,
       supports: async (flag) => flag === CLAUDE_PLUGIN_DIR_FLAG,
       launchArgs: ['--add-dir', '/shared/notes'],
       attachmentDirectory: '/state/agent-session-attachments'
     })
-    expect(resolved.options.additionalDirectories).toEqual(directories)
+    expect(resolved.options.additionalDirectories).toEqual([
+      '/shared/notes',
+      '/state/agent-session-attachments'
+    ])
   })
 
-  it('still grants and names the folder when the CLI cannot load a plugin by path', async () => {
-    const resolved = await launch({
+  it('loads no plugin when the CLI cannot load one by path or no skill is prepared', async () => {
+    const unsupported = await launch({
       prepareVisuals: async () => VISUALS,
       supports: async () => false
     })
-    expect(resolved.options).not.toHaveProperty('plugins')
-    expect(resolved.options.additionalDirectories).toEqual([VISUALS.folder])
-    expect(resolved.env?.[NATIVE_CHAT_VISUALS_DIR_ENV]).toBe(VISUALS.folder)
-  })
-
-  it('without a prepared folder, grants nothing and drops a folder inherited from another chat', async () => {
-    const resolved = await launch({
+    expect(unsupported.options).not.toHaveProperty('plugins')
+    const unprepared = await launch({
       prepareVisuals: async () => null,
-      supports: async () => true,
-      env: { [NATIVE_CHAT_VISUALS_DIR_ENV]: '/state/native-chat-visuals/other-chat' }
+      supports: async () => true
     })
-    expect(resolved.options).not.toHaveProperty('plugins')
-    expect(resolved.options).not.toHaveProperty('additionalDirectories')
-    expect(resolved.env).not.toHaveProperty(NATIVE_CHAT_VISUALS_DIR_ENV)
+    expect(unprepared.options).not.toHaveProperty('plugins')
+    expect(unprepared.options).not.toHaveProperty('additionalDirectories')
   })
 
   it('never asks about the plugin flag on a host that delivers no visuals', async () => {

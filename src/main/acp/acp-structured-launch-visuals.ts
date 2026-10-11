@@ -1,5 +1,5 @@
-// What an ACP launch gets for inline visuals: the chat's folder, and whatever its agent needs to
-// load the skill. Best effort: a chat whose agent can't load it starts without visuals.
+// What an ACP launch gets for inline visuals: whatever its agent needs to load the skill. Best
+// effort: a chat whose agent can't load it starts without visuals.
 
 import type { StructuredAgentSessionLogger } from '../native-chat/agent-session-wire/structured-agent-session-logger'
 import type {
@@ -10,7 +10,7 @@ import type { AcpLaunchSpec } from './acp-launch-specs'
 import type { AcpVisualsSkillLaunch } from './acp-visuals-skill'
 
 export type AcpLaunchVisualsDeps = {
-  /** Prepares a chat's inline-visuals folder; absent, no chat gets visuals. */
+  /** Prepares a chat's inline-visuals skill; absent, no chat gets visuals. */
   prepareVisuals?: PrepareNativeChatVisuals
   logger?: StructuredAgentSessionLogger
 }

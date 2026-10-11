@@ -10,6 +10,18 @@ const callRuntimeRpc = vi.fn()
 vi.mock('@/runtime/runtime-rpc-client', () => ({
   callRuntimeRpc: (...args: unknown[]) => callRuntimeRpc(...args)
 }))
+const openNativeChatVisualFile = vi.fn()
+vi.mock('./native-chat-visual-open', () => ({
+  openNativeChatVisualFile: (...args: unknown[]) => openNativeChatVisualFile(...args)
+}))
+const FILE_LINK_CONTEXT = {
+  worktreeId: 'wt-1',
+  worktreePath: '/repo',
+  runtimeEnvironmentId: null
+}
+vi.mock('./use-native-chat-file-link-context', () => ({
+  useNativeChatFileLinkContext: () => FILE_LINK_CONTEXT
+}))
 
 import { NativeChatMarkdown } from './NativeChatMarkdown'
 import { MessageRow } from './NativeChatMessageRow'
@@ -25,9 +37,10 @@ import { getDefaultSettings } from '../../../../shared/constants'
 const owner: NativeChatVisualOwner = {
   target: { kind: 'local' },
   sessionId: 'session-alpha',
-  worktreeId: 'wt-1'
+  worktreeId: 'wt-1',
+  tabId: 'tab-1'
 }
-const LINE = '::orca-visual{file="usage.html" title="Usage"}'
+const LINE = '::orca-visual{path="reports/usage.html" title="Usage"}'
 
 function withOwner(children: ReactNode, value: NativeChatVisualOwner | null = owner): ReactNode {
   return (
@@ -53,6 +66,7 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', InViewObserver)
   clearNativeChatVisualCacheForTests()
   callRuntimeRpc.mockReset()
+  openNativeChatVisualFile.mockReset()
   callRuntimeRpc.mockResolvedValue({ ok: true, revision: 'r1', sizeBytes: 9, html: '<p>v</p>' })
 })
 
@@ -78,32 +92,42 @@ describe('NativeChatMarkdown visuals', () => {
     }
   })
 
-  it('opens the visual in its own workspace tab', async () => {
-    const openChatVisualTab = vi.fn()
-    const original = useAppStore.getState().openChatVisualTab
-    useAppStore.setState({ openChatVisualTab })
-    try {
-      const { container } = render(
-        withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
+  it("reads the page from the chat's folder and opens it as the workspace file it is", async () => {
+    const { container } = render(
+      withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
+    )
+    await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+    expect(callRuntimeRpc).toHaveBeenCalledWith(
+      { kind: 'local' },
+      'agentSession.readVisual',
+      { sessionId: 'session-alpha', path: 'reports/usage.html' },
+      expect.anything()
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Open in new tab' }))
+    expect(openNativeChatVisualFile).toHaveBeenCalledWith('reports/usage.html', FILE_LINK_CONTEXT)
+  })
+
+  it("shows an older host's per-chat folder page inline, with nothing to open", async () => {
+    const { container } = render(
+      withOwner(
+        <NativeChatMarkdown content={'::orca-visual{file="usage.html"}'} visualMessageId="m1" />
       )
-      await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
-      fireEvent.click(screen.getByRole('button', { name: 'Open in new tab' }))
-      expect(openChatVisualTab).toHaveBeenCalledWith('wt-1', {
-        target: { kind: 'local' },
-        sessionId: 'session-alpha',
-        file: 'usage.html',
-        title: 'Usage'
-      })
-    } finally {
-      useAppStore.setState({ openChatVisualTab: original })
-    }
+    )
+    await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+    expect(callRuntimeRpc).toHaveBeenCalledWith(
+      { kind: 'local' },
+      'agentSession.readVisual',
+      { sessionId: 'session-alpha', file: 'usage.html' },
+      expect.anything()
+    )
+    expect(screen.queryByRole('button', { name: 'Open in new tab' })).toBeNull()
   })
 
   it('holds back an unfinished directive at the end of a streaming reply', () => {
     const { container } = render(
       withOwner(
         <NativeChatMarkdown
-          content={'Here it is:\n::orca-visual{file="usa'}
+          content={'Here it is:\n::orca-visual{path="usa'}
           visualMessageId="m1"
           streaming
         />
@@ -116,10 +140,10 @@ describe('NativeChatMarkdown visuals', () => {
   it('shows unfinished syntax as text once the reply is no longer streaming', () => {
     const { container } = render(
       withOwner(
-        <NativeChatMarkdown content={'Here it is:\n::orca-visual{file="usa'} visualMessageId="m1" />
+        <NativeChatMarkdown content={'Here it is:\n::orca-visual{path="usa'} visualMessageId="m1" />
       )
     )
-    expect(container).toHaveTextContent('::orca-visual{file="usa')
+    expect(container).toHaveTextContent('::orca-visual{path="usa')
   })
 
   it('keeps a mounted visual frame while the rest of the reply streams in', async () => {
@@ -173,7 +197,7 @@ describe('NativeChatMarkdown visuals', () => {
             role: 'assistant',
             timestamp: 0,
             source: 'transcript',
-            blocks: [{ type: 'text', text: 'Here it is:\n::orca-visual{file="usa' }]
+            blocks: [{ type: 'text', text: 'Here it is:\n::orca-visual{path="usa' }]
           }}
           expandSignal={false}
           activeTurnIsWorking={activeTurnIsWorking}
@@ -185,9 +209,9 @@ describe('NativeChatMarkdown visuals', () => {
     expect(container).toHaveTextContent('Here it is:')
     expect(container).not.toHaveTextContent('::orca-visual')
     rerender(row(false))
-    expect(container).toHaveTextContent('::orca-visual{file="usa')
+    expect(container).toHaveTextContent('::orca-visual{path="usa')
     // An earlier row of a still-working turn has stopped growing, so it shows what it says.
     rerender(row(true, false))
-    expect(container).toHaveTextContent('::orca-visual{file="usa')
+    expect(container).toHaveTextContent('::orca-visual{path="usa')
   })
 })
