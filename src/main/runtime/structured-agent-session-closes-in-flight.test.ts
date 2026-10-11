@@ -67,16 +67,21 @@ describe('chat closes in flight', () => {
     other.resolve()
   })
 
-  it('reports a close in flight from the call until it settles, per session', async () => {
+  it('reports only a committed close as committing, from the call until it settles', async () => {
     const closes = new StructuredAgentSessionClosesInFlight()
+    const request = deferred()
+    // A close request that a later check may still refuse never counts as committing.
+    const requested = closes.track('s', () => request.promise)
+    expect(closes.isCommitting('s')).toBe(false)
     const gate = deferred()
-    const tracked = closes.track('s', () => gate.promise)
-    expect(closes.has('s')).toBe(true)
-    expect(closes.has('other')).toBe(false)
+    const committed = closes.commit('s', () => gate.promise)
+    expect(closes.isCommitting('s')).toBe(true)
+    expect(closes.isCommitting('other')).toBe(false)
     gate.resolve()
-    await tracked
-    await Promise.resolve()
-    expect(closes.has('s')).toBe(false)
+    await committed
+    expect(closes.isCommitting('s')).toBe(false)
+    request.resolve()
+    await requested
   })
 
   it('answers false once a close outlives the bound, and forgets the close when it ends', async () => {

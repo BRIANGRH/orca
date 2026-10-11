@@ -29,7 +29,7 @@ import { AGENT_SESSION_CLOSE_PENDING_CODE } from '../../../../shared/session-tab
 
 /** Under the window's own 5 s reveal timeout, so the host never publishes after the window gave up;
  *  a close held past it (a pinned-tab confirm can take minutes) fails the reveal rather than racing. */
-export const STRUCTURED_AGENT_SESSION_REVEAL_CLOSE_WAIT_MS = 4_000
+export const STRUCTURED_AGENT_SESSION_REVEAL_CLOSE_WAIT_MS = 3_000
 
 export const STRUCTURED_AGENT_SESSION_REVEAL_METHODS = [
   defineMethod({

@@ -69,7 +69,7 @@ export function closeStructuredAgentSessionOnHost(
   sessionId: string,
   cause: StructuredAgentSessionCloseCause
 ): Promise<void> {
-  return getStructuredAgentSessionClosesInFlight(runtime).track(sessionId, async () => {
+  return getStructuredAgentSessionClosesInFlight(runtime).commit(sessionId, async () => {
     const host = getStructuredAgentSessionHost()
     if (typeof host?.setSessionTabVisibility === 'function') {
       // The restore index is bookkeeping: one that cannot be written (a newer Orca's records, a

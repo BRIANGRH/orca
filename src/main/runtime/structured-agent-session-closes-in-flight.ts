@@ -6,6 +6,22 @@
  */
 export class StructuredAgentSessionClosesInFlight {
   private readonly bySession = new Map<string, Set<Promise<unknown>>>()
+  private readonly committing = new Map<string, number>()
+
+  /** `track` for the close itself, past every check that could still refuse it. */
+  async commit<T>(sessionId: string, close: () => Promise<T>): Promise<T> {
+    this.committing.set(sessionId, (this.committing.get(sessionId) ?? 0) + 1)
+    try {
+      return await this.track(sessionId, close)
+    } finally {
+      const remaining = (this.committing.get(sessionId) ?? 1) - 1
+      if (remaining > 0) {
+        this.committing.set(sessionId, remaining)
+      } else {
+        this.committing.delete(sessionId)
+      }
+    }
+  }
 
   /** Runs one close, marked in flight from this call until it settles. */
   track<T>(sessionId: string, close: () => Promise<T>): Promise<T> {
@@ -27,9 +43,9 @@ export class StructuredAgentSessionClosesInFlight {
     return run
   }
 
-  /** True while a close of the session is running. */
-  has(sessionId: string): boolean {
-    return this.bySession.has(sessionId)
+  /** True while a committed close of the session runs: one no check can refuse any more. */
+  isCommitting(sessionId: string): boolean {
+    return this.committing.has(sessionId)
   }
 
   /** True once no close of the session is running; false if one still is after `timeoutMs`. */

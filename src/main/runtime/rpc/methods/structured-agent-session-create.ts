@@ -158,8 +158,8 @@ export async function commitStructuredAgentSessionCreate(args: {
   const publishTab = async (
     input: Parameters<OrcaRuntimeService['publishStructuredAgentSessionTab']>[0]
   ) => {
-    // A close that already retired this chat's tab must not see it re-listed by the create it beat.
-    if (getStructuredAgentSessionClosesInFlight(args.runtime).has(input.sessionId)) {
+    // A committed close that already retired this chat's tab must not see it re-listed by the create it beat.
+    if (getStructuredAgentSessionClosesInFlight(args.runtime).isCommitting(input.sessionId)) {
       return
     }
     await args.runtime.publishStructuredAgentSessionTab(input)
