@@ -64,6 +64,12 @@ export type StructuredAgentSessionTabCloseHost = StructuredAgentSessionCloseRunt
   notifier: Pick<RuntimeNotifier, 'closeSessionTab'> | null
 }
 
+export type StructuredAgentSessionTabCloseOptions = {
+  reason?: RuntimeSessionTabCloseReason
+  structuredCloseRequest?: StructuredAgentSessionCloseRequest
+  originatingWindowId?: number
+}
+
 /**
  * The host's one close of a chat, by session id, whether or not its tab is listed: hide it in the
  * restore index, drop its tab from the list, stop the provider (which also aborts a start).
@@ -129,13 +135,16 @@ export async function closeListedStructuredAgentSessionTab(
   host: StructuredAgentSessionTabCloseHost,
   worktreeId: string,
   tab: RuntimeMobileSessionAgentTab,
-  cause: StructuredAgentSessionCloseCause,
-  request?: StructuredAgentSessionCloseRequest
+  options: StructuredAgentSessionTabCloseOptions
 ): Promise<void> {
   if (host.notifier?.closeSessionTab) {
     try {
       // Why: a reopened chat's window tab id is not derivable from its session; the window maps ours.
-      await host.notifier.closeSessionTab(tab.id, worktreeId)
+      await (options.reason === 'user' && options.originatingWindowId !== undefined
+        ? host.notifier.closeSessionTab(tab.id, worktreeId, {
+            originatingWindowId: options.originatingWindowId
+          })
+        : host.notifier.closeSessionTab(tab.id, worktreeId))
     } catch (error) {
       // The renderer already having removed the tab is an idempotent close, not a veto.
       if (!(error instanceof Error && error.message === SESSION_TAB_NOT_FOUND_ERROR)) {
@@ -143,7 +152,12 @@ export async function closeListedStructuredAgentSessionTab(
       }
     }
   }
-  await closeStructuredAgentSessionOnHost(host, tab.sessionId, cause, request)
+  await closeStructuredAgentSessionOnHost(
+    host,
+    tab.sessionId,
+    structuredAgentSessionTabCloseCause(options.reason),
+    options.structuredCloseRequest
+  )
 }
 
 /**
@@ -155,10 +169,7 @@ export async function closeStructuredAgentSessionTabForUser(
   host: StructuredAgentSessionTabCloseHost,
   worktreeId: string,
   tabId: string,
-  options: {
-    reason?: RuntimeSessionTabCloseReason
-    structuredCloseRequest?: StructuredAgentSessionCloseRequest
-  }
+  options: StructuredAgentSessionTabCloseOptions
 ): Promise<void> {
   const cause = structuredAgentSessionTabCloseCause(options.reason)
   const request = options.structuredCloseRequest
@@ -170,7 +181,7 @@ export async function closeStructuredAgentSessionTabForUser(
         candidate.type === 'agent-session' && candidate.id === tabId
     )
   if (tab) {
-    await closeListedStructuredAgentSessionTab(host, worktreeId, tab, cause, request)
+    await closeListedStructuredAgentSessionTab(host, worktreeId, tab, options)
     return
   }
   const sessionId = structuredAgentSessionIdFromHostTabId(tabId)

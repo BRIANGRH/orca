@@ -132,7 +132,7 @@ export const STRUCTURED_AGENT_SESSION_METHODS = [
     permission: 'workspace',
     params: OptionsParams,
     handler: async (params, ctx) => {
-      requireStructuredCleanupHost(ctx)
+      requireStructuredCapability(ctx)
       // Clients call this only when the user closes this chat's tab or cancels its launch; the same
       // host close as `session.tabs.close`, for older clients and launch cancellations.
       await closeStructuredAgentSessionOnHost(ctx.runtime, params.sessionId, 'user-close')

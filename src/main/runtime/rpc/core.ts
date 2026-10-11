@@ -91,6 +91,8 @@ export type RpcContext = {
   signal?: AbortSignal
   // Why: per-WebSocket key so the server reaps a closing socket's subscriptions without touching sibling sockets sharing the deviceToken.
   connectionId?: string
+  /** Trusted local IPC sender; never supplied by request params or remote peers. */
+  originatingWindowId?: number
   // An unsubscribe cannot retire a registration created after its dispatch began.
   subscriptionRegistrationVersion?: number
   // Why: shared-control multiplexes many logical streams over one socket; the frame id lets handlers register cleanup per logical stream.

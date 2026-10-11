@@ -1,9 +1,6 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
 import { OrcaRuntimeWithRefuseUnattributedMobileSessionTabClose } from './orca-runtime-refuse-unattributed-mobile-session-tab-close'
-import type {
-  RuntimeMobileSessionTerminalTab,
-  RuntimeSessionTabCloseReason
-} from '../../shared/runtime-types'
+import type { RuntimeMobileSessionTerminalTab } from '../../shared/runtime-types'
 import type { RuntimePtyTabCloseAuthority } from './runtime-terminal-state-records'
 import {
   adjudicateAbsentMobileSessionTabClose,
@@ -19,30 +16,27 @@ import {
 import { getRuntimeBrowserPageRegistry } from './runtime-browser-page-registry'
 import type { RuntimeCommandSurfaceHost } from './orca-runtime-core'
 import { rendererPublicationThrottle } from '../window/renderer-publication-throttle'
-import { structuredAgentSessionTabCloseCause } from './structured-agent-session-tab-close-cause'
 import { retireHeadlessMobileSessionEditorTab } from './mobile-session-editor-projection'
 import { closeRelayedMobileSessionTab } from './mobile-session-relayed-tab-close'
-import type { StructuredAgentSessionCloseRequest } from './structured-agent-session-closes-in-flight'
 import { captureTerminalTabListRetirement } from './mobile-session-terminal-tab-retirement'
 import {
   closeListedStructuredAgentSessionTab,
   closeStructuredAgentSessionTabForUser,
-  isUserStructuredAgentSessionTabClose
+  isUserStructuredAgentSessionTabClose,
+  type StructuredAgentSessionTabCloseOptions
 } from './structured-agent-session-tab-close'
 
 export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseUnattributedMobileSessionTabClose {
   async closeMobileSessionTab(
     worktreeSelector: string,
     tabId: string,
-    options: {
-      reason?: RuntimeSessionTabCloseReason
+    options: StructuredAgentSessionTabCloseOptions & {
       expectedPublicationEpoch?: string
       expectedTerminalHandle?: string
       clientNavigationId?: string
       localPtyTeardownOwnedExternally?: boolean
       expectedPtyCloseAuthority?: RuntimePtyTabCloseAuthority
       force?: boolean
-      structuredCloseRequest?: StructuredAgentSessionCloseRequest
     } = {}
   ): Promise<MobileSessionTabCloseOutcome> {
     const graphEpoch = options.clientNavigationId ? this.captureReadyGraphEpoch() : null
@@ -312,8 +306,7 @@ export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseU
         await closeRelayedMobileSessionTab(this, worktreeId, tab)
       }
     } else if (tab.type === 'agent-session') {
-      const cause = structuredAgentSessionTabCloseCause(options.reason)
-      await closeListedStructuredAgentSessionTab(this, worktreeId, tab, cause)
+      await closeListedStructuredAgentSessionTab(this, worktreeId, tab, options)
     } else if (!this.notifier?.closeSessionTab) {
       // Why: a headless host listed this editor from its own session, so it retires it there.
       if (!retireHeadlessMobileSessionEditorTab(this, worktreeId, tab, options.force)) {

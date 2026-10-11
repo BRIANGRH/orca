@@ -113,7 +113,11 @@ export type RuntimeNotifier = {
   renameTerminal(tabId: string, title: string | null, options?: { recordInteraction: false }): void
   focusTerminal(tabId: string, worktreeId: string, leafId?: string | null): void
   focusEditorTab?(tabId: string, worktreeId: string): void
-  closeSessionTab?(tabId: string, worktreeId: string): void | Promise<void>
+  closeSessionTab?(
+    tabId: string,
+    worktreeId: string,
+    options?: { originatingWindowId?: number }
+  ): void | Promise<void>
   moveSessionTab?(worktreeId: string, move: RuntimeMobileSessionTabMove): void
   /**
    * Acts only on the host's own window: 'host'/'all' move it, 'caller'/'clients' open without moving

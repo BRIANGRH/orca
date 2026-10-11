@@ -22,16 +22,37 @@ export class StructuredAgentSessionClosesInFlight {
     sessionId: string,
     publish: (signal: AbortSignal) => Promise<T>
   ): Promise<T> {
+    return this.runPublications([sessionId], (signals) => publish(signals.get(sessionId)!))
+  }
+
+  /** A startup restore owns one concrete publication attempt for each of its original targets. */
+  async runPublications<T>(
+    sessionIds: readonly string[],
+    publish: (signals: ReadonlyMap<string, AbortSignal>) => Promise<T>
+  ): Promise<T> {
+    const attempts = [...new Set(sessionIds)].map((sessionId) => this.beginPublication(sessionId))
+    try {
+      return await publish(new Map(attempts.map(({ sessionId, signal }) => [sessionId, signal])))
+    } finally {
+      for (const attempt of attempts) {
+        attempt.end()
+      }
+    }
+  }
+
+  private beginPublication(sessionId: string) {
     const attempts = this.publications.get(sessionId) ?? new Set<AbortController>()
     this.publications.set(sessionId, attempts)
     const attempt = new AbortController()
     attempts.add(attempt)
-    try {
-      return await publish(attempt.signal)
-    } finally {
-      attempts.delete(attempt)
-      if (attempts.size === 0 && this.publications.get(sessionId) === attempts) {
-        this.publications.delete(sessionId)
+    return {
+      sessionId,
+      signal: attempt.signal,
+      end: () => {
+        attempts.delete(attempt)
+        if (attempts.size === 0 && this.publications.get(sessionId) === attempts) {
+          this.publications.delete(sessionId)
+        }
       }
     }
   }

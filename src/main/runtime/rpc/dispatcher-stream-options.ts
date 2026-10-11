@@ -8,6 +8,7 @@ export type RpcDispatchStreamingOptions = Pick<
   RpcContext,
   | 'authenticatedCallerFingerprint'
   | 'connectionId'
+  | 'originatingWindowId'
   | 'signal'
   | 'clientId'
   | 'pairedDeviceId'
@@ -38,6 +39,7 @@ export function rpcContextFromTransport(
     signal: options?.signal,
     requestId: request.id,
     connectionId: options?.connectionId,
+    originatingWindowId: options?.originatingWindowId,
     // Session tabs always need this fence. COMPAT(terminal request-addressed unsubscribe): terminal only for phones without `requestId`.
     // Capture before middleware yields to a replacement subscribe on the same connection.
     subscriptionRegistrationVersion: isRegistrationFencedUnsubscribe(request.method)

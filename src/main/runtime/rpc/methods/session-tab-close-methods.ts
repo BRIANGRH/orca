@@ -120,6 +120,12 @@ async function closeSessionTab(
       const result = await context.runtime.closeMobileSessionTab(params.worktree, params.tabId, {
         reason: 'user',
         ...(structuredCloseRequest ? { structuredCloseRequest } : {}),
+        ...(params.reason === 'user' &&
+        context.caller?.kind === 'desktop' &&
+        context.clientKind === 'runtime' &&
+        context.originatingWindowId !== undefined
+          ? { originatingWindowId: context.originatingWindowId }
+          : {}),
         ...(context.pairedDeviceId ? { clientNavigationId: context.pairedDeviceId } : {})
       })
       span.setAttribute(

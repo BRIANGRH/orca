@@ -3,7 +3,7 @@ import { defaultAgentChatLabel } from '../../shared/agent-session-chat-label'
 import { OrcaRuntimeWithGetStructuredAgentSessionCreateSupport } from './orca-runtime-get-structured-agent-session-create-support'
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import { collectSavedStructuredAgentSessionIds } from './saved-structured-agent-session-restoration'
-import { seedStructuredAgentSessionTabIndex } from './structured-agent-session-tab-index-seed'
+import { restoreStructuredAgentSessionTabPublications } from './structured-agent-session-tab-restoration'
 import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 import type {
   RuntimeMobileSessionAgentTab,
@@ -31,39 +31,25 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
   protected async restoreStructuredAgentSessionTabsOnce(): Promise<void> {
     await this.prepareStructuredAgentSessionStartupRestoration()
     const host = getStructuredAgentSessionHost()
-    const persistedVisibleIndex =
-      typeof host?.getPersistedVisibleSessionTabIndex === 'function'
-        ? host.getPersistedVisibleSessionTabIndex()
-        : { present: false, sessionIds: [] }
     const profileIds = collectSavedStructuredAgentSessionIds(
       this.store?.getWorkspaceSession?.(LOCAL_EXECUTION_HOST_ID) ?? null
     )
-    const targets = persistedVisibleIndex.present ? persistedVisibleIndex.sessionIds : profileIds
-    await host?.restoreReadableSessions(targets)
-    for (const worktreeId of this.getKnownWorkspaceSessionWorktreeIds()) {
-      this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId, {
-        allowAttachedWindow: true,
-        onlyRuntimeOwnedTerminals: true
-      })
-    }
-    this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession()
-    // Every session here is of an agent this host registered: its store holds no other agent's records.
-    const restored = (host?.listSessionTabs() ?? []).flatMap((session) => {
-      let sessionId = session.sessionId
-      while (sessionId.startsWith('agent-session:')) {
-        sessionId = sessionId.slice('agent-session:'.length)
-      }
-      return [{ ...session, agent: session.agent, sessionId }]
-    })
-    await seedStructuredAgentSessionTabIndex(
+    await restoreStructuredAgentSessionTabPublications({
+      runtime: this,
       host,
-      targets,
-      restored.map((session) => session.sessionId)
-    )
-    // Past the seed, projecting records nothing.
-    for (const session of restored) {
-      this.projectStructuredAgentSessionTab({ ...session, activate: false, notify: false })
-    }
+      profileIds,
+      hydrate: () => {
+        for (const worktreeId of this.getKnownWorkspaceSessionWorktreeIds()) {
+          this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId, {
+            allowAttachedWindow: true,
+            onlyRuntimeOwnedTerminals: true
+          })
+        }
+        this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession()
+      },
+      project: (session) =>
+        this.projectStructuredAgentSessionTab({ ...session, activate: false, notify: false })
+    })
     const wasUnverifiable = this.structuredAgentSessionInventoryUnverifiable
     // No host means no one can say which chats exist; with none on disk, empty is the answer.
     this.structuredAgentSessionInventoryUnverifiable =
