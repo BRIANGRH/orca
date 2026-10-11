@@ -59,7 +59,7 @@ it.each(['acquired', 'at-rest', 'in-process'] as const)(
   async (mode) => {
     const reached = deferred()
     const release = deferred()
-    const { envelope: _envelope, ...intent } = hostTestAttachParams(null)
+    const intent = hostTestAttachParams(null)
     vi.spyOn(runtime, 'resolveStructuredAgentSessionCreateIntent').mockImplementation(async () => {
       reached.resolve()
       await release.promise
@@ -108,7 +108,7 @@ it.each(['acquired', 'at-rest', 'in-process'] as const)(
 it('cancels an at-rest create awaiting launch arguments before its opening message can start', async () => {
   const reached = deferred()
   const release = deferred()
-  const { envelope: _envelope, ...intent } = hostTestAttachParams(null)
+  const intent = hostTestAttachParams(null)
   vi.spyOn(runtime, 'resolveStructuredAgentSessionCreateIntent').mockResolvedValue(intent)
   host.deps.resolveLaunchArgs = async () => {
     reached.resolve()
@@ -181,7 +181,7 @@ it('cancels an acquired create queued behind another host operation before acqui
     await release.promise
   })
   await reached.promise
-  const { envelope: _envelope, ...intent } = hostTestAttachParams(null)
+  const intent = hostTestAttachParams(null)
   vi.spyOn(runtime, 'resolveStructuredAgentSessionCreateIntent').mockResolvedValue(intent)
   const enqueued = deferred()
   const attach = host.attach.bind(host)
