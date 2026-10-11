@@ -5,6 +5,7 @@ import {
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY
 } from '../../../../shared/protocol-version'
 import { SESSION_TABS_CLOSE_AGENT_SESSION_BY_ID_RUNTIME_CAPABILITY } from '../../../../shared/session-tabs-close-capabilities'
+import { SESSION_TAB_CLOSE_CANCELED_ERROR } from '../../../../shared/session-tab-close'
 import {
   HOST_TEST_LOCATION,
   HOST_TEST_SESSION
@@ -32,8 +33,8 @@ const WINDOW = {
   ]
 }
 
-function closeTab(worktree = WORKTREE, tabId = CHAT_TAB) {
-  return call('session.tabs.close', { worktree, tabId, reason: 'user' }, WINDOW)
+function closeTab(worktree = WORKTREE, tabId = CHAT_TAB, client: typeof WINDOW = WINDOW) {
+  return call('session.tabs.close', { worktree, tabId, reason: 'user' }, client)
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -79,6 +80,21 @@ describe('agentSession.close', () => {
     expect(close).toHaveBeenCalledWith(HOST_TEST_SESSION, 'user-close')
     expect(await listedChatIds()).toEqual([])
   })
+
+  it('still stops the chat when dropping its tab from the list throws', async () => {
+    await createChat(HOST_TEST_SESSION)
+    vi.spyOn(runtime, 'retireStructuredAgentSessionTabFromSnapshot').mockImplementation(() => {
+      throw new Error('snapshot listener failed')
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const close = vi.spyOn(host, 'close')
+
+    expect(await call('agentSession.close', { sessionId: HOST_TEST_SESSION })).toMatchObject({
+      ok: true
+    })
+
+    expect(close).toHaveBeenCalledWith(HOST_TEST_SESSION, 'user-close')
+  })
 })
 
 describe('session.tabs.close for a chat the host does not list', () => {
@@ -96,15 +112,49 @@ describe('session.tabs.close for a chat the host does not list', () => {
     expect(relay).not.toHaveBeenCalled()
   })
 
-  it('answers tab_not_found for a chat of another worktree, stopping nothing', async () => {
+  it('answers a worktree mismatch, not tab_not_found, for a chat of another worktree', async () => {
     await createChat(HOST_TEST_SESSION)
     runtime.retireStructuredAgentSessionTabFromSnapshot(HOST_TEST_SESSION)
     const close = vi.spyOn(host, 'close')
 
     expect(await closeTab('id:another-worktree')).toMatchObject({
       ok: false,
-      error: { message: 'tab_not_found' }
+      error: {
+        code: 'agent_session_worktree_mismatch',
+        message: 'agent_session_worktree_mismatch'
+      }
     })
+
+    expect(close).not.toHaveBeenCalled()
+    expect(store.listVisibleSessionIds()).toEqual([HOST_TEST_SESSION])
+  })
+
+  it('answers a worktree mismatch for a chat with no record listed under another worktree', async () => {
+    await createChat(HOST_TEST_SESSION)
+    vi.spyOn(store, 'getRecord').mockReturnValue(null)
+    const close = vi.spyOn(host, 'close')
+
+    expect(await closeTab('id:another-worktree')).toMatchObject({
+      ok: false,
+      error: { code: 'agent_session_worktree_mismatch' }
+    })
+
+    expect(close).not.toHaveBeenCalled()
+    expect(await listedChatIds()).toEqual([CHAT_TAB])
+  })
+
+  it.each([
+    ['a client without chats', [SESSION_TAB_CLOSE_INTENT_RUNTIME_CAPABILITY], 'codex'],
+    ['a client that cannot render the agent', WINDOW.clientCapabilities, 'claude']
+  ] as const)('answers tab_not_found to %s, stopping nothing', async (_client, caps, agent) => {
+    await createChat(HOST_TEST_SESSION)
+    runtime.retireStructuredAgentSessionTabFromSnapshot(HOST_TEST_SESSION)
+    vi.spyOn(host, 'sessionAgent').mockReturnValue(agent)
+    const close = vi.spyOn(host, 'close')
+
+    expect(
+      await closeTab(WORKTREE, CHAT_TAB, { clientKind: 'runtime', clientCapabilities: [...caps] })
+    ).toMatchObject({ ok: false, error: { message: 'tab_not_found' } })
 
     expect(close).not.toHaveBeenCalled()
     expect(store.listVisibleSessionIds()).toEqual([HOST_TEST_SESSION])
@@ -142,6 +192,33 @@ describe('session.tabs.close for a chat the host does not list', () => {
     expect(acquisitions).toBe(0)
     expect(await listedChatIds()).toEqual([])
   })
+
+  it('keeps a create that finishes during the close from listing the chat again', async () => {
+    const stopReached = deferred()
+    const releaseStop = deferred()
+    const stop = host.close.bind(host)
+    vi.spyOn(host, 'close').mockImplementation(async (...args: Parameters<typeof host.close>) => {
+      stopReached.resolve()
+      await releaseStop.promise
+      return stop(...args)
+    })
+    const attach = host.attach.bind(host)
+    let closed: ReturnType<typeof closeTab> | undefined
+    vi.spyOn(host, 'attach').mockImplementation(async (...args: Parameters<typeof host.attach>) => {
+      const attached = await attach(...args)
+      // Past provider start: the close hides and unlists, then sits in the provider stop.
+      closed = closeTab()
+      await stopReached.promise
+      return attached
+    })
+
+    await createChat(HOST_TEST_SESSION)
+    releaseStop.resolve()
+
+    expect(await closed).toMatchObject({ ok: true, result: { closed: true } })
+    expect(await listedChatIds()).toEqual([])
+    expect(store.listVisibleSessionIds()).toEqual([])
+  })
 })
 
 describe('session.tabs.close for a listed chat', () => {
@@ -155,6 +232,24 @@ describe('session.tabs.close for a listed chat', () => {
     expect(relay).toHaveBeenCalledWith(CHAT_TAB, HOST_TEST_LOCATION.workspaceId)
     expect(close).toHaveBeenCalledWith(HOST_TEST_SESSION, 'user-close')
     expect(await listedChatIds()).toEqual([])
+  })
+
+  it('neither hides nor stops it when the window keeps the tab open', async () => {
+    await createChat(HOST_TEST_SESSION)
+    // As a pinned tab's declined confirm answers.
+    relayWindowClose(async () => {
+      throw new Error(SESSION_TAB_CLOSE_CANCELED_ERROR)
+    })
+    const close = vi.spyOn(host, 'close')
+
+    expect(await closeTab()).toMatchObject({
+      ok: false,
+      error: { message: SESSION_TAB_CLOSE_CANCELED_ERROR }
+    })
+
+    expect(close).not.toHaveBeenCalled()
+    expect(store.listVisibleSessionIds()).toEqual([HOST_TEST_SESSION])
+    expect(await listedChatIds()).toEqual([CHAT_TAB])
   })
 
   it('does not wait behind the terminal process scan', async () => {
@@ -217,7 +312,9 @@ describe('agentSession.reveal during a close of the same chat', () => {
     expect(store.listVisibleSessionIds()).toEqual([HOST_TEST_SESSION])
   })
 
-  it('fails the reveal once the close outlives the bound', async () => {
+  it('fails the reveal once the close outlives the bound, before the window stops waiting', async () => {
+    // The window gives a reveal 5 s; a host publishing later would show a chat it gave up on.
+    expect(STRUCTURED_AGENT_SESSION_REVEAL_CLOSE_WAIT_MS).toBeLessThan(5_000)
     await createChat(HOST_TEST_SESSION)
     const windowAnswers = deferred()
     relayWindowClose(() => windowAnswers.promise)
@@ -231,7 +328,7 @@ describe('agentSession.reveal during a close of the same chat', () => {
 
     expect(await revealed).toMatchObject({
       ok: false,
-      error: { message: 'agent_session_close_pending' }
+      error: { code: 'agent_session_close_pending', message: 'agent_session_close_pending' }
     })
     windowAnswers.resolve()
     expect(await closed).toMatchObject({ ok: true, result: { closed: true } })

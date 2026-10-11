@@ -67,6 +67,18 @@ describe('chat closes in flight', () => {
     other.resolve()
   })
 
+  it('reports a close in flight from the call until it settles, per session', async () => {
+    const closes = new StructuredAgentSessionClosesInFlight()
+    const gate = deferred()
+    const tracked = closes.track('s', () => gate.promise)
+    expect(closes.has('s')).toBe(true)
+    expect(closes.has('other')).toBe(false)
+    gate.resolve()
+    await tracked
+    await Promise.resolve()
+    expect(closes.has('s')).toBe(false)
+  })
+
   it('answers false once a close outlives the bound, and forgets the close when it ends', async () => {
     vi.useFakeTimers()
     const closes = new StructuredAgentSessionClosesInFlight()

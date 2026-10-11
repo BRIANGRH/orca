@@ -27,6 +27,11 @@ export class StructuredAgentSessionClosesInFlight {
     return run
   }
 
+  /** True while a close of the session is running. */
+  has(sessionId: string): boolean {
+    return this.bySession.has(sessionId)
+  }
+
   /** True once no close of the session is running; false if one still is after `timeoutMs`. */
   async settled(sessionId: string, timeoutMs: number): Promise<boolean> {
     let timer: ReturnType<typeof setTimeout> | undefined

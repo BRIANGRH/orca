@@ -24,6 +24,7 @@ import {
   resolveUncommittedStructuredCreate,
   type StructuredCreateRefused
 } from './structured-agent-session-precommit-refusal'
+import { getStructuredAgentSessionClosesInFlight } from '../../structured-agent-session-closes-in-flight'
 
 export type PreparedStructuredAgentSessionCreate = {
   host: StructuredAgentSessionHost
@@ -154,6 +155,15 @@ export async function commitStructuredAgentSessionCreate(args: {
 }): Promise<AgentSessionMutationResult<AgentSessionAttachResult>> {
   const { prepared } = args
   const tab = prepared.tab
+  const publishTab = async (
+    input: Parameters<OrcaRuntimeService['publishStructuredAgentSessionTab']>[0]
+  ) => {
+    // A close that already retired this chat's tab must not see it re-listed by the create it beat.
+    if (getStructuredAgentSessionClosesInFlight(args.runtime).has(input.sessionId)) {
+      return
+    }
+    await args.runtime.publishStructuredAgentSessionTab(input)
+  }
   if (prepared.atRest) {
     return prepared.host.create(args.caller, prepared.attachParams, {
       ...prepared.atRest,
@@ -163,7 +173,7 @@ export async function commitStructuredAgentSessionCreate(args: {
       ...(tab
         ? {
             publishTab: () =>
-              args.runtime.publishStructuredAgentSessionTab({
+              publishTab({
                 workspaceId: tab.workspaceId,
                 sessionId: prepared.attachParams.envelope.sessionId,
                 agent: tab.agent,
@@ -186,7 +196,7 @@ export async function commitStructuredAgentSessionCreate(args: {
   }
   const surfaceTabId = prepared.attachParams.surfaceTabId
   try {
-    await args.runtime.publishStructuredAgentSessionTab({
+    await publishTab({
       workspaceId: prepared.tab.workspaceId,
       sessionId: result.value.sessionId,
       agent: prepared.tab.agent,

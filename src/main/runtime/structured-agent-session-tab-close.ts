@@ -11,7 +11,10 @@ import type {
   RuntimeMobileSessionTabsSnapshot,
   RuntimeSessionTabCloseReason
 } from '../../shared/runtime-types'
-import { SESSION_TAB_NOT_FOUND_ERROR } from '../../shared/session-tab-close'
+import {
+  AGENT_SESSION_WORKTREE_MISMATCH_CODE,
+  SESSION_TAB_NOT_FOUND_ERROR
+} from '../../shared/session-tab-close'
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import type { StructuredAgentSessionCloseCause } from '../native-chat/agent-session-wire/structured-agent-session-host-lifetime'
 import type { RuntimeNotifier } from './runtime-notifier-contract'
@@ -79,7 +82,12 @@ export function closeStructuredAgentSessionOnHost(
         })
       })
     }
-    runtime.retireStructuredAgentSessionTabFromSnapshot(sessionId)
+    try {
+      runtime.retireStructuredAgentSessionTabFromSnapshot(sessionId)
+    } catch (error) {
+      // A throwing snapshot listener must not skip the stop.
+      console.warn('[runtime] retiring a closed chat tab failed', sessionId, error)
+    }
     if (typeof host?.close === 'function') {
       await host.close(sessionId, cause)
     }
@@ -127,7 +135,7 @@ export async function closeListedStructuredAgentSessionTab(
 /**
  * Closes the chat `tabId` names in `worktreeId`. An unlisted chat has no window tab to relay to; it
  * still has to stop (and a still-starting one, which may have no record yet, has its start aborted).
- * Throws `tab_not_found` when the chat belongs to another worktree.
+ * Throws `agent_session_worktree_mismatch` when the chat belongs to another worktree.
  */
 export async function closeStructuredAgentSessionTabForUser(
   host: StructuredAgentSessionTabCloseHost,
@@ -146,9 +154,13 @@ export async function closeStructuredAgentSessionTabForUser(
     return
   }
   const sessionId = structuredAgentSessionIdFromHostTabId(tabId)
-  const owner = sessionId === null ? null : structuredAgentSessionWorktreeId(host, sessionId)
-  if (sessionId === null || (owner !== null && owner !== worktreeId)) {
+  if (sessionId === null) {
     throw new Error('tab_not_found')
+  }
+  const owner = structuredAgentSessionWorktreeId(host, sessionId)
+  if (owner !== null && owner !== worktreeId) {
+    // Not `tab_not_found`: a client settles that as closed, and this chat is still open elsewhere.
+    throw new Error(AGENT_SESSION_WORKTREE_MISMATCH_CODE)
   }
   await closeStructuredAgentSessionOnHost(host, sessionId, cause)
 }

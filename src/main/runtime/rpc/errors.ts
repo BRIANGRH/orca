@@ -36,6 +36,10 @@ import { AGENT_LAUNCH_SESSION_ALREADY_EXISTS_CODE } from '../../../shared/agent-
 import { AGENT_LAUNCH_TAB_CLOSED_CODE } from '../../../shared/agent-launch-tab-closed'
 import { AGENT_LAUNCH_TARGET_FORBIDDEN_CODE } from '../../../shared/agent-launch-target-forbidden'
 import {
+  AGENT_SESSION_CLOSE_PENDING_CODE,
+  AGENT_SESSION_WORKTREE_MISMATCH_CODE
+} from '../../../shared/session-tab-close'
+import {
   parseTerminalSpawnDeferral,
   TERMINAL_SPAWN_DEFERRED_CODE
 } from '../../../shared/host-spawn-admission'
@@ -85,6 +89,9 @@ const RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'terminal_tab_close_timeout',
   'terminal_tab_not_found',
   'terminal_tab_pinned',
+  // Why: a client settles a chat close answered `tab_not_found` as closed; these two are not.
+  AGENT_SESSION_WORKTREE_MISMATCH_CODE,
+  AGENT_SESSION_CLOSE_PENDING_CODE,
   'agent_prompt_blocked',
   'agent_prompt_stalled',
   'no_active_terminal',

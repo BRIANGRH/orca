@@ -81,6 +81,16 @@ describe('mapRuntimeError', () => {
     }
   )
 
+  it.each(['agent_session_worktree_mismatch', 'agent_session_close_pending'])(
+    'preserves the chat close failure %s, which a client must not read as no such tab',
+    (code) => {
+      expect(mapRuntimeError('req_1', { runtimeId: 'runtime-1' }, new Error(code))).toMatchObject({
+        ok: false,
+        error: { code, message: code }
+      })
+    }
+  )
+
   it.each(['agent_prompt_blocked', 'agent_prompt_stalled', 'request_aborted'])(
     'preserves the agent prompt failure %s',
     (code) => {
