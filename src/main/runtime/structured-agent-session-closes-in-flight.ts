@@ -1,34 +1,77 @@
 /**
  * The chat closes a host is still running, per session id, in memory only.
  *
- * A reveal of the same chat waits for them, so a reopen is never retired by its own earlier close.
- * Each entry ends in its close's `finally`, so nothing here can outlive the work it names.
+ * A reopen waits for earlier closes; a committed close cancels the opening attempts it overtakes.
+ * Entries end with their work, and cancellation belongs only to those concrete attempts.
  */
+import { AgentSessionRefusalError } from '../../shared/agent-session-wire-refusals'
+import { AGENT_SESSION_NOT_ATTACHED } from '../native-chat/agent-session-wire/structured-agent-session-mutation-refusals'
+
+export const STRUCTURED_AGENT_SESSION_CLOSE_WAIT_MS = 3_000
+
+export type StructuredAgentSessionCloseRequest = {
+  cancelEarlierPublications: () => void
+}
+
 export class StructuredAgentSessionClosesInFlight {
   private readonly bySession = new Map<string, Set<Promise<unknown>>>()
-  private readonly committing = new Map<string, number>()
+  private readonly publications = new Map<string, Set<AbortController>>()
+
+  /** Registered before preparation; a completed close cannot make this attempt current again. */
+  async runPublication<T>(
+    sessionId: string,
+    publish: (signal: AbortSignal) => Promise<T>
+  ): Promise<T> {
+    const attempts = this.publications.get(sessionId) ?? new Set<AbortController>()
+    this.publications.set(sessionId, attempts)
+    const attempt = new AbortController()
+    attempts.add(attempt)
+    try {
+      return await publish(attempt.signal)
+    } finally {
+      attempts.delete(attempt)
+      if (attempts.size === 0 && this.publications.get(sessionId) === attempts) {
+        this.publications.delete(sessionId)
+      }
+    }
+  }
 
   /** `track` for the close itself, past every check that could still refuse it. */
-  async commit<T>(sessionId: string, close: () => Promise<T>): Promise<T> {
-    this.committing.set(sessionId, (this.committing.get(sessionId) ?? 0) + 1)
-    try {
-      return await this.track(sessionId, close)
-    } finally {
-      const remaining = (this.committing.get(sessionId) ?? 1) - 1
-      if (remaining > 0) {
-        this.committing.set(sessionId, remaining)
-      } else {
-        this.committing.delete(sessionId)
+  commit<T>(
+    sessionId: string,
+    close: () => Promise<T>,
+    request = this.closeRequest(sessionId)
+  ): Promise<T> {
+    request.cancelEarlierPublications()
+    return this.track(sessionId, close)
+  }
+
+  private closeRequest(sessionId: string): StructuredAgentSessionCloseRequest {
+    const earlier = [...(this.publications.get(sessionId) ?? [])]
+    return {
+      cancelEarlierPublications: () => {
+        const attempts = this.publications.get(sessionId)
+        for (const attempt of earlier) {
+          attempt.abort(new AgentSessionRefusalError(AGENT_SESSION_NOT_ATTACHED))
+          attempts?.delete(attempt)
+        }
+        if (attempts?.size === 0) {
+          this.publications.delete(sessionId)
+        }
       }
     }
   }
 
   /** Runs one close, marked in flight from this call until it settles. */
-  track<T>(sessionId: string, close: () => Promise<T>): Promise<T> {
+  track<T>(
+    sessionId: string,
+    close: (request: StructuredAgentSessionCloseRequest) => Promise<T>
+  ): Promise<T> {
+    const request = this.closeRequest(sessionId)
     const closes = this.bySession.get(sessionId) ?? new Set<Promise<unknown>>()
     this.bySession.set(sessionId, closes)
     // Marked before the close starts, so a reveal arriving during its first await already waits.
-    const run = Promise.resolve().then(close)
+    const run = Promise.resolve().then(() => close(request))
     const settled = run.then(
       () => undefined,
       () => undefined
@@ -41,11 +84,6 @@ export class StructuredAgentSessionClosesInFlight {
       }
     })
     return run
-  }
-
-  /** True while a committed close of the session runs: one no check can refuse any more. */
-  isCommitting(sessionId: string): boolean {
-    return this.committing.has(sessionId)
   }
 
   /** True once no close of the session is running; false if one still is after `timeoutMs`. */

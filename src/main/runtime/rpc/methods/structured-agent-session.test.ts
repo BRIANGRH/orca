@@ -392,7 +392,8 @@ describe('method routing', () => {
       expect.objectContaining({
         accountHome: { variable: 'CODEX_HOME', path: '/host/.codex' },
         options: { model: 'gpt-5.6-sol', effort: 'medium' }
-      })
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
     expect(hostCalls.attach.mock.calls[0]?.[1]).not.toHaveProperty('providerHandle')
     expect(runtimeCalls.publishStructuredAgentSessionTab).toHaveBeenCalledWith(
@@ -422,7 +423,8 @@ describe('method routing', () => {
     // conversation this attaches to.
     expect(hostCalls.attach).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ surfaceTabId: 'chat-tab-1' })
+      expect.objectContaining({ surfaceTabId: 'chat-tab-1' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
   })
 
@@ -462,7 +464,7 @@ describe('method routing', () => {
     expect(hostCalls.attach).toHaveBeenCalledWith(
       expect.anything(),
       expect.not.objectContaining({ hostLaunchDirectory: expect.anything() }),
-      { hostLaunchDirectory: '/host/floating-folder' }
+      expect.objectContaining({ hostLaunchDirectory: '/host/floating-folder' })
     )
   })
 
@@ -578,7 +580,8 @@ describe('method routing', () => {
       expect.anything(),
       expect.objectContaining({
         accountHome: { variable: 'CLAUDE_CONFIG_DIR', path: '/host/.claude' }
-      })
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
     expect(runtimeCalls.publishStructuredAgentSessionTab).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -646,7 +649,10 @@ describe('method routing', () => {
       expect(await call(method, params, STRUCTURED_CLIENT)).toMatchObject({ ok: true })
       expect(hostCalls.attach).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ location: params.location })
+        expect.objectContaining({ location: params.location }),
+        ...(method === 'agentSession.create'
+          ? [expect.objectContaining({ signal: expect.any(AbortSignal) })]
+          : [])
       )
       expect(hostCalls.attach.mock.calls[0]?.[1]).not.toHaveProperty('launchDirectory')
     }

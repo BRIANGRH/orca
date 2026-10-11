@@ -17,6 +17,7 @@ import {
   structuredAgentSessionCreateIntentFingerprint
 } from './structured-agent-session-create'
 import { resolveUncommittedStructuredCreate } from './structured-agent-session-precommit-refusal'
+import { getStructuredAgentSessionClosesInFlight } from '../../structured-agent-session-closes-in-flight'
 
 /**
  * The attach-shaped entries take the location from the client instead of resolving it from a
@@ -54,47 +55,53 @@ export async function handleStructuredAgentSessionCreate(
       reason: 'requestMalformed'
     })
   }
-  // Everything up to `attach` is pre-commit, and answers with a refusal rather than a throw so
-  // a client can tell "nothing was created" from "the outcome is unknown".
-  const prepared = await resolveUncommittedStructuredCreate(async () => {
-    if ('worktree' in params) {
-      const conflict = agentSessionFingerprintConflict(
-        params.envelope,
-        structuredAgentSessionCreateIntentFingerprint(params)
-      )
-      if (conflict) {
-        return { refusal: conflict }
+  return getStructuredAgentSessionClosesInFlight(ctx.runtime).runPublication(
+    params.envelope.sessionId,
+    async (signal) => {
+      // Everything up to `attach` is pre-commit, and answers with a refusal rather than a throw so
+      // a client can tell "nothing was created" from "the outcome is unknown".
+      const prepared = await resolveUncommittedStructuredCreate(async () => {
+        if ('worktree' in params) {
+          const conflict = agentSessionFingerprintConflict(
+            params.envelope,
+            structuredAgentSessionCreateIntentFingerprint(params)
+          )
+          if (conflict) {
+            return { refusal: conflict }
+          }
+          return prepareStructuredAgentSessionCreateForWorktree({
+            runtime: ctx.runtime,
+            ensureHost: async () => {
+              await ensureHostInstalled(ctx)
+              return requireHost(ctx)
+            },
+            envelope: params.envelope,
+            worktree: params.worktree,
+            agent: params.agent,
+            caller: callerFor(ctx),
+            ...(params.resumeFrom ? { resumeFrom: params.resumeFrom } : {}),
+            ...(params.tabId ? { tabId: params.tabId } : {}),
+            ...(params.options ? { options: params.options } : {}),
+            ...(params.firstMessage ? { firstMessage: params.firstMessage } : {}),
+            atRest: Boolean(
+              params.firstMessage ||
+              ctx.clientCapabilities?.includes(AGENT_SESSION_CREATE_MESSAGE_RUNTIME_CAPABILITY)
+            )
+          })
+        }
+        const { host, attachParams } = await resolveClientSuppliedAttach(params, ctx)
+        return { host, attachParams, tab: null }
+      })
+      if ('refusal' in prepared) {
+        return { ok: false, refusal: prepared.refusal }
       }
-      return prepareStructuredAgentSessionCreateForWorktree({
+      return commitStructuredAgentSessionCreate({
         runtime: ctx.runtime,
-        ensureHost: async () => {
-          await ensureHostInstalled(ctx)
-          return requireHost(ctx)
-        },
-        envelope: params.envelope,
-        worktree: params.worktree,
-        agent: params.agent,
         caller: callerFor(ctx),
-        ...(params.resumeFrom ? { resumeFrom: params.resumeFrom } : {}),
-        ...(params.tabId ? { tabId: params.tabId } : {}),
-        ...(params.options ? { options: params.options } : {}),
-        ...(params.firstMessage ? { firstMessage: params.firstMessage } : {}),
-        atRest: Boolean(
-          params.firstMessage ||
-          ctx.clientCapabilities?.includes(AGENT_SESSION_CREATE_MESSAGE_RUNTIME_CAPABILITY)
-        )
+        prepared,
+        activate: true,
+        signal
       })
     }
-    const { host, attachParams } = await resolveClientSuppliedAttach(params, ctx)
-    return { host, attachParams, tab: null }
-  })
-  if ('refusal' in prepared) {
-    return { ok: false, refusal: prepared.refusal }
-  }
-  return commitStructuredAgentSessionCreate({
-    runtime: ctx.runtime,
-    caller: callerFor(ctx),
-    prepared,
-    activate: true
-  })
+  )
 }

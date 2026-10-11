@@ -67,19 +67,31 @@ describe('chat closes in flight', () => {
     other.resolve()
   })
 
-  it('reports only a committed close as committing, from the call until it settles', async () => {
+  it('cancels only the concrete openings a committed close overtakes', async () => {
     const closes = new StructuredAgentSessionClosesInFlight()
     const request = deferred()
-    // A close request that a later check may still refuse never counts as committing.
+    const first = deferred()
+    let earlierSignal: AbortSignal | undefined
+    const opening = closes.runPublication('s', async (signal) => {
+      earlierSignal = signal
+      await first.promise
+      return signal.aborted
+    })
+    // A close request that a later check may still refuse cancels nothing.
     const requested = closes.track('s', () => request.promise)
-    expect(closes.isCommitting('s')).toBe(false)
+    expect(earlierSignal?.aborted).toBe(false)
     const gate = deferred()
     const committed = closes.commit('s', () => gate.promise)
-    expect(closes.isCommitting('s')).toBe(true)
-    expect(closes.isCommitting('other')).toBe(false)
+    expect(earlierSignal?.aborted).toBe(true)
     gate.resolve()
     await committed
-    expect(closes.isCommitting('s')).toBe(false)
+    expect(earlierSignal?.aborted).toBe(true)
+    await expect(closes.runPublication('s', async (signal) => signal.aborted)).resolves.toBe(false)
+    await expect(closes.runPublication('other', async (signal) => signal.aborted)).resolves.toBe(
+      false
+    )
+    first.resolve()
+    await expect(opening).resolves.toBe(true)
     request.resolve()
     await requested
   })

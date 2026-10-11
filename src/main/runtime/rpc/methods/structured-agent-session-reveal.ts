@@ -24,12 +24,15 @@ import {
   requireStructuredHost
 } from './structured-agent-session-gate'
 import { OptionsParams } from './structured-agent-session-schemas'
-import { getStructuredAgentSessionClosesInFlight } from '../../structured-agent-session-closes-in-flight'
+import {
+  getStructuredAgentSessionClosesInFlight,
+  STRUCTURED_AGENT_SESSION_CLOSE_WAIT_MS
+} from '../../structured-agent-session-closes-in-flight'
 import { AGENT_SESSION_CLOSE_PENDING_CODE } from '../../../../shared/session-tab-close'
 
 /** Under the window's own 5 s reveal timeout, so the host never publishes after the window gave up;
  *  a close held past it (a pinned-tab confirm can take minutes) fails the reveal rather than racing. */
-export const STRUCTURED_AGENT_SESSION_REVEAL_CLOSE_WAIT_MS = 3_000
+export const STRUCTURED_AGENT_SESSION_REVEAL_CLOSE_WAIT_MS = STRUCTURED_AGENT_SESSION_CLOSE_WAIT_MS
 
 export const STRUCTURED_AGENT_SESSION_REVEAL_METHODS = [
   defineMethod({
@@ -41,43 +44,55 @@ export const STRUCTURED_AGENT_SESSION_REVEAL_METHODS = [
       // Why first: a reveal published before an earlier close of the same chat ends is retired by it.
       // Waits for every close of the chat in flight while it waits, including ones that begin later.
       const closes = getStructuredAgentSessionClosesInFlight(ctx.runtime)
-      if (
-        !(await closes.settled(params.sessionId, STRUCTURED_AGENT_SESSION_REVEAL_CLOSE_WAIT_MS))
-      ) {
-        // Thrown, not refused: a client reads a refusal as the chat being gone or the host too old.
-        throw new Error(AGENT_SESSION_CLOSE_PENDING_CODE)
-      }
-      await ensureStructuredHostInstalled(ctx)
-      let revealed: StructuredAgentSessionReveal
-      try {
-        const host = requireStructuredHost(ctx)
-        requireStructuredAgentAudience(ctx, host.sessionAgent(params.sessionId) ?? '')
-        revealed = await host.revealSession(params.sessionId)
-      } catch (error) {
-        // The host raises its refusal as the code itself; anything else is a genuine fault and
-        // must not be laundered into a tidy "no such chat".
-        const code = error instanceof Error ? error.message : ''
-        if (!isAgentSessionWireRefusalCode(code)) {
-          throw error
+      return closes.runPublication(params.sessionId, async (signal) => {
+        if (
+          !(await closes.settled(params.sessionId, STRUCTURED_AGENT_SESSION_REVEAL_CLOSE_WAIT_MS))
+        ) {
+          // Thrown, not refused: a client reads a refusal as the chat being gone or the host too old.
+          throw new Error(AGENT_SESSION_CLOSE_PENDING_CODE)
         }
-        return refuseAgentSessionMutation(
-          agentSessionRefusalFromReference(
-            isAgentSessionRefusalError(error) ? error.refusal : { code },
-            code === 'structured_agent_session_unsupported'
-              ? 'This host cannot open that chat.'
-              : 'This chat is no longer on this host.'
+        await ensureStructuredHostInstalled(ctx)
+        if (signal.aborted) {
+          throw new Error(AGENT_SESSION_CLOSE_PENDING_CODE)
+        }
+        let revealed: StructuredAgentSessionReveal
+        try {
+          const host = requireStructuredHost(ctx)
+          requireStructuredAgentAudience(ctx, host.sessionAgent(params.sessionId) ?? '')
+          revealed = await host.revealSession(params.sessionId)
+        } catch (error) {
+          // The host raises its refusal as the code itself; anything else is a genuine fault and
+          // must not be laundered into a tidy "no such chat".
+          const code = error instanceof Error ? error.message : ''
+          if (!isAgentSessionWireRefusalCode(code)) {
+            throw error
+          }
+          return refuseAgentSessionMutation(
+            agentSessionRefusalFromReference(
+              isAgentSessionRefusalError(error) ? error.refusal : { code },
+              code === 'structured_agent_session_unsupported'
+                ? 'This host cannot open that chat.'
+                : 'This chat is no longer on this host.'
+            )
           )
-        )
-      }
-      await ctx.runtime.publishStructuredAgentSessionTab({
-        workspaceId: revealed.workspaceId,
-        sessionId: revealed.sessionId,
-        agent: revealed.agent,
-        activate: true
+        }
+        if (signal.aborted) {
+          throw new Error(AGENT_SESSION_CLOSE_PENDING_CODE)
+        }
+        await ctx.runtime.publishStructuredAgentSessionTab({
+          workspaceId: revealed.workspaceId,
+          sessionId: revealed.sessionId,
+          agent: revealed.agent,
+          activate: true,
+          signal
+        })
+        if (signal.aborted) {
+          throw new Error(AGENT_SESSION_CLOSE_PENDING_CODE)
+        }
+        // Named fields only: the host's reasons a journal did not open stay on the host.
+        const { sessionId, workspaceId, agent, readable } = revealed
+        return { ok: true as const, sessionId, workspaceId, agent, readable }
       })
-      // Named fields only: the host's reasons a journal did not open stay on the host.
-      const { sessionId, workspaceId, agent, readable } = revealed
-      return { ok: true as const, sessionId, workspaceId, agent, readable }
     }
   })
 ]

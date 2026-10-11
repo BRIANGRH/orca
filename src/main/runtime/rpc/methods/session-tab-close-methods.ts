@@ -11,7 +11,10 @@ import { assertAgentSessionTabDestructiveMutationSupported } from './session-tab
 import { projectSessionTabsForClient } from './session-tabs-inventory'
 import { admitRemoteSessionTabClose } from './session-tab-close-admission'
 import type { RuntimeMobileSessionTabCloseResult } from '../../../../shared/runtime-types'
-import { getStructuredAgentSessionClosesInFlight } from '../../structured-agent-session-closes-in-flight'
+import {
+  getStructuredAgentSessionClosesInFlight,
+  type StructuredAgentSessionCloseRequest
+} from '../../structured-agent-session-closes-in-flight'
 import { structuredAgentSessionIdFromHostTabId } from '../../structured-agent-session-tab-close'
 
 export const SESSION_TAB_CLOSE_METHODS = [
@@ -24,8 +27,8 @@ export const SESSION_TAB_CLOSE_METHODS = [
       // Why on arrival: a reveal of this chat that lands during any await below must wait for it.
       return sessionId === null
         ? closeSessionTab(params, context)
-        : getStructuredAgentSessionClosesInFlight(context.runtime).track(sessionId, () =>
-            closeSessionTab(params, context)
+        : getStructuredAgentSessionClosesInFlight(context.runtime).track(sessionId, (request) =>
+            closeSessionTab(params, context, request)
           )
     }
   }),
@@ -94,7 +97,8 @@ export const SESSION_TAB_CLOSE_METHODS = [
 
 async function closeSessionTab(
   params: z.infer<typeof CloseTab>,
-  context: RpcContext
+  context: RpcContext,
+  structuredCloseRequest?: StructuredAgentSessionCloseRequest
 ): Promise<RuntimeMobileSessionTabCloseResult> {
   await admitRemoteSessionTabClose(params, context)
   const requiresIntent =
@@ -115,6 +119,7 @@ async function closeSessionTab(
       }
       const result = await context.runtime.closeMobileSessionTab(params.worktree, params.tabId, {
         reason: 'user',
+        ...(structuredCloseRequest ? { structuredCloseRequest } : {}),
         ...(context.pairedDeviceId ? { clientNavigationId: context.pairedDeviceId } : {})
       })
       span.setAttribute(

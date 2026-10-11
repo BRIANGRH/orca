@@ -24,7 +24,14 @@ import {
   resolveUncommittedStructuredCreate,
   type StructuredCreateRefused
 } from './structured-agent-session-precommit-refusal'
-import { getStructuredAgentSessionClosesInFlight } from '../../structured-agent-session-closes-in-flight'
+import {
+  getStructuredAgentSessionClosesInFlight,
+  STRUCTURED_AGENT_SESSION_CLOSE_WAIT_MS
+} from '../../structured-agent-session-closes-in-flight'
+import {
+  AGENT_SESSION_NOT_ATTACHED,
+  refuseAgentSessionMutation
+} from '../../../native-chat/agent-session-wire/structured-agent-session-mutation-refusals'
 
 export type PreparedStructuredAgentSessionCreate = {
   host: StructuredAgentSessionHost
@@ -152,21 +159,39 @@ export async function commitStructuredAgentSessionCreate(args: {
   caller: StructuredAgentSessionCaller
   prepared: PreparedStructuredAgentSessionCreate
   activate: boolean
+  signal?: AbortSignal
 }): Promise<AgentSessionMutationResult<AgentSessionAttachResult>> {
   const { prepared } = args
+  const closes = getStructuredAgentSessionClosesInFlight(args.runtime)
+  if (!args.signal) {
+    return closes.runPublication(prepared.attachParams.envelope.sessionId, (signal) =>
+      commitStructuredAgentSessionCreate({ ...args, signal })
+    )
+  }
+  const signal = args.signal
+  if (
+    signal.aborted ||
+    !(await closes.settled(
+      prepared.attachParams.envelope.sessionId,
+      STRUCTURED_AGENT_SESSION_CLOSE_WAIT_MS
+    )) ||
+    signal.aborted
+  ) {
+    return refuseAgentSessionMutation(AGENT_SESSION_NOT_ATTACHED)
+  }
   const tab = prepared.tab
   const publishTab = async (
     input: Parameters<OrcaRuntimeService['publishStructuredAgentSessionTab']>[0]
   ) => {
-    // A committed close that already retired this chat's tab must not see it re-listed by the create it beat.
-    if (getStructuredAgentSessionClosesInFlight(args.runtime).isCommitting(input.sessionId)) {
+    if (signal.aborted) {
       return
     }
-    await args.runtime.publishStructuredAgentSessionTab(input)
+    await args.runtime.publishStructuredAgentSessionTab({ ...input, signal })
   }
   if (prepared.atRest) {
     return prepared.host.create(args.caller, prepared.attachParams, {
       ...prepared.atRest,
+      signal,
       ...(prepared.hostLaunchDirectory
         ? { hostLaunchDirectory: prepared.hostLaunchDirectory }
         : {}),
@@ -186,11 +211,10 @@ export async function commitStructuredAgentSessionCreate(args: {
         : {})
     })
   }
-  const result = prepared.hostLaunchDirectory
-    ? await prepared.host.attach(args.caller, prepared.attachParams, {
-        hostLaunchDirectory: prepared.hostLaunchDirectory
-      })
-    : await prepared.host.attach(args.caller, prepared.attachParams)
+  const result = await prepared.host.attach(args.caller, prepared.attachParams, {
+    signal,
+    ...(prepared.hostLaunchDirectory ? { hostLaunchDirectory: prepared.hostLaunchDirectory } : {})
+  })
   if (!result.ok || !prepared.tab) {
     return result
   }
@@ -234,17 +258,23 @@ export async function createStructuredAgentSessionForWorktree(args: {
   options?: Readonly<Record<string, string>>
   tabId?: string
 }): Promise<AgentSessionMutationResult<AgentSessionAttachResult>> {
-  const prepared: PreparedStructuredAgentSessionCreate | StructuredCreateRefused =
-    await resolveUncommittedStructuredCreate(() =>
-      prepareStructuredAgentSessionCreateForWorktree(args)
-    )
-  if ('refusal' in prepared) {
-    return { ok: false, refusal: prepared.refusal }
-  }
-  return commitStructuredAgentSessionCreate({
-    runtime: args.runtime,
-    caller: args.caller,
-    prepared,
-    activate: args.activate
-  })
+  return getStructuredAgentSessionClosesInFlight(args.runtime).runPublication(
+    args.envelope.sessionId,
+    async (signal) => {
+      const prepared: PreparedStructuredAgentSessionCreate | StructuredCreateRefused =
+        await resolveUncommittedStructuredCreate(() =>
+          prepareStructuredAgentSessionCreateForWorktree(args)
+        )
+      if ('refusal' in prepared) {
+        return { ok: false, refusal: prepared.refusal }
+      }
+      return commitStructuredAgentSessionCreate({
+        runtime: args.runtime,
+        caller: args.caller,
+        prepared,
+        activate: args.activate,
+        signal
+      })
+    }
+  )
 }

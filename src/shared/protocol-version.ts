@@ -166,7 +166,12 @@ export const WORKTREE_CREATE_IDEMPOTENCY_RUNTIME_CAPABILITY =
 // that. Advertised unconditionally: every build carrying this constant has the gate.
 export const WORKTREE_ARCHIVE_FAILURE_BLOCKING_RUNTIME_CAPABILITY =
   'worktree.archive-failure-blocking.v1' as const
-export * from './account-runtime-capabilities'
+export { CODEX_RESET_CREDIT_RUNTIME_CAPABILITY } from './account-runtime-capabilities'
+export { ACCOUNT_IMPORT_RUNTIME_CAPABILITY } from './account-runtime-capabilities'
+export { CLAUDE_SIGN_IN_RUNTIME_CAPABILITY } from './account-runtime-capabilities'
+export { ANTIGRAVITY_ACCOUNTS_RUNTIME_CAPABILITY } from './account-runtime-capabilities'
+export { DATA_ACCOUNT_RUNTIME_CAPABILITY } from './account-runtime-capabilities'
+export { ACCOUNT_RUNTIME_CAPABILITIES } from './account-runtime-capabilities'
 // Why: older hosts cannot reconcile terminal.create's mutation after losing the reply, so clients may only retry unknown outcomes when advertised.
 export const TERMINAL_CREATE_IDEMPOTENCY_RUNTIME_CAPABILITY =
   'terminal.create-idempotency.v2' as const

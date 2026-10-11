@@ -22,6 +22,7 @@ import { rendererPublicationThrottle } from '../window/renderer-publication-thro
 import { structuredAgentSessionTabCloseCause } from './structured-agent-session-tab-close-cause'
 import { retireHeadlessMobileSessionEditorTab } from './mobile-session-editor-projection'
 import { closeRelayedMobileSessionTab } from './mobile-session-relayed-tab-close'
+import type { StructuredAgentSessionCloseRequest } from './structured-agent-session-closes-in-flight'
 import { captureTerminalTabListRetirement } from './mobile-session-terminal-tab-retirement'
 import {
   closeListedStructuredAgentSessionTab,
@@ -41,6 +42,7 @@ export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseU
       localPtyTeardownOwnedExternally?: boolean
       expectedPtyCloseAuthority?: RuntimePtyTabCloseAuthority
       force?: boolean
+      structuredCloseRequest?: StructuredAgentSessionCloseRequest
     } = {}
   ): Promise<MobileSessionTabCloseOutcome> {
     const graphEpoch = options.clientNavigationId ? this.captureReadyGraphEpoch() : null
@@ -52,8 +54,7 @@ export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseU
       if (graphEpoch !== null) {
         this.assertStableReadyGraph(graphEpoch)
       }
-      const cause = structuredAgentSessionTabCloseCause(options.reason)
-      await closeStructuredAgentSessionTabForUser(this, worktreeId, tabId, cause)
+      await closeStructuredAgentSessionTabForUser(this, worktreeId, tabId, options)
       return committedMobileSessionTabClose(this.clientSessionTabSelections, worktreeId, [tabId])
     }
     this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId)

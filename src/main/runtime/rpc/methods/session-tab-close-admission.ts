@@ -30,6 +30,9 @@ export async function admitRemoteSessionTabClose(
     return
   }
   const sessionId = structuredAgentSessionIdFromHostTabId(params.tabId)
+  if (sessionId !== null && supportsStructuredAgentSessions(context)) {
+    await context.runtime.ensureStructuredAgentSessionHostForClose()
+  }
   const raw =
     sessionId === null
       ? await context.runtime.listMobileSessionTabs(params.worktree, context.pairedDeviceId)

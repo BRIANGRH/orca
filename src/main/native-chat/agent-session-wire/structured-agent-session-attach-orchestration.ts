@@ -22,6 +22,7 @@ import {
   pinnedAgentSessionLaunchEnv
 } from './structured-agent-session-launch-env'
 import { refuseAgentSessionMutation } from './structured-agent-session-mutation-admission'
+import { AGENT_SESSION_NOT_ATTACHED } from './structured-agent-session-mutation-refusals'
 import { settleStaleStructuredAgentSessionState } from './structured-agent-session-dead-generation-settlement'
 import { structuredAgentSessionFailureWordsContext } from './structured-agent-session-send-preparation'
 import type { StructuredAgentSessionAttachContext } from './structured-agent-session-attach-context'
@@ -43,6 +44,7 @@ import {
 } from '../../observability/agent-session-instrumentation'
 
 export type StructuredAgentSessionAttachOptions = {
+  signal?: AbortSignal
   hostLaunchDirectory?: string
   recordPhase?: AgentSessionCreatePhaseRecorder
   onAcquisitionFailed?: AttachFlowInput['onAcquisitionFailed']
@@ -110,14 +112,18 @@ async function runAttach(
   options: StructuredAgentSessionAttachOptions
 ): Promise<AgentSessionMutationResult<AgentSessionAttachResult>> {
   // Begun first, so a close or Stop during any phase below still stops the start.
+  if (options.signal?.aborted) {
+    return refuseAgentSessionMutation(AGENT_SESSION_NOT_ATTACHED)
+  }
   const acquire = context.runtimeState.acquireAborts.begin(params.envelope.sessionId)
+  const signal = options.signal ? AbortSignal.any([options.signal, acquire.signal]) : acquire.signal
   try {
-    return await runAttachUnderAbort(context, callerKey, params, options, acquire.signal)
+    return await runAttachUnderAbort(context, callerKey, params, options, signal)
   } finally {
     acquire.end()
-    if (isStructuredAgentSessionStartupExpired(acquire.signal.reason)) {
+    if (isStructuredAgentSessionStartupExpired(signal.reason)) {
       options.onStartupExpired?.()
-    } else if (acquire.signal.aborted) {
+    } else if (signal.aborted) {
       options.onAborted?.()
     }
   }

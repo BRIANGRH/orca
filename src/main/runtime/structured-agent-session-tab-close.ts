@@ -18,8 +18,12 @@ import {
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import type { StructuredAgentSessionCloseCause } from '../native-chat/agent-session-wire/structured-agent-session-host-lifetime'
 import type { RuntimeNotifier } from './runtime-notifier-contract'
-import { getStructuredAgentSessionClosesInFlight } from './structured-agent-session-closes-in-flight'
+import {
+  getStructuredAgentSessionClosesInFlight,
+  type StructuredAgentSessionCloseRequest
+} from './structured-agent-session-closes-in-flight'
 import { findStructuredAgentSessionTab } from './structured-agent-session-tab-retirement'
+import { structuredAgentSessionTabCloseCause } from './structured-agent-session-tab-close-cause'
 
 const HOST_CHAT_TAB_ID_PREFIX = 'agent-session:'
 
@@ -52,6 +56,7 @@ export function isUserStructuredAgentSessionTabClose(
 /** The runtime the host close drops a chat's tab from. */
 export type StructuredAgentSessionCloseRuntime = WeakKey & {
   retireStructuredAgentSessionTabFromSnapshot(sessionId: string): boolean
+  ensureStructuredAgentSessionHostForClose(): Promise<void>
 }
 
 export type StructuredAgentSessionTabCloseHost = StructuredAgentSessionCloseRuntime & {
@@ -67,31 +72,39 @@ export type StructuredAgentSessionTabCloseHost = StructuredAgentSessionCloseRunt
 export function closeStructuredAgentSessionOnHost(
   runtime: StructuredAgentSessionCloseRuntime,
   sessionId: string,
-  cause: StructuredAgentSessionCloseCause
+  cause: StructuredAgentSessionCloseCause,
+  request?: StructuredAgentSessionCloseRequest
 ): Promise<void> {
-  return getStructuredAgentSessionClosesInFlight(runtime).commit(sessionId, async () => {
-    const host = getStructuredAgentSessionHost()
-    if (typeof host?.setSessionTabVisibility === 'function') {
-      // The restore index is bookkeeping: one that cannot be written (a newer Orca's records, a
-      // failing disk) is reported, and the chat still closes.
-      await host.setSessionTabVisibility(sessionId, false).catch((error: unknown) => {
-        host.deps.logger.warn('recording a closed chat tab failed', {
-          scope: 'tab-visibility-close',
-          sessionId,
-          error
+  return getStructuredAgentSessionClosesInFlight(runtime).commit(
+    sessionId,
+    async () => {
+      if (!getStructuredAgentSessionHost()) {
+        await runtime.ensureStructuredAgentSessionHostForClose()
+      }
+      const host = getStructuredAgentSessionHost()
+      if (typeof host?.setSessionTabVisibility === 'function') {
+        // The restore index is bookkeeping: one that cannot be written (a newer Orca's records, a
+        // failing disk) is reported, and the chat still closes.
+        await host.setSessionTabVisibility(sessionId, false).catch((error: unknown) => {
+          host.deps.logger.warn('recording a closed chat tab failed', {
+            scope: 'tab-visibility-close',
+            sessionId,
+            error
+          })
         })
-      })
-    }
-    try {
-      runtime.retireStructuredAgentSessionTabFromSnapshot(sessionId)
-    } catch (error) {
-      // A throwing snapshot listener must not skip the stop.
-      console.warn('[runtime] retiring a closed chat tab failed', sessionId, error)
-    }
-    if (typeof host?.close === 'function') {
-      await host.close(sessionId, cause)
-    }
-  })
+      }
+      try {
+        runtime.retireStructuredAgentSessionTabFromSnapshot(sessionId)
+      } catch (error) {
+        // A throwing snapshot listener must not skip the stop.
+        console.warn('[runtime] retiring a closed chat tab failed', sessionId, error)
+      }
+      if (typeof host?.close === 'function') {
+        await host.close(sessionId, cause)
+      }
+    },
+    request
+  )
 }
 
 /** The worktree a chat belongs to: its record's, else the list that carries it; null if neither. */
@@ -116,7 +129,8 @@ export async function closeListedStructuredAgentSessionTab(
   host: StructuredAgentSessionTabCloseHost,
   worktreeId: string,
   tab: RuntimeMobileSessionAgentTab,
-  cause: StructuredAgentSessionCloseCause
+  cause: StructuredAgentSessionCloseCause,
+  request?: StructuredAgentSessionCloseRequest
 ): Promise<void> {
   if (host.notifier?.closeSessionTab) {
     try {
@@ -129,7 +143,7 @@ export async function closeListedStructuredAgentSessionTab(
       }
     }
   }
-  await closeStructuredAgentSessionOnHost(host, tab.sessionId, cause)
+  await closeStructuredAgentSessionOnHost(host, tab.sessionId, cause, request)
 }
 
 /**
@@ -141,8 +155,14 @@ export async function closeStructuredAgentSessionTabForUser(
   host: StructuredAgentSessionTabCloseHost,
   worktreeId: string,
   tabId: string,
-  cause: StructuredAgentSessionCloseCause
+  options: {
+    reason?: RuntimeSessionTabCloseReason
+    structuredCloseRequest?: StructuredAgentSessionCloseRequest
+  }
 ): Promise<void> {
+  const cause = structuredAgentSessionTabCloseCause(options.reason)
+  const request = options.structuredCloseRequest
+  await host.ensureStructuredAgentSessionHostForClose()
   const tab = host.mobileSessionTabsByWorktree
     .get(worktreeId)
     ?.tabs.find(
@@ -150,7 +170,7 @@ export async function closeStructuredAgentSessionTabForUser(
         candidate.type === 'agent-session' && candidate.id === tabId
     )
   if (tab) {
-    await closeListedStructuredAgentSessionTab(host, worktreeId, tab, cause)
+    await closeListedStructuredAgentSessionTab(host, worktreeId, tab, cause, request)
     return
   }
   const sessionId = structuredAgentSessionIdFromHostTabId(tabId)
@@ -162,5 +182,5 @@ export async function closeStructuredAgentSessionTabForUser(
     // Not `tab_not_found`: a client settles that as closed, and this chat is still open elsewhere.
     throw new Error(AGENT_SESSION_WORKTREE_MISMATCH_CODE)
   }
-  await closeStructuredAgentSessionOnHost(host, sessionId, cause)
+  await closeStructuredAgentSessionOnHost(host, sessionId, cause, request)
 }

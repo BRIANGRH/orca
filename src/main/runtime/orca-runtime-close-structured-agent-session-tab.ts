@@ -13,8 +13,25 @@ import type { BrowserSessionTabSelectionOptions } from './browser-tab-create-pub
 import { getRuntimeBrowserPageRegistry } from './runtime-browser-page-registry'
 import { applyBrowserSessionTabSelection } from './browser-session-tab-selection-snapshot'
 import { retireStructuredAgentSessionTabFrom } from './structured-agent-session-tab-retirement'
+import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
+import { AGENT_SESSION_CLOSE_PENDING_CODE } from '../../shared/session-tab-close'
 
 export class OrcaRuntimeWithCloseStructuredAgentSessionTab extends OrcaRuntimeWithCloseMobileSessionTab {
+  /** Establish chat ownership without startup's terminal census; an unreadable store is not empty. */
+  async ensureStructuredAgentSessionHostForClose(): Promise<void> {
+    if (getStructuredAgentSessionHost() || !this.hasPersistedStructuredAgentSessionStore()) {
+      return
+    }
+    try {
+      await this.ensureStructuredAgentSessionHost()
+    } catch (error) {
+      throw new Error(AGENT_SESSION_CLOSE_PENDING_CODE, { cause: error })
+    }
+    if (!getStructuredAgentSessionHost()) {
+      throw new Error(AGENT_SESSION_CLOSE_PENDING_CODE)
+    }
+  }
+
   /** The worktree's stored list without the terminal process scan, which no chat close needs. */
   async listMobileSessionTabsForChatClose(
     worktreeSelector: string,

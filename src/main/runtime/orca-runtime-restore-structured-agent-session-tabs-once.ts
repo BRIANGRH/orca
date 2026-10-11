@@ -82,7 +82,11 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
     notify?: boolean
     /** The host tab id a create reserved; a session that already has a tab keeps its own. */
     tabId?: string
+    signal?: AbortSignal
   }): Promise<void> {
+    if (input.signal?.aborted) {
+      return
+    }
     const host = getStructuredAgentSessionHost()
     if (typeof host?.setSessionTabVisibility === 'function') {
       // The restore index is bookkeeping: one that cannot be written (a newer Orca's records, a
@@ -97,7 +101,9 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
           })
         })
     }
-    this.projectStructuredAgentSessionTab(input)
+    if (!input.signal?.aborted) {
+      this.projectStructuredAgentSessionTab(input)
+    }
   }
 
   /** The runtime's own snapshot of a chat tab. Records nothing: the caller owns the store write. */

@@ -27,8 +27,8 @@ it('logs a created chat whose tab could not be published, and answers it unconfi
     caller: { callerKey: 'client-1' },
     prepared: {
       host,
-      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the stubbed attach reads none of it.
-      attachParams: {} as AgentSessionAttachParams,
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: only the lifecycle coordinator reads this session identity; attach is stubbed.
+      attachParams: { envelope: { sessionId: 'session-1' } } as AgentSessionAttachParams,
       tab: { workspaceId: 'workspace-1', agent: 'codex' }
     },
     activate: true
