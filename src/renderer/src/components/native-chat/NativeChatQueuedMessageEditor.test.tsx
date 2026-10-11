@@ -7,6 +7,8 @@ import { NativeChatQuestionCard } from './NativeChatQuestionCard'
 import type { QueuedMessageInlineEditor } from './use-structured-agent-session-queued-edit'
 
 vi.mock('@/i18n/i18n', () => ({
+  // The approval card's file-open routing builds a localized catalog at import.
+  i18n: { language: 'en' },
   translate: (_key: string, fallback: string, values?: Record<string, string>) =>
     fallback.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => values?.[name] ?? '')
 }))
