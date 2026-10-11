@@ -13,47 +13,61 @@ export type StructuredAgentSessionCloseRequest = {
   cancelEarlierPublications: () => void
 }
 
+export type StructuredAgentSessionPublication = {
+  signalFor: (sessionId: string) => AbortSignal
+}
+
+type PublicationAttempt = StructuredAgentSessionPublication & {
+  cancel: (sessionId: string) => void
+}
+
 export class StructuredAgentSessionClosesInFlight {
   private readonly bySession = new Map<string, Set<Promise<unknown>>>()
-  private readonly publications = new Map<string, Set<AbortController>>()
+  private readonly publications = new Set<PublicationAttempt>()
 
   /** Registered before preparation; a completed close cannot make this attempt current again. */
   async runPublication<T>(
     sessionId: string,
     publish: (signal: AbortSignal) => Promise<T>
   ): Promise<T> {
-    return this.runPublications([sessionId], (signals) => publish(signals.get(sessionId)!))
+    return this.runPublicationInScope(new Set([sessionId]), (attempt) =>
+      publish(attempt.signalFor(sessionId))
+    )
   }
 
-  /** A startup restore owns one concrete publication attempt for each of its original targets. */
-  async runPublications<T>(
-    sessionIds: readonly string[],
-    publish: (signals: ReadonlyMap<string, AbortSignal>) => Promise<T>
+  /** Registered before preparation even when the host has not exposed its targets yet. */
+  runRestoration<T>(
+    restore: (attempt: StructuredAgentSessionPublication) => Promise<T>
   ): Promise<T> {
-    const attempts = [...new Set(sessionIds)].map((sessionId) => this.beginPublication(sessionId))
-    try {
-      return await publish(new Map(attempts.map(({ sessionId, signal }) => [sessionId, signal])))
-    } finally {
-      for (const attempt of attempts) {
-        attempt.end()
-      }
-    }
+    return this.runPublicationInScope(null, restore)
   }
 
-  private beginPublication(sessionId: string) {
-    const attempts = this.publications.get(sessionId) ?? new Set<AbortController>()
-    this.publications.set(sessionId, attempts)
-    const attempt = new AbortController()
-    attempts.add(attempt)
-    return {
-      sessionId,
-      signal: attempt.signal,
-      end: () => {
-        attempts.delete(attempt)
-        if (attempts.size === 0 && this.publications.get(sessionId) === attempts) {
-          this.publications.delete(sessionId)
+  private async runPublicationInScope<T>(
+    scope: ReadonlySet<string> | null,
+    publish: (attempt: StructuredAgentSessionPublication) => Promise<T>
+  ): Promise<T> {
+    const controllers = new Map<string, AbortController>()
+    const controllerFor = (sessionId: string): AbortController => {
+      let controller = controllers.get(sessionId)
+      if (!controller) {
+        controller = new AbortController()
+        controllers.set(sessionId, controller)
+      }
+      return controller
+    }
+    const attempt: PublicationAttempt = {
+      signalFor: (sessionId) => controllerFor(sessionId).signal,
+      cancel: (sessionId) => {
+        if (scope === null || scope.has(sessionId)) {
+          controllerFor(sessionId).abort(new AgentSessionRefusalError(AGENT_SESSION_NOT_ATTACHED))
         }
       }
+    }
+    this.publications.add(attempt)
+    try {
+      return await publish(attempt)
+    } finally {
+      this.publications.delete(attempt)
     }
   }
 
@@ -68,16 +82,11 @@ export class StructuredAgentSessionClosesInFlight {
   }
 
   private closeRequest(sessionId: string): StructuredAgentSessionCloseRequest {
-    const earlier = [...(this.publications.get(sessionId) ?? [])]
+    const earlier = [...this.publications]
     return {
       cancelEarlierPublications: () => {
-        const attempts = this.publications.get(sessionId)
         for (const attempt of earlier) {
-          attempt.abort(new AgentSessionRefusalError(AGENT_SESSION_NOT_ATTACHED))
-          attempts?.delete(attempt)
-        }
-        if (attempts?.size === 0) {
-          this.publications.delete(sessionId)
+          attempt.cancel(sessionId)
         }
       }
     }

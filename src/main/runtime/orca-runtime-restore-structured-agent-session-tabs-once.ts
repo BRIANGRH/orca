@@ -29,15 +29,14 @@ import type { StructuredAgentId } from '../../shared/agent-session-provider-hand
 
 export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRuntimeWithGetStructuredAgentSessionCreateSupport {
   protected async restoreStructuredAgentSessionTabsOnce(): Promise<void> {
-    await this.prepareStructuredAgentSessionStartupRestoration()
-    const host = getStructuredAgentSessionHost()
     const profileIds = collectSavedStructuredAgentSessionIds(
       this.store?.getWorkspaceSession?.(LOCAL_EXECUTION_HOST_ID) ?? null
     )
     await restoreStructuredAgentSessionTabPublications({
       runtime: this,
-      host,
+      getHost: getStructuredAgentSessionHost,
       profileIds,
+      prepare: () => this.prepareStructuredAgentSessionStartupRestoration(),
       hydrate: () => {
         for (const worktreeId of this.getKnownWorkspaceSessionWorktreeIds()) {
           this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId, {
@@ -50,6 +49,7 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
       project: (session) =>
         this.projectStructuredAgentSessionTab({ ...session, activate: false, notify: false })
     })
+    const host = getStructuredAgentSessionHost()
     const wasUnverifiable = this.structuredAgentSessionInventoryUnverifiable
     // No host means no one can say which chats exist; with none on disk, empty is the answer.
     this.structuredAgentSessionInventoryUnverifiable =

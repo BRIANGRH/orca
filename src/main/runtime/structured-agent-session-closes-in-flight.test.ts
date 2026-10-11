@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { StructuredAgentSessionClosesInFlight } from './structured-agent-session-closes-in-flight'
+import {
+  StructuredAgentSessionClosesInFlight,
+  type StructuredAgentSessionPublication
+} from './structured-agent-session-closes-in-flight'
 
 function deferred(): {
   promise: Promise<void>
@@ -20,6 +23,44 @@ afterEach(() => {
 })
 
 describe('chat closes in flight', () => {
+  it('cancels lazy targets only in restoration attempts present at close arrival', async () => {
+    const closes = new StructuredAgentSessionClosesInFlight()
+    const originalReady = deferred()
+    const newerReady = deferred()
+    const closeReady = deferred()
+    const original = closes.runRestoration(async (attempt) => {
+      await originalReady.promise
+      return attempt.signalFor('s').aborted
+    })
+    const closing = closes.track('s', async (request) => {
+      await closeReady.promise
+      await closes.commit('s', async () => {}, request)
+    })
+    const newer = closes.runRestoration(async (attempt) => {
+      await newerReady.promise
+      return attempt.signalFor('s').aborted
+    })
+    closeReady.resolve()
+    await closing
+    originalReady.resolve()
+    newerReady.resolve()
+    expect(await original).toBe(true)
+    expect(await newer).toBe(false)
+  })
+
+  it('releases a failed restoration participant rather than retaining future close authority', async () => {
+    const closes = new StructuredAgentSessionClosesInFlight()
+    const ended: StructuredAgentSessionPublication[] = []
+    await expect(
+      closes.runRestoration(async (attempt) => {
+        ended.push(attempt)
+        throw new Error('preparation failed')
+      })
+    ).rejects.toThrow('preparation failed')
+    await closes.commit('s', async () => {})
+    expect(ended[0]?.signalFor('s').aborted).toBe(false)
+  })
+
   it('settles at once when nothing closes the session', async () => {
     await expect(new StructuredAgentSessionClosesInFlight().settled('s', 10)).resolves.toBe(true)
   })

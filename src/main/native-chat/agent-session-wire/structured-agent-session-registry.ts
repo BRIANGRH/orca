@@ -11,6 +11,7 @@ let host: StructuredAgentSessionHost | null = null
 let held = false
 let stopWatchingHost: (() => void) | null = null
 const heldListeners = new Set<(held: boolean) => void>()
+const installedListeners = new Set<(host: StructuredAgentSessionHost) => void>()
 
 // Why typeof: tests install partial hosts.
 function hostHoldsSessions(candidate: StructuredAgentSessionHost | null): boolean {
@@ -41,6 +42,15 @@ export function setStructuredAgentSessionHost(next: StructuredAgentSessionHost |
   stopWatchingHost?.()
   stopWatchingHost = null
   host = next
+  if (next) {
+    for (const listener of installedListeners) {
+      try {
+        listener(next)
+      } catch (error) {
+        console.warn('[structured-agent-session] a host-installed listener threw', error)
+      }
+    }
+  }
   try {
     stopWatchingHost =
       typeof next?.onSessionsHeld === 'function' ? next.onSessionsHeld(publishHeld) : null
@@ -65,4 +75,17 @@ export function onStructuredAgentSessionsHeldChanged(
 
 export function getStructuredAgentSessionHost(): StructuredAgentSessionHost | null {
   return host
+}
+
+/** Reads installed metadata before an awaiting close can mutate the new host. */
+export function onStructuredAgentSessionHostInstalled(
+  listener: (host: StructuredAgentSessionHost) => void
+): () => void {
+  if (host) {
+    listener(host)
+  }
+  installedListeners.add(listener)
+  return () => {
+    installedListeners.delete(listener)
+  }
 }

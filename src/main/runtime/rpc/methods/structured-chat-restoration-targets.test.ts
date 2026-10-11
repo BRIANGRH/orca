@@ -32,7 +32,7 @@ async function saveTargets() {
 function restoreTargets() {
   return restoreStructuredAgentSessionTabPublications({
     runtime,
-    host,
+    getHost: () => host,
     profileIds: [HOST_TEST_SESSION, OTHER],
     hydrate: () => {},
     project: (session) =>
