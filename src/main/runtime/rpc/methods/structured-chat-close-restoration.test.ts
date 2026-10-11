@@ -59,14 +59,15 @@ it('legacy close cancels a create held before lazy host installation, then permi
     activate: true
   })
   await reached.promise
+  let closed: Awaited<ReturnType<typeof call>>
   try {
-    expect(await call('agentSession.close', { sessionId: HOST_TEST_SESSION })).toMatchObject({
-      ok: true
-    })
+    closed = await call('agentSession.close', { sessionId: HOST_TEST_SESSION })
   } finally {
     release.resolve()
   }
-  expect((await creating).ok).toBe(false)
+  const created = await creating
+  expect(closed).toMatchObject({ ok: true })
+  expect(created.ok).toBe(false)
   expect(acquisitions).toBe(0)
   expect(store.getRecord(HOST_TEST_SESSION)).toBeNull()
   expect((await createChat(HOST_TEST_SESSION)).ok).toBe(true)

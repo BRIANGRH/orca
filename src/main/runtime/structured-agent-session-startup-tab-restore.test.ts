@@ -333,6 +333,59 @@ describe('restoring the chat tabs open at quit', () => {
       chatRecord(CHAT_B, { codex: true })
     ]
 
+    it.each(['recovery', 'seed'] as const)(
+      'closing one legacy target during %s preserves the other in one complete index',
+      async (boundary) => {
+        await seedProfile(legacyChats())
+        const { runtime, published } = startupRuntime({ profileChats: [CHAT_A, CHAT_B] })
+        await runtime.prepareStructuredAgentSessionStartupRestoration()
+        const host = getStructuredAgentSessionHost()
+        if (!host) {
+          throw new Error('saved owner did not install')
+        }
+        expect(host.getPersistedVisibleSessionTabIndex().present).toBe(false)
+        let enter!: () => void
+        let release!: () => void
+        const reached = new Promise<void>((resolve) => {
+          enter = resolve
+        })
+        const held = new Promise<void>((resolve) => {
+          release = resolve
+        })
+        if (boundary === 'recovery') {
+          const state = host.collaboratorsForTests().runtimeState
+          const recovery = state.resolveRecovery.bind(state)
+          vi.spyOn(state, 'resolveRecovery').mockImplementationOnce(async (sessionId) => {
+            enter()
+            await held
+            return recovery(sessionId)
+          })
+        } else {
+          const seed = host.showSessionTabs.bind(host)
+          vi.spyOn(host, 'showSessionTabs').mockImplementationOnce(async (sessionIds) => {
+            await seed(sessionIds)
+            enter()
+            await held
+          })
+        }
+        const restoring = runtime.restoreStructuredAgentSessionTabs()
+        await reached
+        try {
+          expect(
+            await runtime.closeMobileSessionTab('id:workspace-1', `agent-session:${CHAT_A}`, {
+              reason: 'user'
+            })
+          ).toMatchObject({ closed: true })
+        } finally {
+          release()
+        }
+        await restoring
+        expect(await tabIndexOnDisk()).toEqual([CHAT_B])
+        expect(published().map((tab) => tab.id)).toEqual([`agent-session:${CHAT_B}`])
+        await expectHistory(CHAT_A)
+      }
+    )
+
     it('records every restored chat in one write', async () => {
       const records = legacyChats()
       await seedProfile(records)

@@ -21,9 +21,6 @@ vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
   return { ipcMain: new EventEmitter() }
 })
-vi.mock('../../../ipc/worktree-change-invalidators', () => ({
-  runWorktreeChangeInvalidators: vi.fn()
-}))
 vi.mock('../../../window/mobile-markdown-request-relay', () => ({
   requestMobileMarkdownFromRenderer: vi.fn()
 }))
@@ -49,7 +46,7 @@ function deferred() {
   return { promise, resolve }
 }
 
-function attachWindow() {
+function attachWindow(acknowledgeUnexpectedRelay = false) {
   const state = { destroyed: false }
   const webContents = Object.assign(new EventEmitter(), {
     isDestroyed: () => state.destroyed,
@@ -60,6 +57,19 @@ function attachWindow() {
     isDestroyed: () => state.destroyed,
     webContents
   })
+  if (acknowledgeUnexpectedRelay) {
+    webContents.send.mockImplementation((channel: string, payload: { requestId?: string }) => {
+      if (channel === 'ui:sessionTabCloseRequest') {
+        queueMicrotask(() =>
+          responses.emit(
+            'ui:sessionTabCloseResponse',
+            { sender: webContents },
+            { requestId: payload.requestId }
+          )
+        )
+      }
+    })
+  }
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: registration and the real close relay read only these window members.
   registerRuntimeWindowLifecycle(window as unknown as BrowserWindow, runtime)
   return { window, webContents, state }
@@ -105,7 +115,7 @@ it.each([false, true])(
   'preserves the initiating window after slow admission even when destroyed %s',
   async (destroyed) => {
     await createChat(HOST_TEST_SESSION)
-    const { webContents, state } = attachWindow()
+    const { webContents, state } = attachWindow(true)
     const reached = deferred()
     const release = deferred()
     const inventory = runtime.listMobileSessionTabsForChatClose.bind(runtime)
@@ -164,7 +174,7 @@ it('does not treat a legacy unattributed request as originating desktop intent',
 
 it('carries origin through the later listed-chat branch for a custom tab id', async () => {
   await createChat(HOST_TEST_SESSION, 'custom-chat-tab')
-  const { webContents } = attachWindow()
+  const { webContents } = attachWindow(true)
   expect(await closeChat(desktop, 'user', 'custom-chat-tab')).toMatchObject({
     ok: true,
     result: { closed: true }

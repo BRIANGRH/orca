@@ -263,6 +263,10 @@ describe('structured session cold restoration', () => {
       restoreReadableSessions: async () => undefined,
       close: closeStructuredSession,
       setSessionTabVisibility,
+      getPersistedVisibleSessionTabIndex: () => ({
+        present: true,
+        sessionIds: ['restored-session']
+      }),
       listSessionTabs: () => [
         {
           sessionId: 'agent-session:agent-session:restored-session',
@@ -374,6 +378,10 @@ describe('structured session cold restoration', () => {
     internal.refreshMobileSessionPtyRecords = async () => new Set()
     internal.ensureStructuredAgentSessionHost = async () => undefined
     setStructuredAgentSessionHost({
+      getPersistedVisibleSessionTabIndex: () => ({
+        present: true,
+        sessionIds: ['restored-claude']
+      }),
       reconcileRestartLeases: async () => undefined,
       restoreReadableSessions: async () => undefined,
       listSessionTabs: () => [
