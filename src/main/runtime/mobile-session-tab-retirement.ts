@@ -1,7 +1,5 @@
-import type {
-  RuntimeMobileSessionSnapshotTab,
-  RuntimeMobileSessionTabsSnapshot
-} from '../../shared/runtime-types'
+import type { RuntimeMobileSessionTabsSnapshot } from '../../shared/runtime-types'
+import { mobileSessionTabGroupOrderIds } from './mobile-session-tab-group-order'
 import {
   chooseActiveSurface,
   pruneTabGroupLayoutAfterRetirement,
@@ -29,14 +27,6 @@ export function publishMobileSessionRetirement(
   }
 }
 
-/** The ids a group order may name this tab by, as the host's projection reads them. */
-function groupOrderIds(tab: RuntimeMobileSessionSnapshotTab): string[] {
-  if (tab.type === 'terminal') {
-    return [tab.id, tab.parentTabId]
-  }
-  return tab.type === 'browser' ? [tab.id, tab.browserWorkspaceId] : [tab.id]
-}
-
 /**
  * The snapshot with one listed tab removed, or null when it does not list that id. For a whole
  * tab only: a terminal pane id would drop the pane's whole split from the group order.
@@ -53,7 +43,7 @@ export function retireMobileSessionTabFrom(
   if (!retired) {
     return null
   }
-  const retiredIds = new Set(groupOrderIds(retired))
+  const retiredIds = new Set(mobileSessionTabGroupOrderIds(retired))
   const tabs = snapshot.tabs.filter((candidate) => candidate.id !== tabId)
   // Why every other id: group orders also carry ids no listed tab answers to, which a projection drops.
   const retainedGroupTabIds = new Set(
@@ -66,7 +56,7 @@ export function retireMobileSessionTabFrom(
     retainedGroupTabIds
   )
   const active = chooseActiveSurface(tabs, snapshot.activeTabId, tabGroups, snapshot.activeGroupId)
-  const activeOrderIds = active ? groupOrderIds(active) : []
+  const activeOrderIds = active ? mobileSessionTabGroupOrderIds(active) : []
   const retainedGroupIds = new Set(tabGroups?.map((group) => group.id) ?? [])
   const activeGroupId =
     tabGroups?.find((group) => group.tabOrder.some((id) => activeOrderIds.includes(id)))?.id ??

@@ -11,6 +11,7 @@ import type {
   TerminalPaneLayoutNode
 } from '../../shared/terminal-tab-types'
 import { appendRetiredTerminalSurfaceProofs } from './mobile-session-terminal-retirement-proof'
+import { mobileSessionTabGroupOrderIds } from './mobile-session-tab-group-order'
 
 export type RetiredTerminalSurface = {
   worktreeId: string
@@ -154,10 +155,6 @@ export function repairMobileSessionTabGroupsAfterRetirement(
   return repaired.length > 0 ? repaired : undefined
 }
 
-function topLevelTabId(tab: RuntimeMobileSessionSnapshotTab): string {
-  return tab.type === 'terminal' ? tab.parentTabId : tab.id
-}
-
 export function chooseActiveSurface(
   tabs: readonly RuntimeMobileSessionSnapshotTab[],
   previousActiveId: string | null,
@@ -173,8 +170,9 @@ export function chooseActiveSurface(
   const activeTopLevelId = activeGroup?.activeTabId
   return (
     (activeTopLevelId
-      ? (tabs.find((tab) => topLevelTabId(tab) === activeTopLevelId && tab.isActive) ??
-        tabs.find((tab) => topLevelTabId(tab) === activeTopLevelId))
+      ? (tabs.find(
+          (tab) => mobileSessionTabGroupOrderIds(tab).includes(activeTopLevelId) && tab.isActive
+        ) ?? tabs.find((tab) => mobileSessionTabGroupOrderIds(tab).includes(activeTopLevelId)))
       : undefined) ??
     tabs.find((tab) => tab.isActive) ??
     tabs[0] ??
@@ -249,7 +247,7 @@ export function retireTerminalSurfacesFromSnapshot(args: {
     }
   })
 
-  const validTopLevelIds = new Set(tabs.map(topLevelTabId))
+  const validTopLevelIds = new Set(tabs.flatMap(mobileSessionTabGroupOrderIds))
   const tabGroups = repairMobileSessionTabGroupsAfterRetirement(
     args.snapshot.tabGroups,
     validTopLevelIds
@@ -261,11 +259,9 @@ export function retireTerminalSurfacesFromSnapshot(args: {
     args.snapshot.activeGroupId
   )
   tabs = tabs.map((tab) => ({ ...tab, isActive: tab.id === active?.id }))
-  const activeTopLevelId = active ? topLevelTabId(active) : null
+  const activeOrderIds = active ? mobileSessionTabGroupOrderIds(active) : []
   const activeGroupId =
-    (activeTopLevelId
-      ? tabGroups?.find((group) => group.tabOrder.includes(activeTopLevelId))?.id
-      : undefined) ??
+    tabGroups?.find((group) => group.tabOrder.some((id) => activeOrderIds.includes(id)))?.id ??
     tabGroups?.[0]?.id ??
     null
   const retainedGroupIds = new Set(tabGroups?.map((group) => group.id) ?? [])

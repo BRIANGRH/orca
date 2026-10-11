@@ -324,6 +324,27 @@ describe('client session-tab selection', () => {
     expect(reopened.tabs.some((tab) => tab.id === 'terminal-a::leaf-b')).toBe(true)
   })
 
+  it('filters a committed unproven parent and allows explicit reuse of its identity', () => {
+    const store = new ClientSessionTabSelectionStore()
+    const full = snapshot()
+    store.activate(full, 'device-a', 'terminal-a::leaf-a')
+    store.activate(full, 'device-b', 'terminal-a::leaf-b')
+    store.forgetTabs(
+      'wt-1',
+      ['terminal-a', 'terminal-a::leaf-a', 'terminal-a::leaf-b'],
+      ['terminal-a']
+    )
+
+    for (const clientId of ['device-a', 'device-b']) {
+      const filtered = store.project(full, clientId)
+      expect(filtered.tabs.map((tab) => tab.id)).toEqual(['browser-unified'])
+      expect(filtered.tabGroups?.flatMap((group) => group.tabOrder)).not.toContain('terminal-a')
+    }
+    const reopened = store.activate(full, 'device-a', 'terminal-a::leaf-b')
+    expect(reopened.activeTabId).toBe('terminal-a::leaf-b')
+    expect(reopened.tabs.some((tab) => tab.id === 'terminal-a::leaf-a')).toBe(true)
+  })
+
   it('drops malformed persisted payloads instead of hydrating them', () => {
     expect(
       normalizePersistedMobileClientTabSelections({

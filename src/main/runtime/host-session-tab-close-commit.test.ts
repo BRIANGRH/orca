@@ -13,10 +13,7 @@ import {
 import { OrcaRuntimeService } from './orca-runtime'
 import type { RuntimeNotifier } from './runtime-notifier-contract'
 
-/**
- * A close that commits on the host drops the tab from the host's own list, so no frame published
- * after the commit lists it and no per-client filter has to hide it.
- */
+/** Proven whole-tab closes remove canonical membership; unproven terminals keep projection protection. */
 
 const WORKTREE = 'repo1::/tmp/worktree'
 const CLIENT = 'phone-a'
@@ -143,6 +140,9 @@ describe('a window-owned terminal tab closed through the acknowledged relay', ()
         expect.objectContaining({ parentTabId: ACK_TAB, leafId: ACK_SECOND_LEAF, ptyId: 'pty-b' })
       ])
     )
+    expect(
+      f.runtime['clientSessionTabSelections']['statesByClient'].get(CLIENT)?.get(ACK_WORKTREE)
+    ).toMatchObject({ closedTabIds: new Set() })
     const retirementFrame = frames.at(-1)
     expect(retirementFrame && ackTabIds(retirementFrame)).toEqual([])
     expect(retirementFrame?.retiredTerminalSurfaces).toHaveLength(2)
@@ -303,7 +303,7 @@ describe('a relayed browser or editor tab', () => {
 
     expect(
       runtime['clientSessionTabSelections']['statesByClient'].get(CLIENT)?.get(WORKTREE)
-    ).toMatchObject({ closedPaneIds: new Set() })
+    ).toMatchObject({ closedTabIds: new Set() })
     // A reopen of the same id is the host's truth, not a stale frame to hide.
     runtime.syncWindowGraph(1, {
       tabs: [],

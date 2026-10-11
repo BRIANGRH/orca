@@ -123,12 +123,12 @@ export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseU
       }
     }
     let closedSelectionTabIds = [tab.id]
-    const finishCommittedClose = (closedPaneIds?: string[]): MobileSessionTabCloseOutcome =>
+    const finishCommittedClose = (suppressedIds?: string[]): MobileSessionTabCloseOutcome =>
       committedMobileSessionTabClose(
         this.clientSessionTabSelections,
         worktreeId,
         closedSelectionTabIds,
-        closedPaneIds
+        suppressedIds
       )
     if (tab.type === 'terminal') {
       // Why: the wire id carries the intent — `parent::leaf` names a pane, `parent` its tab.
@@ -260,9 +260,10 @@ export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseU
           this.republishMobileSessionTabsSnapshot(worktreeId)
           return refusedMobileSessionTabClose('stale-terminal', { snapshotRepublished: true })
         }
-        retireTab()
+        const tabRetired = retireTab()
         this.clearRuntimeSessionOwnershipForMobileTab(worktreeId, snapshot, tab.parentTabId)
-        return finishCommittedClose()
+        // Incomplete proofs leave canonical rows; keep the existing committed-close projection.
+        return finishCommittedClose(tabRetired ? undefined : [tab.parentTabId])
       }
       if (closingWholeParent) {
         // Why: notifier implementations without the acknowledged relay may expose

@@ -1,8 +1,8 @@
 import type { RuntimeMobileSessionTabCloseResult } from '../../shared/runtime-types'
 import type { ClientSessionTabSelectionStore } from './client-session-tab-selection'
 
-// Why: a committed close forgets the closed tab as each client's selection, and a closed pane is
-// also hidden from that client's frames until the host list drops it
+// Why: a committed close forgets each client's selection; panes and unproven terminal tabs
+// stay hidden from registered clients until the host list drops them
 // (ClientSessionTabSelectionStore.forgetTabs). Both claim the host itself retired it. Claiming that
 // for a close the host merely asked someone else to perform would drop a still-live tab's
 // selection and could hide it with no recovery path. Hence the three outcome classes below, one
@@ -29,9 +29,9 @@ export function committedMobileSessionTabClose(
   selections: Pick<ClientSessionTabSelectionStore, 'forgetTabs'>,
   worktreeId: string,
   closedTabIds: readonly string[],
-  closedPaneIds: readonly string[] = []
+  suppressedIds: readonly string[] = []
 ): MobileSessionTabCloseOutcome {
-  selections.forgetTabs(worktreeId, closedTabIds, closedPaneIds)
+  selections.forgetTabs(worktreeId, closedTabIds, suppressedIds)
   return { closed: true } as MobileSessionTabCloseOutcome
 }
 

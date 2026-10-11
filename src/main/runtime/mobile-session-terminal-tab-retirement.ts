@@ -78,13 +78,14 @@ export type TerminalTabListRetirementHost = MobileSessionSnapshotPublisher & {
 /**
  * Captures a terminal tab's proofs now, before the window's close kills its PTYs; the returned
  * call retires the tab from the host list with them once the window has acknowledged the close.
+ * Returns whether the host list now omits the parent.
  */
 export function captureTerminalTabListRetirement(
   host: TerminalTabListRetirementHost,
   snapshot: RuntimeMobileSessionTabsSnapshot,
   tab: RuntimeMobileSessionTerminalTab,
   ptyCloseAuthority?: { pty: RuntimePtyWorktreeRecord } | null
-): () => void {
+): () => boolean {
   const worktreeId = snapshot.worktree
   const proofs = host.captureMobileSessionTerminalTabRetirementProofs(
     worktreeId,
@@ -99,5 +100,10 @@ export function captureTerminalTabListRetirement(
       worktreeId,
       current ? retireAcknowledgedTerminalTabFrom(current, tab.parentTabId, proofs) : null
     )
+    return !host.mobileSessionTabsByWorktree
+      .get(worktreeId)
+      ?.tabs.some(
+        (candidate) => candidate.type === 'terminal' && candidate.parentTabId === tab.parentTabId
+      )
   }
 }

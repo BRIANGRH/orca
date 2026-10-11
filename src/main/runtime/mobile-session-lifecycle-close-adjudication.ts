@@ -136,6 +136,7 @@ export function adjudicateAbsentMobileSessionTabClose(args: {
     }
     if (snapshot) {
       host.republishSnapshot(worktreeId)
+      return refusedMobileSessionTabClose('live-host-pty', { snapshotRepublished: true })
     }
     return refusedMobileSessionTabClose('live-host-pty')
   }
