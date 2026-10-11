@@ -31,6 +31,7 @@ import {
   docPreviewFailureDetail
 } from './doc-preview-failure-messages'
 import { DocPreviewToolbar } from './doc-preview-toolbar'
+import { buildDocPreviewShareControl } from './doc-preview-artifact-share'
 import { useDocPreviewWebviewHistory } from './doc-preview-webview-history'
 import { useDocPreviewGuestTools } from './use-doc-preview-guest-tools'
 
@@ -382,6 +383,7 @@ export function HtmlDocPreview({
         onToggleMarkup={() => (markup.isActive ? markup.cancel() : void markup.start())}
         // Nothing has painted yet on a loading or failed preview, so there is nothing to draw on.
         markupDisabled={isUnavailable || state !== 'ready' || grab.state !== 'idle'}
+        shareControl={buildDocPreviewShareControl(previewDocument)}
       />
       {notices.map((notice) => (
         <div
