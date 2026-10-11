@@ -41,6 +41,7 @@ const owner: NativeChatVisualOwner = {
   tabId: 'tab-1'
 }
 const LINE = '::orca-visual{path="reports/usage.html" title="Usage"}'
+const LEGACY_LINE = '::orca-visual{file="usage.html"}'
 
 function withOwner(children: ReactNode, value: NativeChatVisualOwner | null = owner): ReactNode {
   return (
@@ -117,9 +118,7 @@ describe('NativeChatMarkdown visuals', () => {
 
   it("shows an older host's per-chat folder page inline, with nothing to open", async () => {
     const { container } = render(
-      withOwner(
-        <NativeChatMarkdown content={'::orca-visual{file="usage.html"}'} visualMessageId="m1" />
-      )
+      withOwner(<NativeChatMarkdown content={LEGACY_LINE} visualMessageId="m1" />)
     )
     await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
     expect(callRuntimeRpc).toHaveBeenCalledWith(
