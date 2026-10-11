@@ -145,7 +145,7 @@ export type StructuredAgentSessionCommandHandoverContext = {
   /** The session's child records, the same read the strip and conversation-command admission use. */
   childWork: () => readonly AgentChildWorkView[] | undefined
   now: () => number
-  logger?: StructuredAgentSessionLogger
+  logger: StructuredAgentSessionLogger
 }
 
 /** Refuses the command, or opens its turn and sends it. */

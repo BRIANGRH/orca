@@ -46,7 +46,7 @@ export async function uncarryStoppedHistory(
     sessionId: string
     fence: number
     journal: Pick<AgentSessionJournal, 'submission' | 'resolveDispatch'>
-    logger?: StructuredAgentSessionLogger
+    logger: StructuredAgentSessionLogger
   },
   clientMessageId: string,
   turnScope: AgentJournalTurnScope
@@ -61,7 +61,7 @@ export async function uncarryStoppedHistory(
       })
     }
   } catch (error) {
-    ctx.logger?.warn('un-listing stopped history left out of a send failed', {
+    ctx.logger.warn('un-listing stopped history left out of a send failed', {
       scope: 'stopped-history',
       sessionId: ctx.sessionId,
       error
@@ -80,7 +80,7 @@ export async function selectStoppedHistory(
       context: Pick<AgentSessionJournal['context'], 'floor'>
     }
     adapter: Pick<StructuredAgentSessionAdapter, 'historyFits'>
-    logger?: StructuredAgentSessionLogger
+    logger: StructuredAgentSessionLogger
   },
   submission: AgentJournalSubmission,
   body: AgentJournalMessageItem,
@@ -112,7 +112,7 @@ export async function selectStoppedHistory(
       }
     }
   } catch (error) {
-    ctx.logger?.warn('checking stopped history failed', {
+    ctx.logger.warn('checking stopped history failed', {
       scope: 'stopped-history',
       sessionId: ctx.sessionId,
       error
