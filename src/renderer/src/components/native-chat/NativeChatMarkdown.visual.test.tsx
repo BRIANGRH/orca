@@ -107,6 +107,14 @@ describe('NativeChatMarkdown visuals', () => {
     expect(openNativeChatVisualFile).toHaveBeenCalledWith('reports/usage.html', FILE_LINK_CONTEXT)
   })
 
+  it('offers Share beside Open, for the workspace file only', async () => {
+    const { container } = render(
+      withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
+    )
+    await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+    expect(screen.getByRole('button', { name: 'Share as artifact' })).toBeInTheDocument()
+  })
+
   it("shows an older host's per-chat folder page inline, with nothing to open", async () => {
     const { container } = render(
       withOwner(
@@ -121,6 +129,7 @@ describe('NativeChatMarkdown visuals', () => {
       expect.anything()
     )
     expect(screen.queryByRole('button', { name: 'Open in new tab' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Share as artifact' })).toBeNull()
   })
 
   it('holds back an unfinished directive at the end of a streaming reply', () => {

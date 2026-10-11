@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { SquareArrowOutUpRight } from 'lucide-react'
+import { ArtifactPublishButton } from '@/components/artifacts/ArtifactPublishButton'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { translate } from '@/i18n/i18n'
@@ -7,6 +8,10 @@ import { NATIVE_CHAT_VISUAL_RESERVED_HEIGHT, NativeChatVisualFrame } from './Nat
 import { observeTranscriptVisibility } from './NativeChatTranscriptChrome'
 import type { NativeChatVisualOwner } from './native-chat-visual-owner'
 import { openNativeChatVisualFile } from './native-chat-visual-open'
+import {
+  nativeChatVisualArtifactSourceKey,
+  readNativeChatVisualArtifactRequest
+} from './native-chat-visual-share'
 import { useNativeChatFileLinkContext } from './use-native-chat-file-link-context'
 import { useNativeChatVisualDocument } from './use-native-chat-visual-document'
 
@@ -38,10 +43,8 @@ export function NativeChatInlineVisual({
   const [near, setNear] = useState(false)
   const [retired, setRetired] = useState(false)
   const fileLinkContext = useNativeChatFileLinkContext(owner.tabId)
-  const state = useNativeChatVisualDocument(
-    { target: owner.target, sessionId: owner.sessionId, path, legacy },
-    near
-  )
+  const identity = { target: owner.target, sessionId: owner.sessionId, path, legacy }
+  const state = useNativeChatVisualDocument(identity, near)
 
   useEffect(() => {
     const element = boxRef.current
@@ -60,6 +63,8 @@ export function NativeChatInlineVisual({
   }
   const label = title ?? path
   const openLabel = translate('components.native-chat.visualOpenInNewTab', 'Open in new tab')
+  const shareSourceKey =
+    fileLinkContext && !legacy ? nativeChatVisualArtifactSourceKey(path, fileLinkContext) : null
 
   return (
     <div ref={boxRef} className="group/visual relative my-3">
@@ -73,12 +78,12 @@ export function NativeChatInlineVisual({
             onRetired={() => setRetired(true)}
           />
           {fileLinkContext && !legacy ? (
-            <div className="absolute top-2 right-2 transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100">
+            <div className="absolute top-2 right-2 flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5 shadow-xs transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant="outline"
-                    size="icon-xs"
+                    variant="ghost"
+                    size="icon-sm"
                     aria-label={openLabel}
                     onClick={() => openNativeChatVisualFile(path, fileLinkContext)}
                   >
@@ -89,6 +94,14 @@ export function NativeChatInlineVisual({
                   {openLabel}
                 </TooltipContent>
               </Tooltip>
+              {shareSourceKey ? (
+                <ArtifactPublishButton
+                  sourceKey={shareSourceKey}
+                  createRequest={() =>
+                    readNativeChatVisualArtifactRequest(identity, shareSourceKey)
+                  }
+                />
+              ) : null}
             </div>
           ) : null}
         </>
