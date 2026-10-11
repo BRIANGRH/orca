@@ -197,10 +197,10 @@ export function NativeChatResumeOnRestartModal(): React.JSX.Element | null {
     open
   })
   useEffect(() => {
-    if (offerEnabled && open && run) {
+    if (offerEnabled && open && run && runPanel?.finishedRowsVisible) {
       markFinishedNativeChatRestartRunShown(run)
     }
-  }, [offerEnabled, open, run])
+  }, [offerEnabled, open, run, runPanel?.finishedRowsVisible])
   const allSelection = resumeSelectionState(selectable, ticked)
 
   const toggleSelected = useCallback((sessionId: string, checked: boolean) => {

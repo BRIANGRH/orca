@@ -190,9 +190,12 @@ export function NativeChatResumeStatusSegment({
   const failures = waiting.length
   // An unconfirmed chat may be working, so "failed" would invite a duplicate "continue".
   const unconfirmed = waiting.some((failure) => failure.outcome === 'unconfirmed')
-  // Lasts until the summary is seen; a failure entry already opens that summary, so it stands alone.
+  // Only this run's own completed rows establish its success; older host failures are separate.
   const resumed =
-    run !== null && !running && !run.finishedViewShown && failures === 0
+    run !== null &&
+    !running &&
+    !run.finishedViewShown &&
+    view?.counts.resumed === run.entries.length
       ? (view?.counts.resumed ?? 0)
       : 0
   return (

@@ -5,6 +5,8 @@ import { NativeChatResumeOnRestartModal } from './NativeChatResumeOnRestartModal
 import { NativeChatResumeStatusSegment } from './status-bar/NativeChatResumeStatusSegment'
 import {
   createResumeModalFixture,
+  failure,
+  offered,
   type RestartRpc,
   type ResumeStatusStream
 } from './native-chat-resume-modal.test-support'
@@ -149,6 +151,50 @@ it('adds no resumed entry for a run watched to the end in the dialog', async () 
   expect(dialog()).toContain('Resumed 2 of 2 chats')
   await act(async () => button('Done').click())
   expect(document.body.textContent).not.toContain('chat')
+})
+
+it('keeps a new successful run visible beside an older host failure', async () => {
+  fakeHost({ sessions: [offered[0]!], failed: [failure('b')] })
+  await mountSurfaces()
+  await act(async () => button('Resume 1 chat').click())
+  expect(button('1 chat failed to resume')).toBeTruthy()
+  expect(button('1 chat resumed')).toBeTruthy()
+  await act(async () => button('1 chat resumed').click())
+  expect(dialog()).toContain('Resumed 1 of 1 chat')
+  expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
+})
+
+it('does not claim a mixed run succeeded when a host reread fails', async () => {
+  fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'refused'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  rpc.mockImplementationOnce(async () => {
+    throw new Error('host unavailable')
+  })
+  await act(async () => refreshNativeChatRestartOffer())
+  expect(getNativeChatRestartRun()?.entries).toHaveLength(2)
+  expect(document.body.textContent).not.toContain('chat resumed')
+  await act(async () => lastToastShow()?.())
+  expect(dialog()).toContain('Resumed 1 of 2 chats')
+})
+
+it('keeps the finished result unseen while the active filter hides its rows', async () => {
+  const host = fakeHost()
+  host.hold('a', 'b')
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => button('Resuming chats 0/2').click())
+  await act(async () => button('In progress2').click())
+  await host.release('a', 'b')
+  expect(dialog()).toContain('Resumed 2 of 2 chats')
+  expect(runStatus('Prompt a')).toBeNull()
+  expect(button('2 chats resumed')).toBeTruthy()
+  await act(async () => button('Done').click())
+  await act(async () => button('2 chats resumed').click())
+  expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
+  expect(runStatus('Prompt b')).toBe('Prompt b: Resumed')
+  await act(async () => button('Done').click())
+  expect(getNativeChatRestartRun()).toBeNull()
 })
 
 it('leaves the resumed chats to the failure entry when one could not resume', async () => {

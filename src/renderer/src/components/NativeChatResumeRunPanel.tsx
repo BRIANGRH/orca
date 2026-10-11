@@ -20,6 +20,7 @@ export type ResumeRunPanel = {
   description: string | null
   summary: React.ReactNode
   rows: ResumeCandidate[]
+  finishedRowsVisible: boolean
   renderStatus: (sessionId: string, title: string) => React.ReactNode
 }
 
@@ -87,6 +88,7 @@ export function useResumeRunPanel({
   if (!run || !view) {
     return null
   }
+  const visibleIds = new Set(view.rows.map((row) => row.sessionId))
   return {
     title: runTitle(run, view.counts.total, view.counts.resumed),
     description: inFlight
@@ -106,6 +108,9 @@ export function useResumeRunPanel({
       />
     ),
     rows: view.rows,
+    finishedRowsVisible:
+      run.entries.length > 0 &&
+      run.entries.every((entry) => visibleIds.has(entry.candidate.sessionId)),
     renderStatus: (sessionId, title) => {
       const status = view.statusBySession.get(sessionId)
       return status ? (
