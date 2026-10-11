@@ -140,10 +140,11 @@ export function repairMobileSessionTabGroupsAfterRetirement(
       return []
     }
     const retained = new Set(tabOrder)
-    const recentTabIds = group.recentTabIds?.filter((tabId) => retained.has(tabId))
+    const { recentTabIds: previousRecentTabIds, ...rest } = group
+    const recentTabIds = previousRecentTabIds?.filter((tabId) => retained.has(tabId))
     return [
       {
-        ...group,
+        ...rest,
         tabOrder,
         activeTabId: chooseGroupActiveTab(group, retained),
         ...(recentTabIds && recentTabIds.length > 0 ? { recentTabIds } : {})

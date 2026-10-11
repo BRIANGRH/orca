@@ -92,6 +92,20 @@ describe('retireMobileSessionTabFrom', () => {
     expect(next?.tabGroupLayout).toEqual(splitSnapshot().tabGroupLayout)
   })
 
+  it('drops a recent-tab list that named only the closed tab', () => {
+    const snapshot = splitSnapshot()
+    const recentEditorOnly = {
+      ...snapshot,
+      tabGroups: snapshot.tabGroups?.map((group) =>
+        group.id === 'left' ? { ...group, recentTabIds: [editor.id] } : group
+      )
+    }
+
+    const left = retireMobileSessionTabFrom(recentEditorOnly, editor.id)?.tabGroups?.[0]
+
+    expect(left).toEqual({ id: 'left', activeTabId: 't1', tabOrder: ['t1'] })
+  })
+
   it('removes a browser the group order names by its workspace id', () => {
     const snapshot = splitSnapshot()
     const byWorkspace = {

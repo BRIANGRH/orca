@@ -38,7 +38,8 @@ function groupOrderIds(tab: RuntimeMobileSessionSnapshotTab): string[] {
 }
 
 /**
- * The snapshot with one listed tab removed, or null when it does not list that id.
+ * The snapshot with one listed tab removed, or null when it does not list that id. For a whole
+ * tab only: a terminal pane id would drop the pane's whole split from the group order.
  *
  * Pure: the caller stores and emits. How a closed chat, browser or editor tab leaves the host's
  * list. Groups are repaired as a terminal retirement repairs them: a group the tab leaves empty is
