@@ -77,7 +77,8 @@ describe('agentSession.reveal', () => {
       workspaceId: 'workspace-from-record',
       sessionId: SESSION,
       agent: 'claude',
-      activate: true
+      activate: true,
+      signal: expect.any(AbortSignal)
     })
   })
 
