@@ -178,7 +178,7 @@ it('does not claim a mixed run succeeded when a host reread fails', async () => 
   expect(dialog()).toContain('Resumed 1 of 2 chats')
 })
 
-it('keeps the finished result unseen while the active filter hides its rows', async () => {
+it('shows finished rows after resetting an in-flight filter and keeps later filter actions', async () => {
   const host = fakeHost()
   host.hold('a', 'b')
   await mountSurfaces()
@@ -187,14 +187,32 @@ it('keeps the finished result unseen while the active filter hides its rows', as
   await act(async () => button('In progress2').click())
   await host.release('a', 'b')
   expect(dialog()).toContain('Resumed 2 of 2 chats')
+  expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
+  expect(runStatus('Prompt b')).toBe('Prompt b: Resumed')
+  await act(async () => button('In progress0').click())
   expect(runStatus('Prompt a')).toBeNull()
-  expect(button('2 chats resumed')).toBeTruthy()
+  await act(async () => button('All2').click())
+  expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
   await act(async () => button('Done').click())
-  await act(async () => button('2 chats resumed').click())
+  expect(getNativeChatRestartRun()).toBeNull()
+})
+
+it('expands a group collapsed during a run before retiring the finished result', async () => {
+  const host = fakeHost()
+  host.hold('a', 'b')
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => button('Resuming chats 0/2').click())
+  await act(async () => button('Collapse workspace').click())
+  expect(runStatus('Prompt a')).toBeNull()
+  expect(runStatus('Prompt b')).toBeNull()
+  await host.release('a', 'b')
+  expect(dialog()).toContain('Resumed 2 of 2 chats')
   expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
   expect(runStatus('Prompt b')).toBe('Prompt b: Resumed')
   await act(async () => button('Done').click())
   expect(getNativeChatRestartRun()).toBeNull()
+  expect(document.body.textContent).not.toContain('chat resumed')
 })
 
 it('leaves the resumed chats to the failure entry when one could not resume', async () => {

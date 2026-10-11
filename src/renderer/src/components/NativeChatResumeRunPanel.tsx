@@ -64,15 +64,20 @@ export function useResumeRunPanel({
   failureFor: (sessionId: string) => ResumeFailure | undefined
   open: boolean
 }): ResumeRunPanel | null {
-  // Each opening starts on All, as the dialog's own ticks start from their defaults.
-  const [filter, setFilter] = useState<{ value: ResumeRunFilter; open: boolean }>({
-    value: 'all',
-    open
-  })
-  if (filter.open !== open) {
-    setFilter({ value: 'all', open })
-  }
+  // Each opening and completed run starts on All so its finished rows can be seen.
   const inFlight = run !== null && resumeRunInFlight(run)
+  const [filter, setFilter] = useState<{
+    value: ResumeRunFilter
+    open: boolean
+    inFlight: boolean
+  }>({
+    value: 'all',
+    open,
+    inFlight
+  })
+  if (filter.open !== open || filter.inFlight !== inFlight) {
+    setFilter({ value: 'all', open, inFlight })
+  }
   // Ticks only while a visible run is moving: the row timers and the running clock read it.
   const now = useNow(1000, open && inFlight)
   const view = run ? resumeRunView(run, rows, failureFor, filter.value) : null
@@ -104,7 +109,7 @@ export function useResumeRunPanel({
         startedAt={run.startedAt}
         now={now}
         filter={filter.value}
-        onFilterChange={(value) => setFilter({ value, open })}
+        onFilterChange={(value) => setFilter({ value, open, inFlight })}
       />
     ),
     rows: view.rows,

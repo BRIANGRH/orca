@@ -364,6 +364,7 @@ export function NativeChatResumeOnRestartModal(): React.JSX.Element | null {
             </ResumeTreeRow>
           </div>
           <ResumeOnRestartGroups
+            key={run?.inFlight ? 'running' : 'finished'}
             candidates={runPanel?.rows ?? rows}
             listedAt={listedAt}
             busy={busy}
