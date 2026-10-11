@@ -32,12 +32,15 @@ import { useOnboardingAndFeatureTips } from './app-shell/use-onboarding-and-feat
 import { usePersistedUIWriter } from './app-shell/use-persisted-ui-writer'
 import { useRuntimeGraphSync } from './app-shell/use-runtime-graph-sync'
 import { useWindowVisibilityEffects } from './app-shell/use-window-visibility-effects'
+import { useScopedAppBackground } from './app-shell/use-app-background-appearance'
+import { AppBackgroundLayer } from './components/app-background/AppBackgroundLayer'
 
 function App(): React.JSX.Element {
   const layout = useAppChromeLayout()
   const floatingWorkspace = useFloatingWorkspacePanel()
   const onboardingGate = useOnboardingAndFeatureTips()
   const clearUnreadDockBadge = useUnreadDockBadge(floatingWorkspace.open)
+  const windowBackground = useScopedAppBackground('window')
 
   useAppShellServices()
   // Why before the startup chain: its effect runs first, and no startup step can skip the load.
@@ -72,22 +75,25 @@ function App(): React.JSX.Element {
     [cancelReturnFocusFrame, clearUnreadDockBadge]
   )
 
+  const appLayoutStyle: React.CSSProperties & Record<`--${string}`, string> = {
+    '--collapsed-sidebar-header-width': `${layout.collapsedSidebarHeaderWidth}px`,
+    // Shared so surfaces can avoid the Windows/Linux window-controls overlay without hardcoding 138px everywhere.
+    '--window-controls-width': WINDOW_CONTROLS_WIDTH,
+    // Side-position activity bar uses this to push icons below the Windows/Linux window-controls overlay.
+    '--window-controls-height': WINDOW_CONTROLS_HEIGHT,
+    // Full-bleed surfaces use this to keep the macOS traffic lights uncovered.
+    '--mac-traffic-lights-width': MAC_TRAFFIC_LIGHTS_WIDTH,
+    ...windowBackground?.host.style
+  }
+
   return (
     <div
       ref={setAppRootNode}
       className="app-layout"
-      style={
-        {
-          '--collapsed-sidebar-header-width': `${layout.collapsedSidebarHeaderWidth}px`,
-          // Shared so surfaces can avoid the Windows/Linux window-controls overlay without hardcoding 138px everywhere.
-          '--window-controls-width': WINDOW_CONTROLS_WIDTH,
-          // Side-position activity bar uses this to push icons below the Windows/Linux window-controls overlay.
-          '--window-controls-height': WINDOW_CONTROLS_HEIGHT,
-          // Full-bleed surfaces use this to keep the macOS traffic lights uncovered.
-          '--mac-traffic-lights-width': MAC_TRAFFIC_LIGHTS_WIDTH
-        } as React.CSSProperties
-      }
+      data-app-background={windowBackground?.host['data-app-background']}
+      style={appLayoutStyle}
     >
+      {windowBackground ? <AppBackgroundLayer {...windowBackground.layer} /> : null}
       <TooltipProvider delayDuration={400}>
         <ConfirmationDialogProvider>
           <DocPreviewExternalLinkConfirmation />

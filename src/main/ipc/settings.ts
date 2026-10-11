@@ -19,6 +19,7 @@ import { applyBrowserSessionProxies } from '../browser/browser-session-proxy'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
 import { normalizeProxyBypassRules, normalizeProxyUrl } from '../../shared/network-proxy'
 import { normalizeAppIconId } from '../../shared/app-icon'
+import { normalizeAppBackgroundSettingsUpdate } from '../../shared/app-background-settings'
 import { normalizeUiLanguage } from '../../shared/ui-language'
 import { applyAppIcon } from '../app-icon'
 import { normalizeTerminalCustomThemes } from '../../shared/terminal-custom-themes'
@@ -58,6 +59,9 @@ function sanitizeRendererSettingsUpdate(args: Partial<GlobalSettings>): Partial<
   // writes must pass the dedicated reviewed-fingerprint handlers.
   delete sanitizedArgs.pluginConsents
   delete sanitizedArgs.disabledPlugins
+  // Why: the image id names a file main created; only appBackground:commit may point it elsewhere.
+  delete sanitizedArgs.appBackgroundImageId
+  normalizeAppBackgroundSettingsUpdate(sanitizedArgs)
   return sanitizedArgs
 }
 

@@ -8,6 +8,7 @@ import type { GitLabProjectSettings } from './gitlab-types'
 import type { TaskProvider } from './task-providers'
 import type { KeybindingOverrides, TerminalShortcutPolicy } from './keybindings'
 import type { AppIconId } from './app-icon'
+import type { AppBackgroundScope } from './app-background-settings'
 import type { SourceControlAiSettings } from './source-control-ai-types'
 import type { ClaudeAgentTeamsMode } from './claude-agent-teams-tmux-compat'
 import type { TerminalCustomTheme } from './terminal-custom-themes'
@@ -75,6 +76,13 @@ export type GlobalSettings = NativeChatGlobalSettings & {
   leftSidebarAppearanceMode: LeftSidebarAppearanceMode
   leftSidebarTintColor?: string
   leftSidebarTintOpacity?: number
+  /** Main-owned `<uuid>.<ext>` under userData/appearance; written only by appBackground:commit. */
+  appBackgroundImageId?: string | null
+  appBackgroundScope?: AppBackgroundScope
+  appBackgroundImageOpacity?: number
+  appBackgroundBlur?: number
+  /** Chrome surface opacity; only applies while a background image is set. */
+  appBackgroundPanelOpacity?: number
   uiLanguage: UiLanguage
   appIcon: AppIconId
   appFontFamily: string

@@ -276,6 +276,7 @@ export default function TabGroupPanel({
       {tabStrip !== 'attached' ? null : (
         <div
           className="h-[32px] shrink-0 border-b border-border bg-card"
+          data-app-background-surface="card"
           data-tab-group-strip-id={groupId}
           data-terminal-focus-release-surface="true"
           data-worktree-id={worktreeId}

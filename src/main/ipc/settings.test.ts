@@ -532,6 +532,28 @@ describe('registerSettingsHandlers', () => {
     )
   })
 
+  it('does not let the renderer write the background image id and clamps background values', async () => {
+    store.getSettings.mockReturnValue({ appBackgroundImageId: null })
+    store.updateSettings.mockReturnValue({ appBackgroundImageId: null })
+    registerSettingsHandlers(store as never)
+
+    const handler = handleMock.mock.calls.find((call) => call[0] === 'settings:set')?.[1] as (
+      _event: unknown,
+      args: unknown
+    ) => Promise<unknown>
+
+    await handler(settingsInvokeEvent, {
+      appBackgroundImageId: '../../etc/passwd',
+      appBackgroundBlur: 99,
+      appBackgroundScope: 'workspace'
+    })
+
+    expect(store.updateSettings).toHaveBeenCalledWith(
+      { appBackgroundBlur: 20, appBackgroundScope: 'workspace' },
+      { notifyListeners: true, originWebContentsId: 1 }
+    )
+  })
+
   it('normalizes terminal scrollback row updates and drops legacy byte updates', async () => {
     store.getSettings.mockReturnValue({ terminalScrollbackRows: 5_000 })
     store.updateSettings.mockReturnValue({ terminalScrollbackRows: 50_000 })

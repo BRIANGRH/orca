@@ -1,5 +1,6 @@
 import { extname } from 'node:path'
 import { resolveJsonlRpcPeerOptions } from '../jsonl-rpc/peer-limits'
+import { detectImageMimeType } from '../image-file-signature'
 import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { NativeChatImageRefBlock } from '../../shared/native-chat-types'
 import {
@@ -52,34 +53,6 @@ function attachmentError(
   return new PiRpcPromptError(message, agentSessionFailureFact('attachmentInvalid', { attachment }))
 }
 
-function imageMime(bytes: Uint8Array): string | null {
-  if (
-    bytes.length >= 8 &&
-    Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
-  ) {
-    return 'image/png'
-  }
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return 'image/jpeg'
-  }
-  if (
-    bytes.length >= 6 &&
-    Buffer.from(bytes.subarray(0, 6))
-      .toString('ascii')
-      .match(/^GIF8[79]a$/)
-  ) {
-    return 'image/gif'
-  }
-  if (
-    bytes.length >= 12 &&
-    Buffer.from(bytes.subarray(0, 4)).toString('ascii') === 'RIFF' &&
-    Buffer.from(bytes.subarray(8, 12)).toString('ascii') === 'WEBP'
-  ) {
-    return 'image/webp'
-  }
-  return null
-}
-
 async function readImage(
   block: NativeChatImageRefBlock,
   reads: ImageReads
@@ -115,7 +88,7 @@ async function readImage(
       limit: MAX_IMAGE_BYTES
     })
   }
-  if (imageMime(bytes) !== mimeType) {
+  if (detectImageMimeType(bytes) !== mimeType) {
     throw attachmentError('Pi image file did not contain a supported image', {
       reason: 'unsupportedType'
     })

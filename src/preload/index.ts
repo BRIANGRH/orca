@@ -48,6 +48,7 @@ import { computerUsePermissionsApi } from './api/computer-use-permissions-bridge
 import { shellApi } from './api/shell-bridge'
 import { skillsApi } from './api/skills-bridge'
 import { petApi } from './api/pet-bridge'
+import { appBackgroundApi } from './api/app-background-bridge'
 import { browserApi } from './api/browser-bridge'
 import { emulatorApi } from './api/emulator-bridge'
 import { hooksApi } from './api/hooks-bridge'
@@ -148,6 +149,7 @@ const api = {
   shell: shellApi,
   skills: skillsApi,
   pet: petApi,
+  appBackground: appBackgroundApi,
   browser: browserApi,
   emulator: emulatorApi,
   hooks: hooksApi,
