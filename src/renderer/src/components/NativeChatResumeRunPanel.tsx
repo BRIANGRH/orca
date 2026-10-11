@@ -108,9 +108,7 @@ export function useResumeRunPanel({
       />
     ),
     rows: view.rows,
-    finishedRowsVisible:
-      run.entries.length > 0 &&
-      run.entries.every((entry) => visibleIds.has(entry.candidate.sessionId)),
+    finishedRowsVisible: run.entries.every((entry) => visibleIds.has(entry.candidate.sessionId)),
     renderStatus: (sessionId, title) => {
       const status = view.statusBySession.get(sessionId)
       return status ? (
