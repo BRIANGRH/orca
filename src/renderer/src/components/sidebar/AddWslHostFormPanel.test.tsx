@@ -20,11 +20,13 @@ function render(props: Partial<Parameters<typeof AddWslHostFormPanel>[0]> = {}):
     <AddWslHostFormPanel
       distros={[ubuntu, debian, legacy, added]}
       loading={false}
+      refreshing={false}
       selectedDistro=""
       error={null}
       adding={false}
       serverFilesMissing={false}
       onSelectDistro={vi.fn()}
+      onRefresh={vi.fn()}
       onSubmit={vi.fn()}
       onCancel={vi.fn()}
       {...props}
@@ -65,5 +67,10 @@ describe('AddWslHostFormPanel', () => {
     expect(html).toContain('role="alert"')
     expect(html).not.toContain('wsl --install')
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Add host<\/button>/)
+  })
+
+  it('offers an explicit refresh, and none when nothing could be added', () => {
+    expect(render()).toContain('Refresh')
+    expect(render({ serverFilesMissing: true })).not.toContain('Refresh')
   })
 })

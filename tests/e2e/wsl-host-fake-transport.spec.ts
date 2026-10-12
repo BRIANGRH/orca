@@ -29,6 +29,8 @@ import {
 
 const WSL_ENVIRONMENT_ID = 'wsl:ubuntu'
 const WSL_HOST_LABEL = 'Ubuntu (WSL)'
+const UBUNTU_DISTRO = { name: 'Ubuntu', state: 'running', version: 2 }
+const LEGACY_DISTRO = { name: 'Legacy', state: 'stopped', version: 1 }
 
 async function launchDesktopWithFakeWsl(
   pairingCode: string,
@@ -117,7 +119,11 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
   test.setTimeout(240_000)
   await waitForSessionReady(orcaPage)
   const offer = await createRuntimeDesktopPairingOffer(orcaPage)
-  const desktop = await launchDesktopWithFakeWsl(offer.pairingUrl, testInfo)
+  // Starts with only a WSL 1 distro; Ubuntu is "imported" while the add dialog is open.
+  const distrosDir = mkdtempSync(path.join(os.tmpdir(), 'orca-e2e-wsl-distros-'))
+  const distrosFile = path.join(distrosDir, 'distros.json')
+  writeFileSync(distrosFile, JSON.stringify([LEGACY_DISTRO]))
+  const desktop = await launchDesktopWithFakeWsl(offer.pairingUrl, testInfo, { distrosFile })
   const projectPath = createGitProject()
   try {
     const { page } = desktop
@@ -131,6 +137,9 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
 
     const addHost = page.getByRole('dialog', { name: 'Add WSL distro' })
     await expect(addHost).toBeVisible()
+    await expect(addHost.getByRole('combobox')).toContainText('Choose a distro')
+    writeFileSync(distrosFile, JSON.stringify([UBUNTU_DISTRO, LEGACY_DISTRO]))
+    await addHost.getByRole('button', { name: 'Refresh' }).click()
     // Only Ubuntu can be added (Legacy is WSL 1), so it is preselected.
     await expect(addHost.getByRole('combobox')).toContainText('Ubuntu')
     await settleAnimations(page)
@@ -274,6 +283,7 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
   } finally {
     await desktop.dispose()
     rmSync(projectPath, { recursive: true, force: true })
+    rmSync(distrosDir, { recursive: true, force: true })
   }
 })
 

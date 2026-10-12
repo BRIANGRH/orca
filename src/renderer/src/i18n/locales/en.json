@@ -6701,7 +6701,8 @@
           "addingHint": "Installing and starting the Orca server in the distro. The first time can take a minute.",
           "adding": "Setting up…",
           "startAndAdd": "Start and add",
-          "add": "Add host"
+          "add": "Add host",
+          "refresh": "Refresh"
         },
         "wslHostRowStatus": {
           "connecting": "Starting",

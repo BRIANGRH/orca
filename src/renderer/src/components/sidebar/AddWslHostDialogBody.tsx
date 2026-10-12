@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
-import type { WslHostDistro } from '../../../../shared/wsl-host-types'
 import { AddWslHostFormPanel, canAddWslDistro } from './AddWslHostFormPanel'
+import { useWslDistroList } from './use-wsl-distro-list'
 import { useWslHostServerFilesMissing } from './use-wsl-hosts-enabled'
 
 /** The "Add WSL distro" step of the add-host dialog; mounted only while it shows. */
@@ -18,43 +18,23 @@ export function AddWslHostDialogBody({
   onAdded: () => void
   onCancel: () => void
 }): React.JSX.Element {
-  const [distros, setDistros] = useState<WslHostDistro[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selectedDistro, setSelectedDistro] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const serverFilesMissing = useWslHostServerFilesMissing()
+  // Why no listing without server files: nothing could be added, so no wsl.exe work either.
+  const list = useWslDistroList(!serverFilesMissing)
+  const distros = list.distros
+  const [chosenDistro, setChosenDistro] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const setRuntimeEnvironments = useAppStore((s) => s.setRuntimeEnvironments)
   const readRuntimeHostStatusSnapshots = useAppStore((s) => s.readRuntimeHostStatusSnapshots)
-
-  useEffect(() => {
-    const api = window.api.runtimeEnvironments?.wslHosts
-    let ignore = false
-    void (api?.listDistros() ?? Promise.resolve([]))
-      .then((list) => {
-        if (ignore) {
-          return
-        }
-        setDistros(list)
-        // Why: preselect only when exactly one distro can be added, so a choice is never implied.
-        const addable = list.filter(canAddWslDistro)
-        if (addable.length === 1) {
-          setSelectedDistro(addable[0].name)
-        }
-      })
-      .catch((cause: unknown) => {
-        if (!ignore) {
-          setError(cause instanceof Error ? cause.message : String(cause))
-        }
-      })
-      .finally(() => {
-        if (!ignore) {
-          setLoading(false)
-        }
-      })
-    return () => {
-      ignore = true
-    }
-  }, [])
+  // Derived, so a refresh that drops or adds distros never leaves a stale pick: the user's
+  // choice while it can still be added, else the only addable distro (a choice is never implied
+  // among several).
+  const addable = distros.filter(canAddWslDistro)
+  const selectedDistro = addable.some((distro) => distro.name === chosenDistro)
+    ? chosenDistro
+    : addable.length === 1
+      ? addable[0].name
+      : ''
 
   const add = async (): Promise<void> => {
     const api = window.api.runtimeEnvironments?.wslHosts
@@ -92,15 +72,17 @@ export function AddWslHostDialogBody({
   return (
     <AddWslHostFormPanel
       distros={distros}
-      loading={loading}
+      loading={list.loading}
+      refreshing={list.refreshing}
       selectedDistro={selectedDistro}
-      error={error}
+      error={error ?? list.error}
       adding={adding}
       serverFilesMissing={serverFilesMissing}
       onSelectDistro={(name) => {
-        setSelectedDistro(name)
+        setChosenDistro(name)
         setError(null)
       }}
+      onRefresh={list.refresh}
       onSubmit={() => void add()}
       onCancel={onCancel}
     />

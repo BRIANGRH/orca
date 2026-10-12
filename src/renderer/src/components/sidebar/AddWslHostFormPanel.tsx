@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import { RefreshCw } from 'lucide-react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { translate } from '@/i18n/i18n'
 import type { WslHostDistro } from '../../../../shared/wsl-host-types'
@@ -32,22 +33,27 @@ export function canAddWslDistro(distro: WslHostDistro | undefined): boolean {
 export function AddWslHostFormPanel({
   distros,
   loading,
+  refreshing,
   selectedDistro,
   error,
   adding,
   serverFilesMissing,
   onSelectDistro,
+  onRefresh,
   onSubmit,
   onCancel
 }: {
   distros: readonly WslHostDistro[]
   loading: boolean
+  refreshing: boolean
   selectedDistro: string
   error: string | null
   adding: boolean
   /** This build cannot run WSL hosts; nothing here may be chosen or submitted. */
   serverFilesMissing: boolean
   onSelectDistro: (name: string) => void
+  /** Re-reads the registered distros, e.g. after `wsl --import` in another window. */
+  onRefresh: () => void
   onSubmit: () => void
   onCancel: () => void
 }): React.JSX.Element {
@@ -68,9 +74,23 @@ export function AddWslHostFormPanel({
       </DialogHeader>
 
       <div className="space-y-1.5">
-        <Label htmlFor="add-wsl-distro">
-          {translate('auto.components.sidebar.AddWslHostFormPanel.distro', 'Distro')}
-        </Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="add-wsl-distro">
+            {translate('auto.components.sidebar.AddWslHostFormPanel.distro', 'Distro')}
+          </Label>
+          {serverFilesMissing ? null : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={onRefresh}
+              disabled={adding || refreshing}
+            >
+              {refreshing ? <LoadingSpinner className="size-3" /> : <RefreshCw />}
+              {translate('auto.components.sidebar.AddWslHostFormPanel.refresh', 'Refresh')}
+            </Button>
+          )}
+        </div>
         <Select
           value={selectedDistro}
           // Why: Radix reports '' when its hidden native select resets; that is not a user choice.
