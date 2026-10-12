@@ -32,9 +32,6 @@ export type ClaudeSubagentIdentitiesDeps = {
   childOwnerRefOf?: (toolUseId: string) => string | null
   /** What earlier provider runs of this session journaled. */
   journaled?: ClaudeJournaledSubagents
-  /** A turn or the session ended, so no announcement is coming for a spawn call that has had
-   *  none: an identity still provisional stays that way. */
-  onIdentitiesFinal?: () => void
 }
 
 export class ClaudeSubagentIdentities {
@@ -86,13 +83,7 @@ export class ClaudeSubagentIdentities {
     return true
   }
 
-  /** The turn ended: its spawn calls get no announcement now. */
-  turnEnded(): void {
-    this.deps.onIdentitiesFinal?.()
-  }
-
   dispose(): void {
-    this.deps.onIdentitiesFinal?.()
     this.ids.clear()
     this.known.clear()
   }

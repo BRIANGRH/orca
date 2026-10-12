@@ -19,7 +19,6 @@ export type CodexExecutionChild = {
   agentThreadId: string
   registered: boolean
   label: string | null
-  parentTurnId: string | null
   /** The thread whose stream carried this child's `started` activity. Codex
    *  emits that item on the spawning agent's own session, so it names the parent. */
   spawnerThreadId: string | null
@@ -37,13 +36,9 @@ export class CodexSubagentExecutions {
   register(
     agentThreadId: string,
     label: string | null,
-    parentTurnId: string | null | undefined,
     spawnerThreadId?: string
   ): CodexExecutionChild {
     const child = this.child(agentThreadId)
-    if (!child.registered || parentTurnId !== undefined) {
-      child.parentTurnId = parentTurnId ?? null
-    }
     // A child is spawned once; its announcement is delivered twice, never by another thread.
     child.spawnerThreadId ??= spawnerThreadId ?? null
     child.registered = true
@@ -168,8 +163,11 @@ export class CodexSubagentExecutions {
       return existing
     }
     if (this.children.size >= MAX_CHILDREN) {
-      // Refusing a running child would hide it while it runs; the host's limits bound them.
-      const settled = [...this.children].find(([, child]) => child.execution?.state !== 'working')
+      // Refusing a running child would hide it while it runs, and one announced but not yet
+      // started is about to run; the host's limits bound them.
+      const settled = [...this.children].find(
+        ([, child]) => child.execution !== null && child.execution.state !== 'working'
+      )
       if (settled) {
         this.children.delete(settled[0])
       }
@@ -178,7 +176,6 @@ export class CodexSubagentExecutions {
       agentThreadId,
       registered: false,
       label: null,
-      parentTurnId: null,
       spawnerThreadId: null,
       execution: null,
       turnOrdinals: new Map(),

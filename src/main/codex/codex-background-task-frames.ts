@@ -8,7 +8,6 @@ import { readCodexTurnId } from './codex-structured-thread-facts'
 export type CodexAnnouncedChild = {
   agentThreadId: string
   label: string | null
-  parentTurnId: string | null | undefined
   /** The reporting thread, for a spawn: the agent that spawned the child. */
   spawnerThreadId: string | undefined
 }
@@ -83,7 +82,6 @@ export function readCodexBackgroundTaskFrame(
     (announcement) => ({
       agentThreadId: announcement.agentThreadId,
       label: announcement.label,
-      parentTurnId: announcement.namesParentTurn ? readCodexTurnId(event.params) : undefined,
       // Only a spawn names the spawner: other announcements ride whichever agent acted.
       spawnerThreadId: announcement.spawned ? event.threadId : undefined
     })
@@ -100,12 +98,7 @@ export function observeCodexExecutionFrame(
 ): void {
   if (frame?.kind === 'subagents') {
     for (const child of frame.children) {
-      executions.register(
-        child.agentThreadId,
-        child.label,
-        child.parentTurnId,
-        child.spawnerThreadId
-      )
+      executions.register(child.agentThreadId, child.label, child.spawnerThreadId)
     }
   } else if (frame?.kind === 'thread-closed') {
     executions.closeThread(frame.threadId)

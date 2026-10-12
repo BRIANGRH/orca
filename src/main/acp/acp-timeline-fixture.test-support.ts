@@ -12,6 +12,7 @@ import { GROK_ACP_DIALECT } from './acp-dialects/grok-dialect'
 import type { AcpRequestPresentation } from './acp-dialects/acp-dialect'
 import { AcpTimelineTranslator } from './acp-timeline-translator'
 import type { AgentChildWorkEvidence } from '../../shared/agent-status-child-work-evidence'
+import type { AgentChildWorkView } from '../../shared/agent-status-child-work-view'
 import { acpSubagentRecords } from './acp-structured-child-work.test-support'
 import { PromptResponseSchema } from './generated/acp-protocol.generated'
 
@@ -76,8 +77,14 @@ export async function openAcpFixtureRig() {
     new AcpTimelineTranslator({ sessionId: providerSessionId, dialect: GROK_ACP_DIALECT })
   let lane = translator()
   const records = acpSubagentRecords()
-  const reported: AgentChildWorkEvidence[] = []
-  const drain = () => reported.push(...lane.subagents.drainEvidence())
+  // What each subagent's saved row last said: its host record, kept past the record's retirement.
+  const latest = new Map<string, AgentChildWorkView>()
+  const report = (evidence: AgentChildWorkEvidence[]) => {
+    for (const view of records(evidence)) {
+      latest.set(view.id, view)
+    }
+  }
+  const drain = () => report(lane.subagents.drainEvidence())
   const requests = new Map<
     string | number,
     { request: string; presentation: AcpRequestPresentation }
@@ -85,10 +92,15 @@ export async function openAcpFixtureRig() {
   const apply = (events: ProviderTimelineEvent[]) => {
     for (const event of events) {
       expect(rig.assembler.apply(event).admission.accepted).toBe(true)
+      if (event.type === 'turn.open') {
+        // As the host retires finished records when the user's next send is accepted.
+        drain()
+        report([{ type: 'turn-started', observedAt: event.at }])
+      }
       if (event.type === 'session.ended') {
         // As the lane reports a session end once the journal admitted it.
         drain()
-        reported.push({ type: 'session-ended', observedAt: 9_000 })
+        report([{ type: 'session-ended', observedAt: 9_000 }])
       }
     }
   }
@@ -176,10 +188,10 @@ export async function openAcpFixtureRig() {
       drain()
       lane = translator()
     },
-    /** The host's records of every subagent reported so far. */
+    /** Every subagent reported so far, as its host record last read. */
     subagents: () => {
       drain()
-      return records(reported.splice(0))
+      return [...latest.values()]
     },
     finishLoad: () => lane.finishLoad()
   }

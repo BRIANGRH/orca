@@ -63,7 +63,9 @@ export function createClaudeJournalTranslator(
   const streamedBlocks = createClaudeStreamedBlockRegistry()
   const turn = new ClaudeOpenTurn({
     sink: deps.sink,
-    turnSuperseded: () => subagents.turnEnded(),
+    // No announcement can come after its turn, so a correction still owed is never coming; the
+    // rows keep the stamp they already have.
+    turnSuperseded: () => corrections.abandon(),
     endOpenWork: (completedAt) => streamedThinking.finishOpen(completedAt),
     onOpen: () => context.markActivity()
   })
@@ -76,10 +78,7 @@ export function createClaudeJournalTranslator(
     isForwardedParentTool: (toolUseId) => toolOrigins.has(toolUseId),
     childOwnerRefOf: (toolUseId) => toolOrigins.childOwnerRef(toolUseId),
     // A restarted provider continues what earlier runs journaled.
-    journaled,
-    // No announcement can come after its turn, so a correction still owed is
-    // never coming; the rows keep the stamp they already have.
-    onIdentitiesFinal: () => corrections.abandon()
+    journaled
   })
   const childQueries = claudeChildToolQueries({ tools, toolOrigins, linkage: subagents.linkage })
   const corrections = new ClaudeProvisionalRowCorrections({
@@ -185,7 +184,7 @@ export function createClaudeJournalTranslator(
       if (event.type === 'ended') {
         prompts.retryPendingCancellations()
         flush()
-        subagents.turnEnded()
+        corrections.abandon()
         backgroundTasks.settleSession()
         // The host saw the child end, so the turn's end is observed, not lost. Whether it was a
         // person's Stop is the journal's Stop event to say (`turnEndAfterStop`), else it is news.
@@ -269,7 +268,7 @@ export function createClaudeJournalTranslator(
         // after an idle belongs to a turn, and suppressing it would read as
         // idle while the agent works.
         if (claudeSessionStateEndsTurn(event.message)) {
-          subagents.turnEnded()
+          corrections.abandon()
           // No verdict: the CLI said the turn is over, not how it ended.
           turn.settle({ state: 'completed', completedAt: event.observedAt ?? Date.now() })
         }
@@ -314,6 +313,7 @@ export function createClaudeJournalTranslator(
       tools.clear()
       prompts.clear()
       streamedBlocks.clear()
+      corrections.abandon()
       subagents.dispose()
       backgroundTasks.dispose()
       toolOrigins.clear()

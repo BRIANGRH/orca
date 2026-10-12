@@ -46,6 +46,13 @@ const OUTCOMES: Record<
   unverifiable: 'unknown'
 }
 
+/** How a subagent's run ended, by the state the dialect read; undefined while it runs. */
+export function acpSubagentOutcome(
+  state: NativeChatSubagentState
+): AgentChildWorkOutcome | undefined {
+  return state === 'working' || state === 'idle' ? undefined : OUTCOMES[state]
+}
+
 export class AcpSubagents {
   private readonly known = new BoundedMap<string, KnownSubagent>({
     maxEntries: MAX_KNOWN_SUBAGENTS
@@ -88,8 +95,14 @@ export class AcpSubagents {
         }
       }
       this.known.set(update.id, subagent)
-      this.pending.push(subagentEvidence(update, at))
-      if (update.state !== undefined && update.state !== 'working' && update.state !== 'idle') {
+      const ending =
+        update.state !== undefined && update.state !== 'working' && update.state !== 'idle'
+      // A late report about an ended run is not a new run: the host drops the run's record at the
+      // next send, so a live edge then would bring it back as working.
+      if (ending || subagent.ended === undefined) {
+        this.pending.push(subagentEvidence(update, at))
+      }
+      if (ending) {
         subagent.ended ??= update.state
       }
       if (update.result && subagent.ended === 'completed') {

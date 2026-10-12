@@ -547,8 +547,8 @@ describe('a helper whose spawn was never seen', () => {
       }
     }
     expect(readCodexSubagentAnnouncements(waited, THREAD_ID)).toEqual([
-      { agentThreadId: HELPER, label: null, namesParentTurn: false, spawned: false },
-      { agentThreadId: second, label: null, namesParentTurn: false, spawned: false }
+      { agentThreadId: HELPER, label: null, spawned: false },
+      { agentThreadId: second, label: null, spawned: false }
     ])
   })
 })

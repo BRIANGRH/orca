@@ -25,7 +25,8 @@ export function createCodexJournalTranslatorWriters(deps: CodexJournalTranslator
     activeTurn,
     commandScope: (turnId) => commands.scopeFor(turnId)
   })
-  // The background-task tracker feeds these from the same frames; the rows only read them.
+  // The translator and the background-task tracker both feed these from the same frames, which
+  // repeat harmlessly; the rows only read them.
   const executions = deps.subagentExecutions ?? new CodexSubagentExecutions()
   const { linkageFor } = new CodexSubagentLinkage({ primaryThreadId, executions })
   const attributionFor: CodexRowAttribution = (threadId, turnId) => ({

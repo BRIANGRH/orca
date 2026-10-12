@@ -6,9 +6,8 @@ import type {
   AgentChildWorkStopAcknowledgement,
   AgentSessionBackgroundTaskStops
 } from '../../shared/agent-child-work-stop-targets'
-import type { AgentChildWorkOutcome } from '../../shared/agent-status-child-work'
-import type { NativeChatSubagentState } from '../../shared/native-chat-types'
 import { acpBackgroundTaskStopId } from './acp-background-task-child-work'
+import { acpSubagentOutcome } from './acp-subagents'
 
 type ChildStopResult = {
   cancelled: boolean
@@ -78,13 +77,6 @@ export async function probeAcpChildStops(
   return { subagents, backgroundTasks }
 }
 
-/** The run's own ending, when the agent answered a stop of a subagent that had already finished. */
-const FINISHED_OUTCOMES: Partial<Record<NativeChatSubagentState, AgentChildWorkOutcome>> = {
-  completed: 'succeeded',
-  failed: 'failed',
-  stopped: 'cancelled'
-}
-
 async function stopAcpSubagent(
   session: AcpStructuredSession,
   control: SubagentStop,
@@ -102,12 +94,11 @@ async function stopAcpSubagent(
     throw error
   }
   const result = control.response(value, id)
-  const outcome =
-    result.state === undefined ? undefined : (FINISHED_OUTCOMES[result.state] ?? 'unknown')
   if (result.state === 'working') {
     return { cancelled: result.cancelled }
   }
   // Not found is no acceptance; an answer that names how the subagent finished is its own ending.
+  const outcome = result.state === undefined ? undefined : acpSubagentOutcome(result.state)
   return result.cancelled || outcome !== undefined
     ? {
         cancelled: result.cancelled,

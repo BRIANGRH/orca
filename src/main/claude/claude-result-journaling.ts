@@ -21,7 +21,6 @@ export type ClaudeResultJournalContext = Pick<
   | 'sink'
   | 'streamedBlocks'
   | 'streamedText'
-  | 'subagents'
   | 'providerFallback'
   | 'corrections'
   | 'turn'
@@ -36,7 +35,6 @@ export function journalClaudeResult(
     sink,
     streamedBlocks,
     streamedText,
-    subagents,
     providerFallback,
     corrections,
     turn,
@@ -65,7 +63,7 @@ export function journalClaudeResult(
   if (settlesTurn) {
     prompts.retryPendingCancellations()
     turn.suppressReopenOnFailure(message.is_error === true)
-    subagents.turnEnded()
+    corrections.abandon()
     context.settle(message, commandEnd ?? claudeTurnEndForResult(message, observedAt, leftToStop))
     // The turn is over. A block still awaiting its final keeps the text the
     // flush above journaled, but its live state goes: an interrupted turn
