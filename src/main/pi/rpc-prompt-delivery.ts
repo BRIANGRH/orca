@@ -1,4 +1,8 @@
-import { agentSessionFailureFact, providerDiagnostic } from '../../shared/agent-session-failure'
+import {
+  agentSessionFailureFact,
+  providerDiagnostic,
+  type AgentSessionFailureFact
+} from '../../shared/agent-session-failure'
 import { agentSessionFailureWords } from '../../shared/agent-session-failure-words'
 import type { AgentSessionDispatchOutcome } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import type { JsonlRpcRecord } from '../jsonl-rpc/peer'
@@ -14,6 +18,8 @@ type Submission = {
   bytes: number
   accepted: boolean
   retries: number
+  /** Pi's last sign-in refusal, while the prompt waits to be re-sent. */
+  signInRefusal?: string
 }
 type DeliveryDeps = {
   send: (frame: JsonlRpcRecord) => Promise<void>
@@ -32,6 +38,13 @@ export function piRpcFailureFact(error: string) {
     error.startsWith('No API key found for ') ? 'notSignedIn' : 'providerRejected',
     { detail: providerDiagnostic(error, 'person') }
   )
+}
+
+function piRejection(fact: AgentSessionFailureFact): AgentSessionDispatchOutcome {
+  return {
+    state: 'rejected',
+    ...agentSessionFailureWords(fact, { agentName: 'Pi', surface: 'rejection' })
+  }
 }
 
 export class PiRpcPromptDelivery {
@@ -105,8 +118,10 @@ export class PiRpcPromptDelivery {
       throw new Error('Pi prompt reply has no request')
     }
     if (!reply.success) {
-      const fact = piRpcFailureFact(reply.error ?? 'Pi rejected the prompt')
+      const error = reply.error ?? 'Pi rejected the prompt'
+      const fact = piRpcFailureFact(error)
       if (!submission.accepted && fact.kind === 'notSignedIn' && submission.retries++ < 8) {
+        submission.signInRefusal = error
         this.removeWaiting(submission)
         const timer = setTimeout(() => {
           this.retries.delete(timer)
@@ -118,6 +133,7 @@ export class PiRpcPromptDelivery {
             this.deps.failed(new Error('Pi retry lost its unaccepted prompt'))
             return
           }
+          submission.signInRefusal = undefined
           this.acknowledgements.push(submission)
           this.waiting.push(submission)
           void this.deps
@@ -136,12 +152,9 @@ export class PiRpcPromptDelivery {
         fact.kind === 'notSignedIn' && !submission.accepted
           ? { ...fact, neverReachedAgent: true as const }
           : fact
-      this.deps.settled(submission.id, {
-        state: 'rejected',
-        ...agentSessionFailureWords(settledFact, { agentName: 'Pi', surface: 'rejection' })
-      })
+      this.deps.settled(submission.id, piRejection(settledFact))
       if (submission.accepted) {
-        this.deps.rejectedAfterAcceptance(reply.error ?? 'Pi rejected the prompt')
+        this.deps.rejectedAfterAcceptance(error)
       } else {
         this.deps.refused?.()
       }
@@ -162,7 +175,13 @@ export class PiRpcPromptDelivery {
     }
     this.retries.clear()
     for (const submission of this.pending) {
-      if (!submission.accepted) {
+      // Waiting out a sign-in refusal, not yet re-sent: every reply so far proved Pi never had it.
+      if (submission.signInRefusal !== undefined) {
+        this.deps.settled(
+          submission.id,
+          piRejection({ ...piRpcFailureFact(submission.signInRefusal), neverReachedAgent: true })
+        )
+      } else if (!submission.accepted) {
         this.deps.settled(submission.id, {
           state: 'unknown',
           reason: 'Pi ended before confirming delivery'
