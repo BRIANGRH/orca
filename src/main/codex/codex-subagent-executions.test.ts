@@ -4,12 +4,12 @@ import { CodexSubagentExecutions } from './codex-subagent-executions'
 describe('CodexSubagentExecutions retention and identity', () => {
   it('bounds settled history through repeated execution without evicting live children', () => {
     const executions = new CodexSubagentExecutions()
-    executions.register('long-lived', 'long-lived', 'parent')
+    executions.register('long-lived', 'long-lived')
     executions.observeTurn('long-lived', 'long-lived-turn', 'working')
     for (let index = 0; index < 1_000; index++) {
       const id = `child-${index}`
       executions.observeTurn(id, id, 'working')
-      executions.register(id, id, 'parent')
+      executions.register(id, id)
       executions.observeTurn(id, id, 'completed')
     }
     expect(executions.workingChildren().map((child) => child.agentThreadId)).toEqual(['long-lived'])
@@ -22,18 +22,42 @@ describe('CodexSubagentExecutions retention and identity', () => {
     const executions = new CodexSubagentExecutions()
     for (let index = 0; index < 200; index++) {
       expect(executions.observeTurn(`child-${index}`, `turn-${index}`, 'working')).not.toBeNull()
-      executions.register(`child-${index}`, `child-${index}`, 'parent')
+      executions.register(`child-${index}`, `child-${index}`)
     }
     expect(executions.workingChildren()).toHaveLength(200)
     executions.observeTurn('child-0', 'turn-0', 'completed')
-    executions.register('next', 'next', 'parent')
+    executions.register('next', 'next')
     expect(executions.find('child-0')).toBeUndefined()
     expect(executions.workingChildren()).toHaveLength(199)
   })
 
+  it('keeps a child announced but not yet started past the bound, with its spawner', () => {
+    const executions = new CodexSubagentExecutions()
+    for (let index = 0; index < 128; index++) {
+      executions.observeTurn(`child-${index}`, `turn-${index}`, 'working')
+    }
+    executions.register('announced', 'announced', 'spawner')
+    executions.register('next', 'next')
+    expect(executions.find('announced')).toMatchObject({
+      registered: true,
+      spawnerThreadId: 'spawner'
+    })
+    executions.observeTurn('announced', 'turn-a', 'working')
+    expect(executions.workingChildren().map((child) => child.agentThreadId)).toContain('announced')
+  })
+
+  it('collapses a label’s whitespace, and keeps the first label a child was given', () => {
+    const executions = new CodexSubagentExecutions()
+    executions.register('child', '  audit \n  the build ')
+    executions.register('child', 'later name')
+    executions.register('blank', '   ')
+    expect(executions.label('child')).toBe('audit the build')
+    expect(executions.label('blank')).toBeNull()
+  })
+
   it('corrects an unverifiable execution with its own terminal event and ignores stale starts', () => {
     const executions = new CodexSubagentExecutions()
-    executions.register('child', 'child', 'parent')
+    executions.register('child', 'child')
     executions.observeTurn('child', 'turn', 'working')
     executions.closeThread('child')
     expect(executions.workingChildren()).toEqual([])

@@ -385,17 +385,19 @@ describe('structured child-work reconciliation', () => {
     ])
   })
 
-  it('bounds the live children one session may admit', () => {
+  it('bounds the live tasks one session may admit, and never refuses a subagent for it', () => {
     const { store, apply } = harness()
+    const command = (id: string) => child(id, { kind: 'command' })
     apply(
       ...Array.from({ length: STRUCTURED_CHILD_WORK_MAX_LIVE }, (_, index) =>
-        live(child(`task-${index}`))
+        live(command(`task-${index}`))
       )
     )
-    expect(apply(live(child('one-too-many'))).rejected).toEqual([
+    expect(apply(live(command('one-too-many'))).rejected).toEqual([
       { handleId: 'one-too-many', reason: 'ingestion-limit' }
     ])
-    expect(records(store)).toHaveLength(STRUCTURED_CHILD_WORK_MAX_LIVE)
+    expect(apply(live(child('agent-past-the-limit'))).rejected).toEqual([])
+    expect(records(store)).toHaveLength(STRUCTURED_CHILD_WORK_MAX_LIVE + 1)
   })
 
   it('keeps every settled child until the parent row goes', () => {
