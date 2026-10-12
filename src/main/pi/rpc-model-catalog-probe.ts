@@ -45,10 +45,8 @@ export function createPiModelCatalogProbe(deps: PiModelCatalogProbeDeps): AgentM
       accountDir: requireLegacyAgentSessionAccountHome(accountHome).path,
       resolveEnvironment: deps.resolveEnvironment,
       commandSettings: deps.resolveCommandSettings?.(),
-      ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
-      ...(deps.refreshEnvironmentAfterMiss
-        ? { refreshEnvironmentAfterMiss: deps.refreshEnvironmentAfterMiss }
-        : {})
+      resolveCommand: deps.resolveCommand,
+      refreshEnvironmentAfterMiss: deps.refreshEnvironmentAfterMiss
     })
     const cwd = deps.homePath ?? homedir()
     if (!(await piRpcVersionSupported({ command, cwd, env }, deps.probeVersion))) {

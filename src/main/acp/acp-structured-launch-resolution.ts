@@ -194,9 +194,7 @@ export function acpStructuredLaunchPart(
         resolveEnvironment: basis.baseEnvironment,
         resolveLaunchEnv: () => basis.launchEnv(),
         resolveCommandSettings: basis.commandSettings,
-        ...(basis.refreshAfterMissingProgram
-          ? { refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram }
-          : {}),
+        refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram,
         ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
         ...(deps.homePath ? { homePath: deps.homePath } : {}),
         ...(deps.inheritedEnv ? { inheritedEnv: deps.inheritedEnv } : {})

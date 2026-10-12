@@ -180,9 +180,7 @@ export function claudeStructuredLaunchPart(
       ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
       resolveEnv: () => basis.launchEnv(),
       resolveInheritedEnv: basis.baseEnvironment,
-      ...(basis.refreshAfterMissingProgram
-        ? { refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram }
-        : {}),
+      refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram,
       resolveAuthPolicy: deps.resolveAuthPolicy
     }
     const sources = await resolveClaudeChildEnvSources(envDeps)

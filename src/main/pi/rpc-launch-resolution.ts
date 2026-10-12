@@ -136,10 +136,8 @@ export function piRpcLaunchPart(
       accountDir: accountHome.path,
       resolveEnvironment: basis.environment,
       commandSettings: basis.commandSettings(),
-      ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
-      ...(basis.refreshAfterMissingProgram
-        ? { refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram }
-        : {})
+      resolveCommand: deps.resolveCommand,
+      refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram
     })
     const previous = agentSessionProviderHandleChainHead(record.providerHandleChain)
     let sessionFile: string | undefined

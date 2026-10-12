@@ -83,9 +83,7 @@ export function codexStructuredLaunchPart(
     const accountHome = requireLegacyAgentSessionAccountHome(record.accountHome)
     const { command } = await resolveCodexStructuredInvocation({
       ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
-      ...(basis.refreshAfterMissingProgram
-        ? { refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram }
-        : {}),
+      refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram,
       resolveEnvironment: basis.environment
     })
     const environment = await basis.environment()
