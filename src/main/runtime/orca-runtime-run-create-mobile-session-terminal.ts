@@ -62,7 +62,12 @@ export class OrcaRuntimeWithRunCreateMobileSessionTerminal extends OrcaRuntimeWi
         afterDesktopTabId = anchor.type === 'terminal' ? anchor.parentTabId : anchor.id
       }
     }
-    const startupCommand = await this.resolveMobileSessionTerminalCommand(workspace, opts)
+    // With a window, it creates the tab and spawns the pane, so the command is written for that pane.
+    const startupCommand = await this.resolveMobileSessionTerminalCommand(
+      workspace,
+      opts,
+      this.getAvailableAuthoritativeWindow() !== null
+    )
     this.assertStableReadyGraph(graphEpoch)
     if (opts.signal?.aborted) {
       throw new Error('client_disconnected')

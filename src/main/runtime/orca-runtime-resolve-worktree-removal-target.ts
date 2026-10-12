@@ -237,9 +237,11 @@ export class OrcaRuntimeWithResolveWorktreeRemovalTarget extends OrcaRuntimeWith
 
   protected async resolveAgentTerminalCreateOptions(
     workspace: TerminalWorkspaceLaunchScope,
-    opts: TerminalCreateOptions
+    opts: TerminalCreateOptions,
+    windowSpawnsPane = false
   ): Promise<TerminalCreateOptions> {
     return resolveAgentTerminalCreateOptions(workspace, opts, {
+      windowSpawnsPane,
       store: this.store,
       hostIdentity: this.runtimeId,
       toSessionOptions: (preferences) => this.toAgentSessionOptions(preferences)

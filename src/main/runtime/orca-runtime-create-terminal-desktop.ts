@@ -18,7 +18,7 @@ export async function createDesktopTerminal(
     ? await runtime.resolveTerminalWorkspaceLaunchScope(worktreeSelector, createdWorktree)
     : null
   const launchOpts = workspace
-    ? await runtime.resolveAgentTerminalCreateOptions(workspace, opts)
+    ? await runtime.resolveAgentTerminalCreateOptions(workspace, opts, true)
     : opts
   // `resolveAgentTerminalCreateOptions` refuses an unapplicable shell, and it only runs with a
   // workspace; a worktree-less create has no execution host to apply one to either.
