@@ -81,6 +81,7 @@ export async function runCommandReceiptMutation<TValue>(
         ? unknownOutcome(input)
         : ran
     }
+    // `refusalAnswers` is only a background-task Stop's: "task still running" or "unconfirmed".
     if (ran.ok || commandReceipt.refusalAnswers) {
       return ran
     }

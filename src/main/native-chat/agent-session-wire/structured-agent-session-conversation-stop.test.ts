@@ -795,18 +795,6 @@ describe('a Stop that names its turn, as an older client sends it', () => {
     expect(await statusRows()).toEqual([])
   })
 
-  it('keeps the child, and writes no row, when the provider could not interrupt it with the conversation at rest', async () => {
-    cancelTurn.mockResolvedValueOnce({
-      cancelled: false,
-      refusal: { detail: { text: 'failed to interrupt turn', audience: 'person' } }
-    })
-
-    expect(await stop('turn-1')).toMatchObject({ ok: true, value: { cancelled: false } })
-
-    expect(closeSession).not.toHaveBeenCalled()
-    expect(await statusRows()).toEqual([])
-  })
-
   /** A send queued on the host and not yet handed over: the lane is held until `release`, so a
    *  step asked for before it runs ahead of the handover. */
   function queueOnHost(): { id: string; release: () => void } {
@@ -901,11 +889,14 @@ describe('a Stop on a provider whose Stop ends its session', () => {
 
   it('leaves the child alone when the Stop named a turn that is no longer live', async () => {
     stopEndsSession = true
+    // Handed over, with no row yet for the turn it names: the Stop reaches the provider.
+    await handedOver()
     cancelTurn.mockResolvedValueOnce({ cancelled: false })
 
     expect(await stop('turn-1')).toMatchObject({ ok: true, value: { cancelled: false } })
     await laneDrained()
 
+    expect(cancelTurn).toHaveBeenCalledWith(expect.objectContaining({ turnId: 'turn-1' }))
     expect(closeSession).not.toHaveBeenCalled()
     // It stopped nothing, so it writes no row.
     expect(await statusRows()).toEqual([])
