@@ -224,7 +224,8 @@ export function createWslDistroHolder(dependencies: WslDistroHolderDependencies)
       const deadline = now() + RELEASE_EXIT_TIMEOUT_MS
       for (;;) {
         state = classifyWslDistroHolderProcess(record, await queryProcess(record.pid))
-        if (state !== 'live' || now() >= deadline) {
+        // A holder mid-exit can read unverifiable (pid present, command line gone); only `exited` is proof.
+        if (state === 'exited' || now() >= deadline) {
           break
         }
         await sleep(BOOT_POLL_INTERVAL_MS)

@@ -252,6 +252,50 @@ describe('createWslDistroHolder', () => {
     expect(await recordFiles()).toEqual([])
   })
 
+  it('release keeps polling through an unverifiable window until the exit is proven', async () => {
+    const holder = makeHolder()
+    await holder.ensureHeld('Alpine')
+    // Mid-exit: the pid is still listed but its command line is already unreadable.
+    let midExitReads = 2
+    host.kill = (pid) => {
+      host.killed.push(pid)
+      host.processes.set(pid, { commandLine: null, startedAtMs: 5_000 })
+    }
+    const query = host.query
+    host.query = async (pid) => {
+      if (host.killed.includes(pid) && midExitReads-- <= 0) {
+        host.processes.delete(pid)
+      }
+      return query(pid)
+    }
+    const released = createWslDistroHolder({
+      userDataPath,
+      queryProcess: (pid) => host.query(pid),
+      killProcess: (pid) => host.kill(pid),
+      sleep: async () => {}
+    })
+    expect(await released.release('Alpine')).toBe('exited')
+    expect(midExitReads).toBeLessThan(0)
+    expect(await recordFiles()).toEqual([])
+    expect(await holder.holderState('Alpine')).toBe('exited')
+  })
+
+  it('release reports unverifiable and keeps the record when the exit is never proven', async () => {
+    const holder = makeHolder()
+    await holder.ensureHeld('Alpine')
+    let clock = 0
+    const released = makeHolder({
+      killProcess: (pid) => {
+        host.killed.push(pid)
+        host.processes.set(pid, { commandLine: null, startedAtMs: 5_000 })
+      },
+      now: () => (clock += 1_000)
+    })
+    expect(await released.release('Alpine')).toBe('unverifiable')
+    expect(host.killed).toEqual([4000])
+    expect(await recordFiles()).toEqual(['alpine.json'])
+  })
+
   it('serializes release behind an in-flight ensure', async () => {
     const holder = makeHolder()
     const ensure = holder.ensureHeld('Alpine')
