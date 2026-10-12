@@ -11,6 +11,7 @@ import {
   closeProviderTimelineRigs,
   SESSION
 } from '../native-chat/agent-session-timeline/provider-timeline-assembler-test-support'
+import { acpLaunchSpecFor } from './acp-launch-specs'
 import { resolveAcpPeerOptions } from './acp-peer-limits'
 import { openAcpAdapterRig, sendHello, waitFor } from './acp-structured-adapter.test-support'
 
@@ -96,9 +97,9 @@ describe('ACP stopped history', () => {
         type: 'text',
         text:
           'delete the build folder\n\n[Request interrupted by user]\n\n' +
-          'look\n\n[Request interrupted by user]\n\n' +
-          'what did I send?'
-      }
+          'look\n\n[Request interrupted by user]\n\n'
+      },
+      { type: 'text', text: 'what did I send?' }
     ])
   })
 
@@ -120,10 +121,40 @@ describe('ACP stopped history', () => {
     expect(Buffer.byteLength(JSON.stringify(written))).toBeLessThanOrEqual(maxLineBytes)
     expect(prepared?.carries).toEqual(['one'])
     expect(promptOf(written)).toEqual([
-      {
-        type: 'text',
-        text: `${'x'.repeat(40_000)}\n\n[Request interrupted by user]\n\n${'w'.repeat(maxLineBytes - 64 * 1024 - 70_000)}`
-      }
+      { type: 'text', text: `${'x'.repeat(40_000)}\n\n[Request interrupted by user]\n\n` },
+      { type: 'text', text: 'w'.repeat(maxLineBytes - 64 * 1024 - 70_000) }
+    ])
+  })
+
+  it("keeps the send's own images with the send, after the interruption", async () => {
+    const data = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64')
+    const rig = await openAcpAdapterRig({
+      spec: acpLaunchSpecFor('opencode')!,
+      initialize: { agentCapabilities: { loadSession: true, promptCapabilities: { image: true } } }
+    })
+    await rig.acquire()
+    const imageOnly: AgentJournalMessageItem = {
+      kind: 'message',
+      role: 'user',
+      blocks: [{ type: 'image-ref', url: `data:image/png;base64,${data}` }]
+    }
+    const prepared = await rig.adapter.prepareDispatch({
+      sessionId: SESSION,
+      fence: 1,
+      body: imageOnly,
+      owed: [owed('a', message('delete the build folder'))]
+    })
+    await rig.adapter.dispatch({
+      sessionId: SESSION,
+      clientMessageId: 'next',
+      body: imageOnly,
+      fence: 1,
+      ...(prepared ? { prepared } : {})
+    })
+
+    expect(promptOf(await rig.frame('session/prompt'))).toEqual([
+      { type: 'text', text: 'delete the build folder\n\n[Request interrupted by user]\n\n' },
+      { type: 'image', mimeType: 'image/png', data }
     ])
   })
 
