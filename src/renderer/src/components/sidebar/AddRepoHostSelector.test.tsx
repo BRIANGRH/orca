@@ -204,7 +204,7 @@ describe('AddRepoHostSelector', () => {
             health: 'disconnected',
             presence: 'project',
             wslDistro: 'Ubuntu',
-            wslTurnedOff: true
+            wslUnavailable: 'turned-off'
           }
         ]}
         selectedHostId="local"

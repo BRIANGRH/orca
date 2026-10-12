@@ -5,6 +5,11 @@ export function wslHostsAvailable(): boolean {
   return typeof window !== 'undefined' && window.api?.runtimeEnvironments?.wslHosts !== undefined
 }
 
+/** True once main reported that this build lacks the files WSL hosts deploy from. */
+export function useWslHostServerFilesMissing(): boolean {
+  return useAppStore((s) => s.wslHostServerFiles === 'missing')
+}
+
 export function useWslHostsEnabled(): boolean {
   const enabled = useAppStore((s) => s.settings?.experimentalWslHosts === true)
   return enabled && wslHostsAvailable()

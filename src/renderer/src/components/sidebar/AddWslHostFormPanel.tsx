@@ -11,6 +11,7 @@ import {
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { translate } from '@/i18n/i18n'
 import type { WslHostDistro } from '../../../../shared/wsl-host-types'
+import { getWslHostServerFilesMissingLabel } from './wsl-host-row-status'
 
 export function wslDistroStateLabel(distro: WslHostDistro): string {
   if (distro.version === 1) {
@@ -34,6 +35,7 @@ export function AddWslHostFormPanel({
   selectedDistro,
   error,
   adding,
+  serverFilesMissing,
   onSelectDistro,
   onSubmit,
   onCancel
@@ -43,6 +45,8 @@ export function AddWslHostFormPanel({
   selectedDistro: string
   error: string | null
   adding: boolean
+  /** This build cannot run WSL hosts; nothing here may be chosen or submitted. */
+  serverFilesMissing: boolean
   onSelectDistro: (name: string) => void
   onSubmit: () => void
   onCancel: () => void
@@ -71,7 +75,7 @@ export function AddWslHostFormPanel({
           value={selectedDistro}
           // Why: Radix reports '' when its hidden native select resets; that is not a user choice.
           onValueChange={(name) => name && onSelectDistro(name)}
-          disabled={adding || loading}
+          disabled={adding || loading || serverFilesMissing}
         >
           <SelectTrigger id="add-wsl-distro" className="w-full">
             <SelectValue
@@ -97,7 +101,12 @@ export function AddWslHostFormPanel({
             ))}
           </SelectContent>
         </Select>
-        {!loading && distros.length === 0 ? (
+        {serverFilesMissing ? (
+          <p role="alert" className="text-xs text-destructive">
+            {getWslHostServerFilesMissingLabel()}
+          </p>
+        ) : null}
+        {!loading && !serverFilesMissing && distros.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {translate(
               'auto.components.sidebar.AddWslHostFormPanel.none',
@@ -135,7 +144,11 @@ export function AddWslHostFormPanel({
           <Button type="button" variant="outline" onClick={onCancel} disabled={adding}>
             {translate('auto.components.sidebar.AddRemoteHostDialog.cancel', 'Cancel')}
           </Button>
-          <Button type="button" onClick={onSubmit} disabled={adding || !canAddWslDistro(selected)}>
+          <Button
+            type="button"
+            onClick={onSubmit}
+            disabled={adding || serverFilesMissing || !canAddWslDistro(selected)}
+          >
             {adding ? <LoadingSpinner className="size-4" /> : null}
             {adding
               ? translate('auto.components.sidebar.AddWslHostFormPanel.adding', 'Setting up…')

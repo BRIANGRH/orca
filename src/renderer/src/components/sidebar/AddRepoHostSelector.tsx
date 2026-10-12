@@ -28,7 +28,7 @@ type AddRepoHostSelectorProps = {
 
 function getHostStatusDetail(host: SidebarHostOption): string {
   // Why only the detail: "Disconnected" would read as a failure, not a switched-off feature.
-  if (host.wslTurnedOff) {
+  if (host.wslUnavailable) {
     return host.detail
   }
   if (host.compatibility?.kind === 'blocked') {
@@ -204,7 +204,8 @@ export function AddRepoHostSelector({
                 const selected = host.id === selectedHostId
                 const disabled = !canSelectAddRepoHost(host)
                 const canConnectHost = canConnectAddRepoHost(host)
-                const canTurnOn = host.wslTurnedOff === true && onOpenWslHostsSetting !== undefined
+                const canTurnOn =
+                  host.wslUnavailable === 'turned-off' && onOpenWslHostsSetting !== undefined
                 // Why one flag: either action keeps the otherwise unselectable row interactive.
                 const canConnect = canConnectHost || canTurnOn
                 const isConnecting = host.health === 'connecting'

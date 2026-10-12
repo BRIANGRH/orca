@@ -6712,7 +6712,9 @@
           "failed": "Failed to start",
           "kind": "WSL distro",
           "turnedOff": "WSL hosts are turned off in Settings → Experimental",
-          "turnedOffShort": "Turned off in Settings → Experimental"
+          "turnedOffShort": "Turned off in Settings → Experimental",
+          "serverFilesMissing": "This build of Orca can’t run WSL hosts (server files missing).",
+          "serverFilesMissingShort": "This build can’t run WSL hosts"
         }
       },
       "shared": {

@@ -32,7 +32,8 @@ const WSL_HOST_LABEL = 'Ubuntu (WSL)'
 
 async function launchDesktopWithFakeWsl(
   pairingCode: string,
-  testInfo: Parameters<typeof forwardElectronProcessLogs>[1]
+  testInfo: Parameters<typeof forwardElectronProcessLogs>[1],
+  fakeOverrides: Record<string, unknown> = {}
 ): Promise<{ app: ElectronApplication; page: Page; dispose: () => Promise<void> }> {
   const userDataDir = mkdtempSync(path.join(os.tmpdir(), 'orca-e2e-wsl-desktop-'))
   writeFileSync(
@@ -50,7 +51,8 @@ async function launchDesktopWithFakeWsl(
           { name: 'Ubuntu', state: 'running', version: 2 },
           { name: 'Legacy', state: 'stopped', version: 1 }
         ],
-        pairingCode
+        pairingCode,
+        ...fakeOverrides
       })
     },
     userDataDir
@@ -272,5 +274,41 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
   } finally {
     await desktop.dispose()
     rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
+test('a build without the WSL host server files says so instead of failing an add', async ({
+  orcaPage
+}, testInfo) => {
+  test.setTimeout(180_000)
+  await waitForSessionReady(orcaPage)
+  const offer = await createRuntimeDesktopPairingOffer(orcaPage)
+  const desktop = await launchDesktopWithFakeWsl(offer.pairingUrl, testInfo, {
+    serverFiles: 'missing'
+  })
+  try {
+    const { page } = desktop
+    await setWslHostsEnabled(page, true)
+    await openSidebarProjectDialog(page)
+    await page
+      .getByRole('dialog', { name: /Add a project/i })
+      .getByRole('combobox')
+      .click()
+    await page.locator('[cmdk-item]').filter({ hasText: 'Add remote host' }).click()
+    await page.getByRole('button', { name: /Add WSL distro/ }).click()
+    const addHost = page.getByRole('dialog', { name: 'Add WSL distro' })
+    await expect(addHost.getByRole('alert')).toHaveText(
+      'This build of Orca can’t run WSL hosts (server files missing).'
+    )
+    await expect(addHost.getByRole('button', { name: 'Add host' })).toBeDisabled()
+    await expect(addHost.getByRole('combobox')).toBeDisabled()
+    // Main refuses too, before any deploy work.
+    expect(
+      await page.evaluate(() => window.api.runtimeEnvironments.wslHosts?.add({ distro: 'Ubuntu' }))
+    ).toMatchObject({ ok: false, kind: 'server-files-missing' })
+    await settleAnimations(page)
+    await page.screenshot({ path: testInfo.outputPath('wsl-add-host-server-files-missing.png') })
+  } finally {
+    await desktop.dispose()
   }
 })

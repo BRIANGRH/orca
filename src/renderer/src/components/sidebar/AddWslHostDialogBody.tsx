@@ -4,6 +4,7 @@ import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import type { WslHostDistro } from '../../../../shared/wsl-host-types'
 import { AddWslHostFormPanel, canAddWslDistro } from './AddWslHostFormPanel'
+import { useWslHostServerFilesMissing } from './use-wsl-hosts-enabled'
 
 /** The "Add WSL distro" step of the add-host dialog; mounted only while it shows. */
 export function AddWslHostDialogBody({
@@ -21,6 +22,7 @@ export function AddWslHostDialogBody({
   const [loading, setLoading] = useState(true)
   const [selectedDistro, setSelectedDistro] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const serverFilesMissing = useWslHostServerFilesMissing()
   const setRuntimeEnvironments = useAppStore((s) => s.setRuntimeEnvironments)
   const readRuntimeHostStatusSnapshots = useAppStore((s) => s.readRuntimeHostStatusSnapshots)
 
@@ -94,6 +96,7 @@ export function AddWslHostDialogBody({
       selectedDistro={selectedDistro}
       error={error}
       adding={adding}
+      serverFilesMissing={serverFilesMissing}
       onSelectDistro={(name) => {
         setSelectedDistro(name)
         setError(null)

@@ -62,6 +62,13 @@ export function registerWslHostIpcBridge(unsubs: (() => void)[]): void {
     return
   }
   const apply = (status: WslHostStatus): void => useAppStore.getState().applyWslHostStatus(status)
+  // A preload from before the capability call leaves it unknown, which the UI treats as present.
+  if (typeof api.getCapability === 'function') {
+    void api
+      .getCapability()
+      .then(({ serverFiles }) => useAppStore.getState().setWslHostServerFiles(serverFiles))
+      .catch((error) => console.error('Failed to read WSL host capability:', error))
+  }
   let stopped = false
   unsubs.push(api.onStatusChanged(apply), () => {
     stopped = true

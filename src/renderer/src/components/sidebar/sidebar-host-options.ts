@@ -25,6 +25,7 @@ import { translate } from '@/i18n/i18n'
 import {
   getWslHostRowDetail,
   getWslHostRowHealth,
+  getWslHostRowServerFilesMissingDetail,
   getWslHostRowTurnedOffDetail
 } from './wsl-host-row-status'
 
@@ -43,8 +44,8 @@ export type SidebarHostOption = {
   mergedIntoHostId?: ExecutionHostId
   /** Set on a WSL host's row: the distro its Orca server runs in. */
   wslDistro?: string
-  /** A WSL host whose experiment is off: listed so its projects stay visible, never connected. */
-  wslTurnedOff?: true
+  /** Why a listed WSL host cannot run: the experiment is off, or this build lacks its server files. */
+  wslUnavailable?: 'turned-off' | 'server-files-missing'
 }
 
 export type SidebarHostScopeOption = {
@@ -72,6 +73,8 @@ export function buildSidebarHostOptions(args: {
   wslHostStatuses?: Readonly<Record<string, WslHostStatus>>
   /** False keeps WSL hosts' rows but marks them turned off. */
   wslHostsEnabled?: boolean
+  /** True keeps WSL hosts' rows but marks them unable to run in this build. */
+  wslHostServerFilesMissing?: boolean
 }): SidebarHostOption[] {
   const configuredSshTargetIds = new Set(args.sshTargetLabels.keys())
   const projectSshTargetIds = new Set<string>()
@@ -124,20 +127,27 @@ export function buildSidebarHostOptions(args: {
     const status = wsl ? args.wslHostStatuses?.[wsl.environmentId] : undefined
     return {
       ...host,
-      ...(wsl && args.wslHostsEnabled === false
+      ...(wsl && args.wslHostServerFilesMissing === true
         ? {
             wslDistro: wsl.distro,
-            wslTurnedOff: true as const,
-            detail: getWslHostRowTurnedOffDetail(),
+            wslUnavailable: 'server-files-missing' as const,
+            detail: getWslHostRowServerFilesMissingDetail(),
             health: 'disconnected' as const
           }
-        : wsl
+        : wsl && args.wslHostsEnabled === false
           ? {
               wslDistro: wsl.distro,
-              detail: getWslHostRowDetail(status),
-              health: getWslHostRowHealth(host.health, status)
+              wslUnavailable: 'turned-off' as const,
+              detail: getWslHostRowTurnedOffDetail(),
+              health: 'disconnected' as const
             }
-          : {}),
+          : wsl
+            ? {
+                wslDistro: wsl.distro,
+                detail: getWslHostRowDetail(status),
+                health: getWslHostRowHealth(host.health, status)
+              }
+            : {}),
       presence: host.id === activeRuntimeHostId ? 'active' : 'project'
     }
   })

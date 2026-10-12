@@ -10,9 +10,14 @@ import { HostRemoveDialog } from '../sidebar/HostRemoveDialog'
 import {
   openWslHostsExperimentalSetting,
   useWslHostsEnabled,
+  useWslHostServerFilesMissing,
   wslHostsAvailable
 } from '../sidebar/use-wsl-hosts-enabled'
-import { getWslHostRowDetail, getWslHostsTurnedOffLabel } from '../sidebar/wsl-host-row-status'
+import {
+  getWslHostRowDetail,
+  getWslHostServerFilesMissingLabel,
+  getWslHostsTurnedOffLabel
+} from '../sidebar/wsl-host-row-status'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 
@@ -25,6 +30,13 @@ export function WslHostsSection({
   onChanged: () => void
 }): React.JSX.Element | null {
   const enabled = useWslHostsEnabled()
+  const serverFilesMissing = useWslHostServerFilesMissing()
+  // Why one line for both: a host that cannot run says why, wherever it is listed.
+  const unavailableLabel = serverFilesMissing
+    ? getWslHostServerFilesMissingLabel()
+    : enabled
+      ? null
+      : getWslHostsTurnedOffLabel()
   const statuses = useAppStore((s) => s.wslHostStatuses)
   const [dialogMode, setDialogMode] = useState<AddRemoteHostMode | null>(null)
   const [connectingId, setConnectingId] = useState<string | null>(null)
@@ -62,16 +74,21 @@ export function WslHostsSection({
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            {enabled
-              ? translate(
-                  'auto.components.settings.wslHosts.description',
-                  'Orca runs a server inside each distro. A stopped distro starts only when you open one of its projects or connect it here.'
-                )
-              : getWslHostsTurnedOffLabel()}
+            {unavailableLabel ??
+              translate(
+                'auto.components.settings.wslHosts.description',
+                'Orca runs a server inside each distro. A stopped distro starts only when you open one of its projects or connect it here.'
+              )}
           </p>
         </div>
         {enabled ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => setDialogMode('wsl')}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={serverFilesMissing}
+            onClick={() => setDialogMode('wsl')}
+          >
             {translate('auto.components.settings.wslHosts.add', 'Add WSL distro')}
           </Button>
         ) : (
@@ -95,16 +112,20 @@ export function WslHostsSection({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{environment.name}</div>
                   <p className="truncate text-xs text-muted-foreground">
-                    {enabled ? getWslHostRowDetail(status) : getWslHostsTurnedOffLabel()}
-                    {enabled && status?.detail ? ` — ${status.detail}` : ''}
+                    {unavailableLabel ?? getWslHostRowDetail(status)}
+                    {!unavailableLabel && status?.detail ? ` — ${status.detail}` : ''}
                   </p>
                 </div>
-                {ready && enabled ? null : (
+                {ready && !unavailableLabel ? null : (
                   <Button
                     type="button"
                     size="xs"
                     variant="outline"
-                    disabled={!enabled || connectingId !== null || status?.state === 'connecting'}
+                    disabled={
+                      unavailableLabel !== null ||
+                      connectingId !== null ||
+                      status?.state === 'connecting'
+                    }
                     onClick={() => void connect(environment.id)}
                   >
                     {connectingId === environment.id ? <LoadingSpinner className="size-3" /> : null}

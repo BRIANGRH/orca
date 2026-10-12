@@ -23,6 +23,7 @@ function render(props: Partial<Parameters<typeof AddWslHostFormPanel>[0]> = {}):
       selectedDistro=""
       error={null}
       adding={false}
+      serverFilesMissing={false}
       onSelectDistro={vi.fn()}
       onSubmit={vi.fn()}
       onCancel={vi.fn()}
@@ -56,5 +57,13 @@ describe('AddWslHostFormPanel', () => {
 
   it('explains an empty list', () => {
     expect(render({ distros: [] })).toContain('wsl --install')
+  })
+
+  it('says this build cannot run WSL hosts and offers nothing to add', () => {
+    const html = render({ selectedDistro: 'Ubuntu', serverFilesMissing: true })
+    expect(html).toContain('This build of Orca can’t run WSL hosts (server files missing).')
+    expect(html).toContain('role="alert"')
+    expect(html).not.toContain('wsl --install')
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Add host<\/button>/)
   })
 })
