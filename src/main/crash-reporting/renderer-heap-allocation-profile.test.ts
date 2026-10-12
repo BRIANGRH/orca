@@ -7,16 +7,14 @@ import {
   summarizeSamplingProfile,
   type ProfiledRenderer
 } from './renderer-heap-allocation-profile'
-import {
-  getCrashBreadcrumbSnapshot,
-  clearCrashBreadcrumbsForTest
-} from './crash-breadcrumb-store'
+import { getCrashBreadcrumbSnapshot, clearCrashBreadcrumbsForTest } from './crash-breadcrumb-store'
 
 function frame(functionName: string, url: string, lineNumber = 9, columnNumber = 4) {
   return { functionName, url, lineNumber, columnNumber, scriptId: '1' }
 }
 
-const APP = 'file:///Users/someone/Applications/Orca.app/Contents/Resources/app.asar/out/renderer/assets'
+const APP =
+  'file:///Users/someone/Applications/Orca.app/Contents/Resources/app.asar/out/renderer/assets'
 
 const profile = {
   head: {
@@ -27,7 +25,10 @@ const profile = {
         callFrame: frame('appendChunk', `${APP}/terminal-Ab12.js`),
         selfSize: 0,
         children: [
-          { callFrame: frame('sliceOutput', `${APP}/terminal-Ab12.js`, 20), selfSize: 3 * 1024 * 1024 },
+          {
+            callFrame: frame('sliceOutput', `${APP}/terminal-Ab12.js`, 20),
+            selfSize: 3 * 1024 * 1024
+          },
           { callFrame: frame('evil', 'data:text/javascript,secret/stuff.js'), selfSize: 512 * 1024 }
         ]
       },
@@ -143,7 +144,10 @@ describe('profileRendererHeapHighwaterBreadcrumb', () => {
 
     profileRendererHeapHighwaterBreadcrumb(
       renderer,
-      { name: 'renderer_memory_highwater', data: { rendererSurface: 'main', thresholdPrivateMB: 600 } },
+      {
+        name: 'renderer_memory_highwater',
+        data: { rendererSurface: 'main', thresholdPrivateMB: 600 }
+      },
       origin
     )
     expect(renderer.debugger.attach).not.toHaveBeenCalled()

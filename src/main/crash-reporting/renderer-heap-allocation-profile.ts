@@ -78,7 +78,11 @@ export function noteRendererMemorySample(
   record: (data: CrashReportBreadcrumbData) => void
 ): void {
   const session = sessions.get(renderer.id)
-  if (session && !renderer.isDestroyed() && Date.now() - session.lastReadAtMs >= PROFILE_REFRESH_MS) {
+  if (
+    session &&
+    !renderer.isDestroyed() &&
+    Date.now() - session.lastReadAtMs >= PROFILE_REFRESH_MS
+  ) {
     refreshProfile(renderer, session, record)
   }
 }
@@ -257,7 +261,11 @@ function describeFrame(node: SamplingProfileNode): string {
   const name = (functionName || '(anonymous)')
     .replace(/[^\w$.<>()[\] ]/g, '')
     .slice(0, MAX_FUNCTION_NAME_LENGTH)
-  const baseName = url.replace(/[?#].*$/, '').split(/[\\/]/).pop() ?? ''
+  const baseName =
+    url
+      .replace(/[?#].*$/, '')
+      .split(/[\\/]/)
+      .pop() ?? ''
   // Why: only bundle file names; a data:/blob:/eval URL could carry page content.
   const file = !url
     ? ''
