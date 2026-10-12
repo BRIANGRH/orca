@@ -1,8 +1,10 @@
+import {
+  createClaudeStructuredLaunchResolver,
+  createCodexStructuredLaunchResolver
+} from '../runtime/structured-agent-launch-composition.test-support'
 import { describe, expect, it, vi } from 'vitest'
 import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
-import { createClaudeStructuredLaunchResolver } from '../claude/claude-structured-launch-resolution'
 import { CLAUDE_PLUGIN_DIR_FLAG, type ClaudeCliFlag } from '../claude/claude-cli-flag-support'
-import { createCodexStructuredLaunchResolver } from '../codex/codex-structured-launch-resolution'
 import {
   adapterFor,
   fakeCodex,

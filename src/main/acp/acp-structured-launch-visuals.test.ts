@@ -1,11 +1,8 @@
+import { createAcpStructuredLaunchResolver } from '../runtime/structured-agent-launch-composition.test-support'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionRecord } from '../../shared/agent-session-record'
 import { agentSessionRecordFixture } from '../../shared/agent-session-record.test-fixture'
 import { acpLaunchSpecFor, type AcpLaunchSpec } from './acp-launch-specs'
-import {
-  createAcpStructuredLaunchResolver,
-  type AcpStructuredLaunchResolverDeps
-} from './acp-structured-launch-resolution'
 
 const SKILL = { pluginDir: '/app/plugin', skillsRoot: '/app/plugin/skills' }
 const identity = {
@@ -37,14 +34,14 @@ function resolve(
     version?: string
     inheritedEnv?: NodeJS.ProcessEnv
     launchEnv?: Record<string, string>
-    deps?: Partial<AcpStructuredLaunchResolverDeps>
+    deps?: Partial<Parameters<typeof createAcpStructuredLaunchResolver>[1]>
     spec?: Partial<AcpLaunchSpec>
   } = {}
 ) {
   const spec = { ...acpLaunchSpecFor(agent)!, ...options.spec }
-  const probeVersion = vi.fn<NonNullable<AcpStructuredLaunchResolverDeps['probeVersion']>>(
-    async (_input, supports) => supports(options.version ?? '1.0.46')
-  )
+  const probeVersion = vi.fn<
+    NonNullable<Parameters<typeof createAcpStructuredLaunchResolver>[1]['probeVersion']>
+  >(async (_input, supports) => supports(options.version ?? '1.0.46'))
   const prepareVisuals = vi.fn(async () => (options.visuals === false ? null : { skill: SKILL }))
   const logger = { warn: vi.fn(), error: vi.fn() }
   const launch = createAcpStructuredLaunchResolver(spec, {

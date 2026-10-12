@@ -187,7 +187,7 @@ describe('PR E2E gate contract', () => {
         'src/renderer/src/components/terminal-pane/remote-runtime-pty-transport-test-harness.ts'
       ])
     ).not.toContain('tests/e2e/paired-remote-terminal-materialization-reconnect.spec.ts')
-    expect(selectPrE2eSpecs(['src/main/ipc/pty.ts'])).not.toContain(
+    expect(selectPrE2eSpecs(['src/main/ipc/pty/register-handlers.ts'])).not.toContain(
       'tests/e2e/paired-remote-terminal-materialization-reconnect.spec.ts'
     )
   })
@@ -235,5 +235,27 @@ describe('PR E2E gate contract', () => {
     expect(selectPrE2eSpecs(['src/shared/terminal-unicode-provider.ts'])).toContain(
       'tests/e2e/terminal-ibus-hangul-native.spec.ts'
     )
+  })
+})
+
+describe('Daemon mock modified-only source routing', () => {
+  const helper = 'src/main/daemon/daemon-init-dependency-mocks.ts'
+  const verified = { allowDaemonInitTestSupport: true }
+  it('omits the real D7 route only for the proven unit-support scope', () => {
+    expect(selectPrE2eSpecs([helper])).toContain('tests/e2e/orcad-serve-mode-switch.spec.ts')
+    expect(selectPrE2eSpecs([helper], undefined, verified)).toEqual([])
+    const companion = 'src/main/codex/codex-app-server-connection.test.ts'
+    expect(selectPrE2eSpecs([helper, companion], undefined, verified)).toEqual(
+      selectPrE2eSpecs([companion])
+    )
+  })
+  it.each([
+    { files: [] },
+    { files: [helper, 'src/main/daemon/daemon-init.ts'] },
+    { files: [helper, 'package.json'] },
+    { files: [helper, 'src/main/daemon/unknown-support.ts'] },
+    { files: [helper, helper] }
+  ])('retains existing routes for an uncertain or mixed vector $files', ({ files }) => {
+    expect(selectPrE2eSpecs(files, undefined, verified)).toEqual(selectPrE2eSpecs(files))
   })
 })

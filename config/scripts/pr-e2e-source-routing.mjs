@@ -1,10 +1,13 @@
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
-import { isUnitTestSupportSource } from './pr-code-change-scope.mjs'
+import {
+  DAEMON_INIT_TEST_SUPPORT,
+  isDaemonInitTestSupportChange,
+  isUnitTestSupportSource
+} from './pr-code-change-scope.mjs'
+import { LAYOUT_ORACLE_E2E_SPECS } from './pr-layout-oracle-route.mjs'
 
 const isProductSource = (file) => !/\.test\.tsx?$/.test(file) && !isUnitTestSupportSource(file)
-const isLayoutOracleSource = (file) =>
-  isProductSource(file) && !/\.spec\.ts$|-fixtures?\.ts$/.test(file)
 
 // Why config/patches: the xterm fork owns the helper textarea an input method attaches to, so a
 // patch edit can break composition without touching a file named "ime".
@@ -14,6 +17,10 @@ const NATIVE_IME_PRODUCT_SOURCE =
 /** The harness itself: the session runner, the boundary probes, and the native specs. */
 const NATIVE_IME_HARNESS =
   /^(?:config\/scripts\/focus-nested-wayland-terminal\.sh$|config\/scripts\/(?:run-terminal-ibus-hangul-e2e|terminal-ime-engagement-receipt)\.mjs$|tests\/e2e\/terminal-ime-(?:boundary-probe|byte-reader|engagement-receipt)\.ts$|tests\/e2e\/terminal-(?:ibus-hangul|hangul-terminating-digit|macos-2set-korean)-native\.spec\.ts$)/
+
+/** Managed-SSH harness helpers; every managed-SSH spec runs in one job, so any route may claim them. */
+const MANAGED_SSH_HARNESS =
+  /^tests\/e2e\/helpers\/(?:orcad-managed-workspace|orcad-convert-(?:flow|host)|orcad-template-variant|orcad-upgrade-profile|docker-ssh-host-target)\.ts$/
 
 export const PR_E2E_SOURCE_ROUTES = [
   {
@@ -105,9 +112,7 @@ export const PR_E2E_SOURCE_ROUTES = [
     id: 'ssh.orcad-auto-convert',
     specs: ['tests/e2e/ssh-orcad-auto-convert.spec.ts'],
     matches: (file) =>
-      /^tests\/e2e\/helpers\/(?:orcad-convert-(?:flow|host)|orcad-template-variant|orcad-upgrade-profile)\.ts$/.test(
-        file
-      ) ||
+      MANAGED_SSH_HARNESS.test(file) ||
       (isProductSource(file) &&
         /^src\/main\/(?:ipc\/ssh-host-server-|ssh\/(?:ssh-host-server-|orcad-runtime-conversion|orcad-migration-|orcad-retained-source|orcad-runtime-deployment))/.test(
           file
@@ -144,9 +149,8 @@ export const PR_E2E_SOURCE_ROUTES = [
     id: 'ssh.orcad-browser-drop-owner',
     specs: ['tests/e2e/ssh-orcad-browser-drop-owner.spec.ts'],
     matches: (file) =>
-      /^tests\/e2e\/helpers\/(?:orcad-managed-workspace|orcad-convert-(?:flow|host)|orcad-upgrade-profile|docker-ssh-host-target|browser-split-(?:guest-probes|page-server))\.ts$/.test(
-        file
-      ) ||
+      MANAGED_SSH_HARNESS.test(file) ||
+      /^tests\/e2e\/helpers\/browser-split-(?:guest-probes|page-server)\.ts$/.test(file) ||
       (isProductSource(file) &&
         /^src\/renderer\/src\/(?:lib\/(?:file-preview|workspace-file-drag|worktree-runtime-owner|connection-context)\.ts|components\/(?:right-sidebar\/FileExplorer(?:Row|VirtualRows)\.tsx|browser-pane\/(?:navigate\/use-browser-page-navigation-downloads\.ts|host-guest\/attach-browser-page-webview\.ts)))$/.test(
           file
@@ -156,9 +160,7 @@ export const PR_E2E_SOURCE_ROUTES = [
     id: 'ssh.orcad-open-in-owner',
     specs: ['tests/e2e/ssh-orcad-open-in-owner.spec.ts'],
     matches: (file) =>
-      /^tests\/e2e\/helpers\/(?:orcad-managed-workspace|orcad-convert-(?:flow|host)|orcad-upgrade-profile|docker-ssh-host-target)\.ts$/.test(
-        file
-      ) ||
+      MANAGED_SSH_HARNESS.test(file) ||
       (isProductSource(file) &&
         /^src\/renderer\/src\/(?:lib\/(?:local-path-open-guard|external-editor-open-capability|worktree-runtime-owner)\.ts|components\/(?:sidebar\/(?:WorktreeOpenInMenu|WorktreeContextMenuView)\.tsx|right-sidebar\/(?:FileExplorer(?:Toolbar)?\.tsx|source-control\/listing\/entry-context-menu\.tsx)))$/.test(
           file
@@ -168,9 +170,8 @@ export const PR_E2E_SOURCE_ROUTES = [
     id: 'ssh.orcad-terminal-root-owner',
     specs: ['tests/e2e/ssh-orcad-terminal-root-owner.spec.ts'],
     matches: (file) =>
-      /^tests\/e2e\/helpers\/(?:terminal-workspace-root-link|orcad-managed-workspace|orcad-convert-(?:flow|host)|orcad-upgrade-profile|docker-ssh-host-target)\.ts$/.test(
-        file
-      ) ||
+      MANAGED_SSH_HARNESS.test(file) ||
+      file === 'tests/e2e/helpers/terminal-workspace-root-link.ts' ||
       (isProductSource(file) &&
         /^src\/renderer\/src\/(?:components\/terminal-pane\/terminal-(?:worktree-path-link|file-link-actions|file-link-hit-testing|file-open-routing|link-handlers)\.ts|lib\/(?:workspace-file-host-routing|worktree-owner-route|worktree-operation-route|worktree-operation-catalog-route)\.ts)$/.test(
           file
@@ -180,7 +181,7 @@ export const PR_E2E_SOURCE_ROUTES = [
     id: 'ssh.orcad-idle-exit',
     specs: ['tests/e2e/ssh-orcad-idle-exit.spec.ts'],
     matches: (file) =>
-      /^tests\/e2e\/helpers\/orcad-convert-(?:flow|host)\.ts$/.test(file) ||
+      MANAGED_SSH_HARNESS.test(file) ||
       (isProductSource(file) &&
         /^src\/(?:main\/(?:orcad\/orcad-(?:idle-|managed-idle-)|ssh\/orcad-(?:managed-serving|managed-wake|managed-tunnel|recovery-slot|remote-launch|remote-runtime-control))|shared\/orcad-idle-exit)/.test(
           file
@@ -195,7 +196,8 @@ export const PR_E2E_SOURCE_ROUTES = [
       'tests/e2e/ssh-orcad-vm-provisioned-root.spec.ts'
     ],
     matches: (file) =>
-      /^tests\/e2e\/helpers\/(?:orcad-managed-workspace|orcad-convert-(?:flow|host)|orcad-upgrade-profile|paired-host-terminal|terminal-workspace-root-link)\.ts$/.test(
+      MANAGED_SSH_HARNESS.test(file) ||
+      /^tests\/e2e\/helpers\/(?:paired-host-terminal|terminal-workspace-root-link)\.ts$/.test(
         file
       ) ||
       (isProductSource(file) &&
@@ -380,38 +382,25 @@ export const PR_E2E_SOURCE_ROUTES = [
       /^src\/.*(?:[Cc]lient-?[Hh]osted|browser-host-(?:lease|page|client-page)|browser-client-(?:host|page)|runtime-browser-(?:client-)?page|session-tabs-sync|host-session-snapshot-authority|orca-runtime(?:-browser)?\.ts|\/runtime-(?:status|types)\.ts)/.test(
         file
       )
-  },
-  {
-    // Why: the oracle is the only check that reads every view of the stored layout back. Runtime
-    // matches only the modules that create, move, close, persist or publish layout, not every
-    // session or terminal file, so the orcad build and Docker SSH lane stay off unrelated work.
-    id: 'workspace-layout.oracle',
-    specs: [
-      'tests/e2e/workspace-layout-oracle-headless.spec.ts',
-      'tests/e2e/workspace-layout-oracle.spec.ts'
-    ],
-    matches: (file) =>
-      isLayoutOracleSource(file) &&
-      /^(?:src\/shared\/workspace-layout\/|src\/main\/persistence\/(?:terminal-topology\/|restoring-sessions\/|loading-store\/pty-binding-)|src\/(?:main|renderer\/src)\/runtime\/(?:[^/]+\/)*[^/]*(?:pane-admission|workspace-layout|session-tab|headless-[^/]*tab|layout-client|create-terminal|split-pty-backed-terminal|terminal-split-layout|spawn-placement)[^/]*\.ts$|tests\/e2e\/(?:helpers\/)?(?:workspace-layout-oracle|headless-layout-oracle|terminal-layout-journeys))/.test(
-        file
-      )
-  },
-  {
-    // The window's tab store reaches SSH through the same layout writers, so not the SSH lane.
-    id: 'workspace-layout.oracle-tab-store',
-    specs: [
-      'tests/e2e/workspace-layout-oracle-headless.spec.ts',
-      'tests/e2e/workspace-layout-oracle.spec.ts'
-    ],
-    matches: (file) =>
-      isLayoutOracleSource(file) && file.startsWith('src/renderer/src/store/slices/tabs')
   }
 ]
 
-export function selectPrE2eSpecs(changedPaths, reportRoute = () => undefined) {
-  const specs = new Set(changedPaths.filter((file) => /^tests\/e2e\/.*\.spec\.ts$/.test(file)))
+export function selectPrE2eSpecs(
+  changedPaths,
+  reportRoute = () => undefined,
+  { allowDaemonInitTestSupport = false } = {}
+) {
+  const routePaths = isDaemonInitTestSupportChange(changedPaths, allowDaemonInitTestSupport)
+    ? changedPaths.filter((file) => file !== DAEMON_INIT_TEST_SUPPORT)
+    : changedPaths
+  // The required layout_oracle job owns the oracle specs; running them here too would double the cost.
+  const specs = new Set(
+    changedPaths.filter(
+      (file) => /^tests\/e2e\/.*\.spec\.ts$/.test(file) && !LAYOUT_ORACLE_E2E_SPECS.includes(file)
+    )
+  )
   for (const route of PR_E2E_SOURCE_ROUTES) {
-    const matchedFiles = changedPaths.filter(route.matches)
+    const matchedFiles = routePaths.filter(route.matches)
     if (matchedFiles.length === 0) {
       continue
     }
@@ -432,9 +421,9 @@ export function hasNativeImeSourceChange(changedPaths) {
   ).some((route) => changedPaths.some(route.matches))
 }
 
-export function shouldRunReusablePrE2e(changedPaths) {
+export function shouldRunReusablePrE2e(changedPaths, options = {}) {
   // Native IME has its own workflow.
-  return selectPrE2eSpecs(changedPaths).some(
+  return selectPrE2eSpecs(changedPaths, undefined, options).some(
     (spec) => spec !== 'tests/e2e/terminal-ibus-hangul-native.spec.ts'
   )
 }
@@ -453,14 +442,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     input += chunk
   }
   const changedPaths = input.split(/\r?\n/).filter(Boolean)
+  const options = {
+    allowDaemonInitTestSupport: process.argv.includes('--daemon-init-test-support')
+  }
   if (process.argv.includes('--reusable-workflow')) {
-    process.stdout.write(`${shouldRunReusablePrE2e(changedPaths)}\n`)
+    process.stdout.write(`${shouldRunReusablePrE2e(changedPaths, options)}\n`)
   } else if (process.argv.includes('--wsl-source')) {
     process.stdout.write(`${hasWslSourceChange(changedPaths)}\n`)
   } else if (process.argv.includes('--native-ime-source')) {
     process.stdout.write(`${hasNativeImeSourceChange(changedPaths)}\n`)
   } else {
-    const specs = selectPrE2eSpecs(changedPaths, (message) => console.error(message))
+    const specs = selectPrE2eSpecs(changedPaths, (message) => console.error(message), options)
     process.stdout.write(`${JSON.stringify(specs)}\n`)
   }
 }
