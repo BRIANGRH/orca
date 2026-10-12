@@ -19,7 +19,7 @@ import {
   type WslHostDistro,
   type WslHostStatus
 } from '../../shared/wsl-host-types'
-import { OrcadHostUnsupportedError } from '../ssh/orcad-host-unavailable'
+import { OrcadHostUnsupportedError } from '../orcad/orcad-host-unavailable'
 import type { WslHostDistroCandidate } from './wsl-host-distro-list'
 import { findServerSharingWslOrcad } from './wsl-host-ssh-orcad-conflict'
 import { wslDistroHolderKey } from './wsl-distro-holder-record'
