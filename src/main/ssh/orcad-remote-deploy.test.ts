@@ -1,3 +1,4 @@
+import type * as ExecCommandModule from './ssh-relay-exec-command'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import type * as RecordFile from './orcad-remote-record-file'
 import { tmpdir } from 'node:os'
@@ -5,9 +6,9 @@ import { dirname, join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runProcess } from '@orca/process-host'
 
-vi.mock('./ssh-relay-deploy-helpers', () => ({
-  execCommand: vi.fn(),
-  isUnconfirmedSshCommandTermination: () => false
+vi.mock('./ssh-relay-exec-command', async (importOriginal) => ({
+  ...(await importOriginal<typeof ExecCommandModule>()),
+  execCommand: vi.fn()
 }))
 vi.mock('./ssh-connection-utils', () => ({ shellEscape: (s: string) => `'${s}'` }))
 vi.mock('./ssh-relay-install-lock', () => ({
@@ -31,7 +32,7 @@ vi.mock('./orcad-local-build-hash', () => ({
   computeLocalOrcadBuildHash: () => 'abc123def4567890'
 }))
 
-import { execCommand } from './ssh-relay-deploy-helpers'
+import { execCommand } from './ssh-relay-exec-command'
 import { acquireInstallLock, isRelayInstallLockStale } from './ssh-relay-install-lock'
 import { uploadRelayDirectory } from './ssh-relay-install-transfers'
 import { writeAtomicOrcadRemoteRecord } from './orcad-remote-record-file'
@@ -42,7 +43,7 @@ import {
   abandonInstall,
   finalizeInstall,
   isRemoteInstallComplete
-} from './ssh-relay-versioned-install'
+} from './remote-versioned-install'
 import {
   emptyOrcadActivationRecord,
   withActivatedVersion,
@@ -61,7 +62,7 @@ const mockExec = vi.mocked(execCommand)
 const NEW_VERSION = '0.2.0+bb0100000000'
 const OLD_VERSION = '0.1.0+aa01'
 
-vi.mock('./ssh-relay-versioned-install', async (importOriginal) => ({
+vi.mock('./remote-versioned-install', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   readLocalFullVersion: () => '0.2.0+bb0100000000',
   isRemoteInstallComplete: vi.fn().mockResolvedValue(false),
