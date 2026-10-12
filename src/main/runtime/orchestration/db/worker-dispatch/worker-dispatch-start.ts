@@ -8,6 +8,7 @@ import { insertStartingDispatchContextRow } from '../dispatch-row-writer'
 import { recordedCreatorIdentity, type DispatchCreator } from '../dispatch-depth'
 import { transitionLifecycleWithDb } from '../lifecycle-transition'
 import { taskNotFoundError, taskNotStartableError } from '../../task-dispatch-refusal'
+import { priorTaskDispatchFailures } from '../dispatch-context/dispatch-circuit-breaker'
 
 export function createStartingWorkerDispatch(
   this: OrchestrationDb,
@@ -93,6 +94,14 @@ export function createStartingWorkerDispatch(
       const prior = this.getDispatchContextById(params.retryOf)
       const priorWorker = this.getWorkerDispatch(params.retryOf)
       const latest = this.getDispatchContext(task.id)
+      if (prior?.task_id === task.id && prior.status === 'circuit_broken') {
+        throw taskNotStartableError(
+          this,
+          `Task ${task.id} failed ${prior.failure_count} times in a row, so Orca will not retry it again (last error: ${prior.last_failure ?? 'unknown'}). Fix what keeps it failing, or report the Task as failed.`,
+          task,
+          params.retryOf
+        )
+      }
       // Why: a context-only Dispatch has no worker row, so its settled state lives on the Dispatch row.
       const priorSettled = priorWorker
         ? ['failed', 'stopped', 'abandoned'].includes(priorWorker.state)
@@ -142,6 +151,7 @@ export function createStartingWorkerDispatch(
       launchTokenHash: params.launchTokenHash ?? null,
       depth: this.resolveChildDispatchDepth(params.creator, params.maxDepth),
       retryOfDispatchId: params.retryOf ?? null,
+      priorFailures: priorTaskDispatchFailures(this.db, task.id),
       creatorDispatchId,
       ...recordedCreatorIdentity(params.creator)
     })
