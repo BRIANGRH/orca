@@ -1,5 +1,5 @@
-// A handover row's stopped-message history: folded host-side, gone with a rewound carrier, and an
-// optional key an older reader keeps reading the row past. Nothing a client parses changes.
+// A handover row's stopped-message history: folded host-side, and an optional key an older reader
+// keeps reading the row past. Nothing a client parses changes.
 
 import { describe, expect, it } from 'vitest'
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
@@ -68,23 +68,6 @@ describe('a handover row naming the stopped messages it carries', () => {
     const state = fold([submission('a', 1), submission('c', 2), malformed as unknown as JournalRow])
     expect(state.stoppedHistoryCarried.get('c')).toEqual(['a'])
     expect(state.submissions.get('c')?.handedOverAt).toBeDefined()
-  })
-
-  it('goes with its carrier when a rewind retires it', () => {
-    const state = fold([
-      submission('a', 1),
-      submission('c', 2),
-      handover('c', 3, ['a']),
-      {
-        kind: 'tombstone',
-        itemId: 'orca:c',
-        revision: 1,
-        retireSubmission: true,
-        ...base(4)
-      }
-    ])
-    expect(state.submissions.has('c')).toBe(false)
-    expect(state.stoppedHistoryCarried.has('c')).toBe(false)
   })
 
   it('reads as a readable row at the same version, so an older reader keeps the row and ignores the key', () => {

@@ -27,13 +27,18 @@ import { JournalDerivedTurnScope } from './journal-derived-turn-scope'
 import { removeJournalItem, statedOrDerivedTurnScope, upsertJournalItem } from './journal-item-fold'
 import { journalItemRevisionIsStale } from './journal-item-revision'
 import { observeJournalProviderActivity } from './journal-provider-activity'
-import { isJournalStopOrResumeRow, type JournalRow } from './journal-row-schema'
+import {
+  isJournalStopOrResumeRow,
+  isJournalStoppedMessageAppendRow,
+  type JournalRow
+} from './journal-row-schema'
 import { acceptSubmissionFromProviderItem, applyJournalSubmission } from './journal-submission-fold'
 import { applyJournalDispatchRow } from './journal-dispatch-reducer'
 import { isWriteFailureSubmission } from '../../../shared/structured-agent-session-dispatch-rejection'
 import { projectJournalStopNote } from './journal-stop-note-projection'
 import { retireRewoundJournalSubmission } from './journal-rewind-submission-retirement'
 import { latestAgentSessionContextClearSequence } from '../../../shared/agent-session-context-clear'
+import { foldJournalStoppedMessageAppend } from './journal-stopped-message-appends'
 import {
   createJournalQueuePauseMarks,
   foldJournalQueuePauseMark,
@@ -71,6 +76,8 @@ export type JournalReducerState = {
   queuePauseMarks: JournalQueuePauseMarks
   /** Host-only: each handed-over send's stopped-message history, from its latest `pending` row. */
   stoppedHistoryCarried: Map<string, readonly string[]>
+  /** Host-only: the stopped messages each append not proven refused named, by append id. */
+  stoppedMessageAppends: Map<string, readonly string[]>
 }
 
 export function createJournalReducerState(sessionId: string, epoch: string): JournalReducerState {
@@ -92,7 +99,8 @@ export function createJournalReducerState(sessionId: string, epoch: string): Jou
     derivedTurnScope: new JournalDerivedTurnScope(),
     latestAcceptedTurnSequence: 0,
     queuePauseMarks: createJournalQueuePauseMarks(),
-    stoppedHistoryCarried: new Map()
+    stoppedHistoryCarried: new Map(),
+    stoppedMessageAppends: new Map()
   }
 }
 
@@ -121,6 +129,10 @@ export function applyJournalRow(
       journalRenderItem(itemId, row.revision, row.body, row, statedOrDerivedTurnScope(state, row)),
       row.fence
     )
+    return
+  }
+  if (isJournalStoppedMessageAppendRow(row)) {
+    foldJournalStoppedMessageAppend(state.stoppedMessageAppends, row.stoppedMessageAppend)
     return
   }
   if (isJournalStopOrResumeRow(row)) {

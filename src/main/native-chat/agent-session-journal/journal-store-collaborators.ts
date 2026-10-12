@@ -9,6 +9,7 @@ import type {
 } from '../../../shared/agent-session-journal-types'
 import type { JournalHostDatabase } from './journal-host-database'
 import { JournalContextController } from './journal-context-controller'
+import { JournalStoppedHistory } from './journal-stopped-message-appends'
 import { JournalEpochController } from './journal-epoch-controller'
 import { JournalItemAppender } from './journal-item-appender'
 import { JournalLifecycleBatchAppender } from './journal-lifecycle-batch-appender'
@@ -56,6 +57,7 @@ export type JournalStoreCollaborators = {
   queuedMessages: JournalQueuedMessages
   stopMarks: JournalStopMarks
   context: JournalContextController
+  stoppedHistory: JournalStoppedHistory
   /** Restores the store's state from disk. Owned here because it needs the same
    *  collaborators the constructor just built. */
   restore: () => Promise<void>
@@ -128,6 +130,7 @@ export function createJournalStoreCollaborators(host: JournalStoreHost): Journal
       cards: queuedMessages,
       identity: host.identity
     }),
+    stoppedHistory: new JournalStoppedHistory({ state: host.state, writer: rowWriter }),
     // Behind the stored fact: settles drafts whose consumed submission the loaded journal shows
     // refused (a downgrade wrote no hook), then prunes. Bookkeeping, never failing the open.
     restore: () =>

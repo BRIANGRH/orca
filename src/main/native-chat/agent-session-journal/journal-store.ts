@@ -61,6 +61,7 @@ import {
   journalStopEventRowBuilder
 } from './journal-stop-and-resume-rows'
 import type { AgentJournalEpochReason, JournalStopEvent } from './journal-row-schema'
+import type { JournalStoppedHistory } from './journal-stopped-message-appends'
 import type {
   JournalOperationReceipt,
   JournalRowTransactionHook,
@@ -100,6 +101,8 @@ export class AgentSessionJournal {
   readonly queuedMessages: JournalQueuedMessages
   readonly stopMarks: JournalStopMarks
   readonly context: JournalContextController
+  /** Host-only: what is recorded of stopped messages reaching the agent. */
+  readonly stoppedHistory: JournalStoppedHistory
 
   constructor(options: AgentSessionJournalOptions) {
     this.identity = options.identity
@@ -143,6 +146,7 @@ export class AgentSessionJournal {
     this.stopMarks = collaborators.stopMarks
     this.restore = collaborators.restore
     this.context = collaborators.context
+    this.stoppedHistory = collaborators.stoppedHistory
   }
 
   get epoch(): string {
@@ -253,9 +257,6 @@ export class AgentSessionJournal {
   submissions = (): AgentJournalSubmission[] => [...this.state.submissions.values()]
 
   submission = (clientMessageId: string) => this.state.submissions.get(clientMessageId)
-
-  /** Host-only: what each handed-over send carries as stopped-message history. */
-  stoppedHistoryCarried = () => this.state.stoppedHistoryCarried
 
   pendingSubmissions = (): AgentJournalSubmission[] =>
     this.submissions().filter((entry) => entry.dispatchState === 'pending')

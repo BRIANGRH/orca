@@ -219,7 +219,7 @@ describe('reconcileJournalSubmissionsAgainstHistory', () => {
 
     expect(settled).toEqual([])
     expect(restarted.submission('cm_1')?.dispatchState).toBe('unknown')
-    expect(restarted.stoppedHistoryCarried().get('cm_1')).toEqual(['stopped'])
+    expect(restarted.stoppedHistory.carried().get('cm_1')).toEqual(['stopped'])
   })
 
   it('leaves multi-block text sends unknown because Claude joins them before recording history', async () => {
