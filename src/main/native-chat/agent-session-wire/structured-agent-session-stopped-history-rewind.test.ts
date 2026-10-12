@@ -27,6 +27,7 @@ import {
   hostTestMessage,
   hostTestOperationId
 } from './structured-agent-session-host-test-data'
+import { RigPreparedDispatch } from './structured-agent-session-queued-message-rig-provider.test-fixture'
 
 let rig: QueuedMessageTestRig
 /** What the Codex thread holds, oldest first: each accepted send in the words it received. */
@@ -65,11 +66,12 @@ function text(body: AgentJournalMessageItem): string {
   return body.blocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
 }
 
-/** Each dispatch as `carrier <- [history]`. */
+/** Each dispatch as `carrier <- [history]`, the history as the prepared send carries it. */
 function dispatched(): string[] {
   return rig.dispatch.mock.calls.map(([input]) => {
-    const history = (input.history ?? []).map(text)
-    return history.length > 0 ? `${text(input.body)} <- [${history.join(', ')}]` : text(input.body)
+    const prepared = input.prepared instanceof RigPreparedDispatch ? input.prepared : null
+    expect(input.prepared === undefined || prepared !== null).toBe(true)
+    return prepared ? `${text(input.body)} <- [${prepared.history.join(', ')}]` : text(input.body)
   })
 }
 
