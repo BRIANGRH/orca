@@ -13,6 +13,7 @@ import {
 import { createHash } from 'node:crypto'
 import { isTuiAgentEnabled } from '../../shared/tui-agent-selection'
 import { resolveAgentStartupPlanInputs } from '../../shared/agent-startup-plan-inputs'
+import { agentLaunchQuotingShell } from '../../shared/agent-launch-runtime'
 import { buildExecutionHostAgentStartupPlan } from '../opencode/opencode-model-startup-plan'
 import type { RuntimeTerminalCreate } from '../../shared/runtime-types'
 import type {
@@ -130,13 +131,12 @@ export class OrcaRuntimeWithCreateAgentSession extends OrcaRuntimeWithGetAgentSe
       if (!isTuiAgentEnabled(request.agent, settings.disabledTuiAgents)) {
         throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
       }
-      // The OpenCode model hop keeps main's own quoting and shell rules until C2 deletes it.
-      const launchRuntime = this.resolvePreC1AgentLaunchRuntime(workspace)
+      const launchRuntime = this.resolveAgentLaunchRuntime(workspace)
       const startupArgs = resolveAgentStartupPlanInputs({
         agent: request.agent,
         settings,
         platform: launchRuntime.platform,
-        shell: launchRuntime.quotingShell,
+        shell: agentLaunchQuotingShell(launchRuntime),
         // Why: `workspace.repo` is display metadata and may be a row from another host; the launch
         // shape must match the PTY route this scope already resolved.
         isRemote: Boolean(workspace.connectionId),

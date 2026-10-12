@@ -1,7 +1,11 @@
 import type { SessionOptionValue } from '../../shared/native-chat-session-options'
 import type { TuiAgent } from '../../shared/tui-agent'
 import type { AgentLaunchPreferences } from '../../shared/agent-session-host-authority'
-import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
+import {
+  agentLaunchQuotingShell,
+  remoteExecutionPlatform,
+  type AgentLaunchRuntime
+} from '../../shared/agent-launch-runtime'
 import type { RuntimeStore } from './runtime-store-contract'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
 import type { TerminalCreateOptions } from './runtime-terminal-contracts'
@@ -21,14 +25,17 @@ import { agentStartedTelemetry } from '../agent-launch/agent-started-telemetry'
 import { terminalShellOverrideRefusal } from './terminal-shell-override-host-support'
 import {
   resolveLocalLaunchScopeRuntime,
-  resolveLocalProjectRuntimeForWorktreeId
+  resolveLocalProjectRuntimeForWorktreeId,
+  resolvePlainTerminalPtyOptions
 } from '../local-project-runtime-resolution'
 import {
   agentLaunchPlatformForScope,
   resolveAgentLaunchRuntime
 } from './agent-launch-scope-runtime'
 import { resolveQoderTerminalCommand } from './qoder-terminal-command-resolution'
-import { isWslShellName } from '../../shared/local-windows-terminal-runtime'
+import { resolveStartupShell } from '../../shared/tui-agent-startup-shell'
+import { resolveLocalWindowsAgentStartupShell } from '../../shared/windows-terminal-shell'
+import { resolveWslSessionContext } from '../daemon/wsl-session-context'
 import { isTuiAgentEnabled } from '../../shared/tui-agent-selection'
 
 type AgentTerminalPlanHost = {
@@ -40,9 +47,9 @@ type AgentTerminalPlanHost = {
 }
 
 /**
- * Every host terminal create passes here. An agent create — requested, typed bare, or brought with
- * the caller's own command — gets the workspace's one runtime fact, which its spawn's PTY shell
- * comes from; a plain terminal keeps the spawn's own shell rule.
+ * Every host terminal create passes here. An agent the host plans (requested or typed bare) is
+ * quoted for the workspace's one runtime fact and spawns with it. A command the caller quoted keeps
+ * the spawn's own shell rule unless the caller passes the fact it quoted with.
  */
 export async function resolveAgentTerminalCreateOptions(
   workspace: TerminalWorkspaceLaunchScope,
@@ -77,7 +84,7 @@ export async function resolveAgentTerminalCreateOptions(
     platform: process.platform,
     projectRuntime:
       opts.shellOverride && store
-        ? launchAgent
+        ? plannedAgent || opts.launchRuntime
           ? resolveLocalLaunchScopeRuntime(store, workspace)
           : resolveLocalProjectRuntimeForWorktreeId(store, workspace.id)
         : undefined,
@@ -104,24 +111,31 @@ export async function resolveAgentTerminalCreateOptions(
     return opts
   }
   const runtime =
-    opts.launchRuntime ?? resolveAgentLaunchRuntime(store, workspace, opts.shellOverride)
-  const launch = plannedAgent
-    ? await buildRuntimeAgentTerminalStartupOptions(
-        workspace,
-        opts,
-        plannedAgent,
-        store.getSettings(),
-        runtime,
-        host
-      )
-    : opts
+    opts.launchRuntime ??
+    (plannedAgent
+      ? resolveAgentLaunchRuntime(
+          store,
+          workspace,
+          opts.shellOverride,
+          opts.wslShellRule ?? 'host-legacy'
+        )
+      : undefined)
+  const launch =
+    plannedAgent && runtime
+      ? await buildRuntimeAgentTerminalStartupOptions(
+          workspace,
+          opts,
+          plannedAgent,
+          store.getSettings(),
+          runtime,
+          host
+        )
+      : opts
   if (!launch.launchAgent) {
     return launch
   }
-  return {
-    ...(await resolveQoderLaunchCommand(launch, workspace, runtime)),
-    launchRuntime: runtime
-  }
+  const qoderLaunch = await resolveQoderLaunchCommand(launch, workspace, store, runtime)
+  return runtime ? { ...qoderLaunch, launchRuntime: runtime } : qoderLaunch
 }
 
 async function buildRuntimeAgentTerminalStartupOptions(
@@ -151,7 +165,7 @@ async function buildRuntimeAgentTerminalStartupOptions(
       isRemote,
       ...(opts.agentArgs !== undefined ? { agentArgs: opts.agentArgs } : {}),
       ...(opts.extraAgentArgs ? { extraAgentArgs: opts.extraAgentArgs } : {}),
-      shell: runtime.quotingShell,
+      shell: agentLaunchQuotingShell(runtime),
       sessionOptions: host.toSessionOptions(opts.launchPreferences)
     }),
     prompt: opts.startupPrompt ?? '',
@@ -169,7 +183,7 @@ async function buildRuntimeAgentTerminalStartupOptions(
           host: {
             shellName: nameLocalTypedLineShell({
               isRemote,
-              ...(runtime.ptyShellOverride ? { shellOverride: runtime.ptyShellOverride } : {})
+              ...(runtime.pty.shellOverride ? { shellOverride: runtime.pty.shellOverride } : {})
             }),
             provesAgentInFront: launchHostProvesAgentInFront({
               isRemote,
@@ -208,19 +222,45 @@ async function buildRuntimeAgentTerminalStartupOptions(
   }
 }
 
-/** Qoder ships under two command names; the launch runs whichever its execution host has. */
+/** Qoder ships under two command names; the launch runs whichever the machine that runs it has. */
 function resolveQoderLaunchCommand(
   launch: TerminalCreateOptions,
   workspace: TerminalWorkspaceLaunchScope,
-  runtime: AgentLaunchRuntime
+  store: RuntimeStore,
+  runtime: AgentLaunchRuntime | undefined
 ): Promise<TerminalCreateOptions> {
+  if (launch.launchAgent !== 'qoder') {
+    return Promise.resolve(launch)
+  }
+  if (workspace.connectionId) {
+    return resolveQoderTerminalCommand(launch, {
+      connectionId: workspace.connectionId,
+      shell: resolveStartupShell(remoteExecutionPlatform(workspace.path))
+    })
+  }
+  const settings = store.getSettings()
+  const pty =
+    runtime?.pty ??
+    resolvePlainTerminalPtyOptions(store, settings, workspace.id, launch.shellOverride)
+  // Where the process runs: a `\\wsl$` cwd first, then a WSL shell, as the spawn decides it.
+  const wsl = resolveWslSessionContext({
+    cwd: resolveTerminalStartupCwd(workspace.path, launch.cwd) ?? workspace.path,
+    shellOverride: pty.shellOverride,
+    terminalWindowsWslDistro: pty.terminalWindowsWslDistro
+  })
+  const platform = runtime?.platform ?? agentLaunchPlatformForScope(store, workspace)
   return resolveQoderTerminalCommand(launch, {
-    connectionId: workspace.connectionId,
-    context: workspace.connectionId
-      ? undefined
-      : isWslShellName(runtime.ptyShellOverride)
-        ? { wslDistro: runtime.wslDistro, wslDefault: true }
-        : {},
-    shell: runtime.quotingShell
+    context: wsl ? { wslDistro: wsl.distro } : {},
+    // A caller-quoted command was quoted by the Settings shell, as the window quotes.
+    shell: runtime
+      ? agentLaunchQuotingShell(runtime)
+      : resolveStartupShell(
+          platform,
+          resolveLocalWindowsAgentStartupShell({
+            platform,
+            isRemote: false,
+            terminalWindowsShell: launch.shellOverride ?? settings.terminalWindowsShell
+          })
+        )
   })
 }

@@ -268,6 +268,8 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
           settings,
           platform: wsl ? 'linux' : process.platform,
           isRemote: false,
+          // A yes/no model probe; nothing is typed into a shell.
+          shell: undefined,
           sessionOptions: { model: target.model }
         }),
         cwd: path,

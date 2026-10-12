@@ -138,9 +138,8 @@ describe('runtime pty spawn preflight: requested shell on a local Windows host',
         shellOverride: 'cmd.exe',
         launchRuntime: {
           platform: 'linux',
-          quotingShell: 'posix',
-          ptyShellOverride: 'wsl.exe',
-          wslDistro: 'Ubuntu'
+          remote: false,
+          pty: { shellOverride: 'wsl.exe', terminalWindowsWslDistro: 'Ubuntu' }
         }
       })
     ).resolves.toMatchObject({ shellOverride: 'wsl.exe', terminalWindowsWslDistro: 'Ubuntu' })

@@ -10,7 +10,6 @@ import { getRepoExecutionHostId } from '../../shared/execution-host'
 import type { Repo } from '../../shared/repo-types'
 import type { TuiAgent } from '../../shared/tui-agent'
 import type { RuntimeTerminalWait } from '../../shared/runtime-terminal-contracts'
-import type { WorktreeStartupLaunch } from '../../shared/worktree/launch-types'
 import type {
   WorktreeStartupDraftPaste,
   WorktreeStartupFollowup
@@ -151,11 +150,7 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
     draft: string,
     requestedAgent?: TuiAgent,
     launchSource?: string
-  ): Promise<{
-    agent: TuiAgent
-    startup: WorktreeStartupLaunch
-    draftPaste?: WorktreeStartupDraftPaste
-  } | null> {
+  ): ReturnType<typeof buildWorktreeStartupForDraft> {
     if (!this.store) {
       return null
     }
@@ -165,7 +160,7 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       ...(requestedAgent ? { requestedAgent } : {}),
       ...(launchSource ? { launchSource } : {}),
       settings: this.store.getSettings(),
-      getLaunchPlatform: () => this.getAgentLaunchPlatformForRepo(repo)
+      getLaunchRuntime: () => this.resolveRepoAgentLaunchRuntime(repo)
     })
   }
 
@@ -181,7 +176,7 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       requestKind?: string
       onPromptCarry?: (carried: boolean) => void
     }
-  ): { agent: TuiAgent; startup: WorktreeStartupLaunch; followup?: WorktreeStartupFollowup } {
+  ): ReturnType<typeof buildWorktreeStartupForAgent> {
     if (!this.store) {
       throw new Error('runtime_unavailable')
     }
@@ -196,7 +191,7 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       ...(launchInputs?.requestKind ? { requestKind: launchInputs.requestKind } : {}),
       ...(launchInputs?.onPromptCarry ? { onPromptCarry: launchInputs.onPromptCarry } : {}),
       settings: this.store.getSettings(),
-      getLaunchPlatform: () => this.getAgentLaunchPlatformForRepo(repo),
+      getLaunchRuntime: () => this.resolveRepoAgentLaunchRuntime(repo),
       toSessionOptions: (preferences) => this.toAgentSessionOptions(preferences)
     })
   }

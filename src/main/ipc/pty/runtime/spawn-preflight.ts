@@ -29,9 +29,7 @@ import {
 } from '../../../daemon/pty-session-id'
 import { resolveWslSessionContext } from '../../../daemon/wsl-session-context'
 import { isAgentStatusHooksEnabled } from '../../../agent-hooks/managed-agent-hook-controls'
-import { resolveLocalWindowsTerminalRuntimeOptions } from '../../../../shared/local-windows-terminal-runtime'
-import { resolveLocalProjectRuntimeForWorktreeId } from '../../../local-project-runtime-resolution'
-import { resolveManagedSshHostLoginShell } from '../../../pty/managed-ssh-host-login-shell'
+import { resolvePlainTerminalPtyOptions } from '../../../local-project-runtime-resolution'
 import { resolvePathEnvKey } from '../../../pty/windows-environment-path'
 import { stampWslOrchestrationCompatibilityHost } from '../../../pty/wsl-orca-env'
 import { stampRuntimeSourceEnv } from '../../../../shared/runtime-source-env'
@@ -69,24 +67,14 @@ export async function prepareRuntimePtySpawn(
   // default shell with the request typed into it. Still Windows-only: the override names a
   // Windows shell, and spawn-options applies it under the same platform gate.
   // An agent launch's shell is the one it was quoted for, resolved once by its plan.
-  ctx.terminalRuntimeOptions = args.launchRuntime
-    ? {
-        shellOverride: args.launchRuntime.ptyShellOverride,
-        terminalWindowsWslDistro: args.launchRuntime.wslDistro
-      }
-    : process.platform === 'win32'
-      ? resolveLocalWindowsTerminalRuntimeOptions({
-          requestedShellOverride: args.shellOverride,
-          settings: ctx.deps.getSettings?.(),
-          projectRuntime: resolveLocalProjectRuntimeForWorktreeId(ctx.deps.store, args.worktreeId),
-          fallbackHostShell: process.env.COMSPEC || 'powershell.exe',
-          sshLoginShell: resolveManagedSshHostLoginShell()
-        })
-      : {
-          shellOverride:
-            args.shellOverride ?? (ctx.deps.getSettings?.()?.terminalDefaultShell || undefined),
-          terminalWindowsWslDistro: null
-        }
+  ctx.terminalRuntimeOptions =
+    args.launchRuntime?.pty ??
+    resolvePlainTerminalPtyOptions(
+      ctx.deps.store,
+      ctx.deps.getSettings?.(),
+      args.worktreeId,
+      args.shellOverride
+    )
   ctx.daemonShellOverride = ctx.terminalRuntimeOptions.shellOverride
   ctx.isDaemonHostSpawn =
     !(ctx.provider instanceof LocalPtyProvider) && !routesFreshSpawnsToLocalProvider(ctx.provider)

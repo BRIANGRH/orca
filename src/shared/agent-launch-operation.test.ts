@@ -84,14 +84,14 @@ describe('fields the launch fingerprint deliberately ignores', () => {
       computeAgentLaunchFingerprint(BASE)
     )
   })
-})
 
-// Relied on by C2/C3/C7, which send these through agent.launchReplay.
-it('covers the terminal inputs that change what runs, not the tab title or request kind', () => {
-  const plain = fingerprintOfWirePayload(BASE)
-  expect(fingerprintOfWirePayload({ ...BASE, title: 'Fix', requestKind: 'resume' })).toBe(plain)
-  expect(fingerprintOfWirePayload({ ...BASE, extraAgentArgs: '--verbose' })).not.toBe(plain)
-  expect(fingerprintOfWirePayload({ ...BASE, terminalOnly: true })).not.toBe(plain)
+  // Relied on by C2/C3/C7, which send these through agent.launchReplay.
+  it('ignores the tab title and request kind, but not the inputs that change what runs', () => {
+    const plain = fingerprintOfWirePayload(BASE)
+    expect(fingerprintOfWirePayload({ ...BASE, title: 'Fix', requestKind: 'resume' })).toBe(plain)
+    expect(fingerprintOfWirePayload({ ...BASE, extraAgentArgs: '--verbose' })).not.toBe(plain)
+    expect(fingerprintOfWirePayload({ ...BASE, terminalOnly: true })).not.toBe(plain)
+  })
 })
 
 describe('compatibility with rows written before these fields existed', () => {

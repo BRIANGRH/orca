@@ -10,16 +10,15 @@ vi.mock('../preflight/agent-detection', () => ({
 
 const workspace = { id: 'w', path: '/repo', connectionId: null, repo: null, folderWorkspace: null }
 const host = {
-  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the planner reads only getSettings when the fact is supplied.
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: with a supplied fact, or a caller-quoted non-Qoder command, the planner reads only getSettings.
   store: { getSettings: () => ({}) } as never,
   hostIdentity: 'host-1',
   toSessionOptions: () => undefined
 }
 const CMD: AgentLaunchRuntime = {
   platform: 'win32',
-  quotingShell: 'cmd',
-  ptyShellOverride: 'cmd.exe',
-  wslDistro: null
+  remote: false,
+  pty: { shellOverride: 'cmd.exe', terminalWindowsWslDistro: null }
 }
 const plan = (opts: TerminalCreateOptions, launchRuntime: AgentLaunchRuntime = CMD) =>
   resolveAgentTerminalCreateOptions(workspace, { ...opts, launchRuntime }, host)
@@ -30,13 +29,13 @@ describe('host agent planner', () => {
     const launch = await plan({ startupAgent: 'claude', agentArgs: '--model opus' })
     expect(launch.command).toBe('claude "--model" "opus"')
     expect(launch.launchRuntime).toBe(CMD)
-    // A caller that built its own agent command still gets the host's fact for its spawn.
+    // A command the caller quoted itself keeps the spawn's own shell rule (C4 moves those callers).
     const own = await resolveAgentTerminalCreateOptions(
       workspace,
       { command: 'claude', launchAgent: 'claude' },
       host
     )
-    expect(own.launchRuntime).toMatchObject({ platform: process.platform, wslDistro: null })
+    expect(own.launchRuntime).toBeUndefined()
   })
 
   it('merges extra arguments and reports the request kind (C3 resume, C7 automations)', async () => {
@@ -71,14 +70,24 @@ describe('host agent planner', () => {
 
   it("rewrites Qoder once, probing where the fact's PTY runs (C2 skips the window copy)", async () => {
     vi.mocked(detectAgentCommandsOnHost).mockClear()
-    const launch = await plan(
-      { startupAgent: 'qoder', agentArgs: null },
-      { platform: 'linux', quotingShell: 'posix', ptyShellOverride: 'wsl.exe', wslDistro: 'Ubuntu' }
-    )
-    expect(launch.command).toBe('qoder')
+    const platform = process.platform
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+    try {
+      const launch = await plan(
+        { startupAgent: 'qoder', agentArgs: null },
+        {
+          platform: 'linux',
+          remote: false,
+          pty: { shellOverride: 'wsl.exe', terminalWindowsWslDistro: 'Ubuntu' }
+        }
+      )
+      expect(launch.command).toBe('qoder')
+    } finally {
+      Object.defineProperty(process, 'platform', { configurable: true, value: platform })
+    }
     expect(detectAgentCommandsOnHost).toHaveBeenCalledTimes(1)
     expect(vi.mocked(detectAgentCommandsOnHost).mock.calls[0]?.[1]).toMatchObject({
-      context: { wslDistro: 'Ubuntu', wslDefault: true }
+      context: { wslDistro: 'Ubuntu' }
     })
   })
 })

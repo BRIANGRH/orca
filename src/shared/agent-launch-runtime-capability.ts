@@ -46,7 +46,7 @@ export const AGENT_LAUNCH_CREATE_FOLDER_WORKSPACE_RUNTIME_CAPABILITY =
   'agent.launch.create-folder-workspace.v1' as const
 
 // Host-advertised: reads `title`, `extraAgentArgs`, `requestKind` and `terminalOnly`. An older host
-// drops unknown keys, so a client sends them only on this (`agentLaunchTerminalInputsFor`).
+// drops unknown keys, so a client sends them only to a host that advertises this.
 export const AGENT_LAUNCH_TERMINAL_INPUTS_RUNTIME_CAPABILITY =
   'agent.launch.terminal-inputs.v1' as const
 

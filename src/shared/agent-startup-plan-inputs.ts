@@ -46,8 +46,9 @@ export function resolveAgentStartupPlanInputs(args: {
   agentArgs?: string | null
   /** An automation's saved extras, merged over the resolved args; invalid extras throw. */
   extraAgentArgs?: string
-  /** The shell family the execution host resolved for this PTY; absent derives it from Settings. */
-  shell?: AgentStartupShell
+  /** The shell family this PTY will be; `undefined` reads it from the Settings shell, which is
+   *  right only where the Settings shell is the one the PTY gets. */
+  shell: AgentStartupShell | undefined
   sessionOptions?: Record<string, SessionOptionValue> | undefined
 }): AgentStartupPlanInputs {
   const { agent, settings, platform, isRemote, sessionOptions } = args

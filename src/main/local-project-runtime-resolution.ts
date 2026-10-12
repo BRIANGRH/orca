@@ -4,10 +4,11 @@ import type { Project } from '../shared/project-types'
 import type { Repo } from '../shared/repo-types'
 import type { FolderWorkspace } from '../shared/folder-workspace-types'
 import type { ProjectGroup } from '../shared/project-group-types'
-import { findFolderWorkspaceCandidateRepos } from '../shared/folder-workspace-execution-host'
-import { parseWslUncPath } from '../shared/wsl-paths'
 import {
-  getWorkspaceRuntimePreference,
+  findLocalFolderWorkspaceRuntimeRepo,
+  resolveLocalWorkspaceExecutionRuntime
+} from '../shared/local-workspace-execution-runtime'
+import {
   resolveProjectExecutionRuntime,
   type ProjectExecutionRuntimeResolution
 } from '../shared/project-execution-runtime'
@@ -18,6 +19,9 @@ import {
   hasCachedWslDistros
 } from './wsl'
 import { getRepoIdFromWorktreeId } from '../shared/worktree/id'
+import { resolveLocalPtyRuntimeOptions } from '../shared/agent-launch-runtime'
+import type { LocalWindowsTerminalRuntimeOptions } from '../shared/local-windows-terminal-runtime'
+import { resolveManagedSshHostLoginShell } from './pty/managed-ssh-host-login-shell'
 import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../shared/execution-host'
 
 /**
@@ -57,18 +61,25 @@ function resolveLocalProjectRuntime(
   project: Pick<Project, 'id' | 'localWindowsRuntimePreference'>,
   settings: ReturnType<ResolvableStore['getSettings']> = store.getSettings()
 ): ProjectExecutionRuntimeResolution {
-  const wslAvailable = hasCachedWslAvailability()
-    ? (getCachedWslAvailability() ?? undefined)
-    : undefined
-  const availableWslDistros = hasCachedWslDistros() ? getCachedWslDistros() : null
   return resolveProjectExecutionRuntime({
     appPlatform: process.platform,
     projectId: project.id,
     projectRuntimePreference: project.localWindowsRuntimePreference,
     globalWindowsRuntimeDefault: settings.localWindowsRuntimeDefault,
-    wslAvailable,
-    availableWslDistros
+    ...cachedWslFacts()
   })
+}
+
+function cachedWslFacts(): {
+  wslAvailable?: boolean
+  availableWslDistros: readonly string[] | null
+} {
+  return {
+    wslAvailable: hasCachedWslAvailability()
+      ? (getCachedWslAvailability() ?? undefined)
+      : undefined,
+    availableWslDistros: hasCachedWslDistros() ? getCachedWslDistros() : null
+  }
 }
 
 export function resolveLocalProjectRuntimeForRepo(
@@ -88,8 +99,8 @@ export function resolveLocalProjectRuntimeForRepo(
   return resolveLocalProjectRuntime(store, project)
 }
 
-/** Same choice the renderer makes for a workspace: the project's runtime, else the distro of a
- *  WSL-share path, else the global default. Works for a repo with no project too. */
+/** The window's runtime for a repo workspace (`resolveLocalWorkspaceExecutionRuntime`), read from
+ *  main's store and WSL caches. Works for a repo with no project too. */
 export function resolveLocalWorkspaceRuntime(
   store: ProjectRuntimeResolutionStore,
   repo: Repo,
@@ -101,13 +112,13 @@ export function resolveLocalWorkspaceRuntime(
   ) {
     return undefined
   }
-  const project = store.getProjects().find((entry) => entry.sourceRepoIds.includes(repo.id))
-  return resolveLocalProjectRuntime(store, {
-    id: project?.id ?? repo.id,
-    localWindowsRuntimePreference: getWorkspaceRuntimePreference(
-      project?.localWindowsRuntimePreference,
-      workspacePath
-    )
+  return resolveLocalWorkspaceExecutionRuntime({
+    appPlatform: process.platform,
+    projects: store.getProjects(),
+    settings: store.getSettings(),
+    repoId: repo.id,
+    workspacePath,
+    ...cachedWslFacts()
   })
 }
 
@@ -115,23 +126,6 @@ export type LaunchScopeRuntimeStore = ProjectRuntimeResolutionStore & {
   getRepos?: () => Repo[]
   getFolderWorkspaces?: () => FolderWorkspace[]
   getProjectGroups?: () => ProjectGroup[]
-}
-
-/** The one local repo whose project runs a folder workspace; a folder spanning several has none. */
-export function findFolderWorkspaceRuntimeRepo(
-  store: LaunchScopeRuntimeStore,
-  folderWorkspaceId: string
-): Repo | undefined {
-  const candidates = findFolderWorkspaceCandidateRepos(
-    {
-      folderWorkspaces: store.getFolderWorkspaces?.() ?? [],
-      projectGroups: store.getProjectGroups?.() ?? [],
-      repos: store.getRepos?.() ?? []
-    },
-    folderWorkspaceId
-  )
-  const repo = candidates.length === 1 ? candidates[0] : undefined
-  return repo && getRepoExecutionHostId(repo) === LOCAL_EXECUTION_HOST_ID ? repo : undefined
 }
 
 /** The window's runtime for a workspace (`getLocalProjectExecutionRuntimeContext`), for a launch
@@ -146,25 +140,23 @@ export function resolveLocalLaunchScopeRuntime(
     folderWorkspace: Pick<FolderWorkspace, 'id'> | null
   }
 ): ProjectExecutionRuntimeResolution | undefined {
-  if (scope.connectionId || !canResolveProjectRuntimeForRepo(store)) {
+  if (scope.connectionId) {
     return undefined
   }
   const repo =
     scope.repo ??
     (scope.folderWorkspace
-      ? findFolderWorkspaceRuntimeRepo(store, scope.folderWorkspace.id)
+      ? findLocalFolderWorkspaceRuntimeRepo(
+          {
+            folderWorkspaces: store.getFolderWorkspaces?.() ?? [],
+            projectGroups: store.getProjectGroups?.() ?? [],
+            repos: store.getRepos?.() ?? []
+          },
+          scope.folderWorkspace.id
+        )
       : undefined)
-  if (repo) {
-    return resolveLocalWorkspaceRuntime(store, repo, scope.path)
-  }
-  // A repo-less folder has no project, so only a `\\wsl$` path places it, as in the window.
-  const distro = parseWslUncPath(scope.path)?.distro
-  return distro
-    ? resolveLocalProjectRuntime(store, {
-        id: scope.id,
-        localWindowsRuntimePreference: { kind: 'wsl', distro }
-      })
-    : undefined
+  // A repo-less folder has no runtime: its path alone places it, and its cwd picks its shell.
+  return repo ? resolveLocalWorkspaceRuntime(store, repo, scope.path) : undefined
 }
 
 export function resolveLocalProjectRuntimesForRepos(
@@ -213,4 +205,21 @@ export function resolveLocalProjectRuntimeForWorktreeId(
   }
   const repo = store.getRepo(getRepoIdFromWorktreeId(worktreeId))
   return repo ? resolveLocalProjectRuntimeForRepo(store, repo) : undefined
+}
+
+/** A plain terminal's PTY on this host: the spawn's rule when no agent plan brought its own. */
+export function resolvePlainTerminalPtyOptions(
+  store: ProjectRuntimeResolutionStore | undefined,
+  settings: Parameters<typeof resolveLocalPtyRuntimeOptions>[0]['settings'],
+  worktreeId: string | undefined,
+  requestedShellOverride: string | undefined
+): LocalWindowsTerminalRuntimeOptions {
+  return resolveLocalPtyRuntimeOptions({
+    hostPlatform: process.platform,
+    requestedShellOverride,
+    settings,
+    projectRuntime: resolveLocalProjectRuntimeForWorktreeId(store, worktreeId),
+    fallbackHostShell: process.env.COMSPEC || 'powershell.exe',
+    sshLoginShell: resolveManagedSshHostLoginShell()
+  })
 }

@@ -6,8 +6,8 @@ import {
 } from '../../shared/execution-host'
 import { resolveFolderWorkspaceHost } from '../../shared/folder-workspace-execution-host'
 import type { Repo } from '../../shared/repo-types'
+import { findLocalFolderWorkspaceRuntimeRepo } from '../../shared/local-workspace-execution-runtime'
 import {
-  findFolderWorkspaceRuntimeRepo,
   resolveLocalWorkspaceRuntime,
   type LaunchScopeRuntimeStore
 } from '../local-project-runtime-resolution'
@@ -108,7 +108,7 @@ function resolveFolderWorkspace(
     throw new Error(WORKSPACE_ON_OTHER_RUNTIME)
   }
   const folder = state.folderWorkspaces.find((entry) => entry.id === folderWorkspaceId)
-  const repo = findFolderWorkspaceRuntimeRepo(store, folderWorkspaceId)
+  const repo = findLocalFolderWorkspaceRuntimeRepo(state, folderWorkspaceId)
   return host.kind === 'local' && folder && repo
     ? { kind: 'local', repo, path: folder.folderPath }
     : null

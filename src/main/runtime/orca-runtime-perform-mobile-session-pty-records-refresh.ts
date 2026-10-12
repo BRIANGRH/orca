@@ -197,6 +197,7 @@ export class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh extends OrcaRu
             startupCommandDelivery: agentStartup.startupCommandDelivery,
             launchConfig: agentStartup.launchConfig,
             launchAgent: tab.launchAgent,
+            launchRuntime: agentStartup.launchRuntime,
             targetGroupId,
             ...(automatic ? { refuseSleptWorktree: true } : {})
           })

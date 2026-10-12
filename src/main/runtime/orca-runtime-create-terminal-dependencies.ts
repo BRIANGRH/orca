@@ -41,8 +41,6 @@ export const BACKGROUND_TERMINAL_SPAWN_FLAGS = {
   persistHostSessionBinding: true
 } as const
 
-/** Caller-scoped spawn fields: abort when the caller disconnects; never wake a slept worktree;
- *  the caller's declared fork intent, which the host's gate validates. */
 /** The PTY's shell inputs: a requested shell, and an agent launch's runtime fact. */
 export function spawnShellInputs(
   opts: Pick<TerminalCreateOptions, 'shellOverride' | 'launchRuntime'>
@@ -53,6 +51,8 @@ export function spawnShellInputs(
   }
 }
 
+/** Caller-scoped spawn fields: abort when the caller disconnects; never wake a slept worktree;
+ *  the caller's declared fork intent, which the host's gate validates. */
 export function callerSpawnScope(
   opts: Pick<TerminalCreateOptions, 'signal' | 'refuseSleptWorktree' | 'spawnIntent'>
 ): { signal?: AbortSignal; refuseSleptWorktree?: true; spawnIntent?: SpawnIntent } {

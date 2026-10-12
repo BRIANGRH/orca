@@ -19,10 +19,9 @@ import {
   type LocalProjectGhExecOptions
 } from '../project-runtime-git-options'
 import {
-  agentLaunchPlatformForRepo,
   agentLaunchPlatformForScope,
   resolveAgentLaunchRuntime,
-  resolvePreC1AgentLaunchRuntime
+  resolveRepoAgentLaunchRuntime
 } from './agent-launch-scope-runtime'
 import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
@@ -267,10 +266,6 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
     return Object.keys(localGitOptions).length > 0 ? [localGitOptions] : []
   }
 
-  protected getAgentLaunchPlatformForRepo(repo: Repo): NodeJS.Platform {
-    return agentLaunchPlatformForRepo(this.requireStore(), repo)
-  }
-
   protected getAgentLaunchPlatformForWorkspace(
     scope: TerminalWorkspaceLaunchScope
   ): NodeJS.Platform {
@@ -281,12 +276,17 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
     scope: TerminalWorkspaceLaunchScope,
     requestedShellOverride?: string
   ): AgentLaunchRuntime {
-    return resolveAgentLaunchRuntime(this.requireStore(), scope, requestedShellOverride)
+    return resolveAgentLaunchRuntime(
+      this.requireStore(),
+      scope,
+      requestedShellOverride,
+      'host-legacy'
+    )
   }
 
-  protected resolvePreC1AgentLaunchRuntime(
-    scope: TerminalWorkspaceLaunchScope
-  ): AgentLaunchRuntime {
-    return resolvePreC1AgentLaunchRuntime(this.requireStore(), scope)
+  protected resolveRepoAgentLaunchRuntime(
+    repo: Repo
+  ): ReturnType<typeof resolveRepoAgentLaunchRuntime> {
+    return resolveRepoAgentLaunchRuntime(this.requireStore(), repo)
   }
 }

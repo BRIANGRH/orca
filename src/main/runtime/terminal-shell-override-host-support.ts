@@ -58,10 +58,20 @@ function projectRuntimeShellConflict(
   if (runsInWsl === isWslShellName(shellOverride)) {
     return null
   }
+  // A workspace with no saved runtime of its own follows the default, so name that.
+  const where = runsInWsl ? 'in WSL' : 'on the Windows host'
+  const runs =
+    projectRuntime.runtime.reason === 'global-default'
+      ? `This workspace runs its terminals ${where}, the default in Settings > Project Runtime`
+      : `This workspace's project runs its terminals ${where}`
+  const change =
+    projectRuntime.runtime.reason === 'global-default'
+      ? 'that default'
+      : "the project's execution runtime"
   return new Error(
     runsInWsl
-      ? `This workspace's project runs its terminals in WSL, so --shell ${shellOverride} cannot be applied. No terminal was created. Use --shell wsl.exe, or change the project's execution runtime.`
-      : `This workspace's project runs its terminals on the Windows host, so --shell ${shellOverride} cannot be applied. No terminal was created. Change the project's execution runtime to WSL, or pass a Windows shell.`
+      ? `${runs}, so --shell ${shellOverride} cannot be applied. No terminal was created. Use --shell wsl.exe, or change ${change}.`
+      : `${runs}, so --shell ${shellOverride} cannot be applied. No terminal was created. Change ${change} to WSL, or pass a Windows shell.`
   )
 }
 

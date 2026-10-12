@@ -12,6 +12,7 @@ import type {
 import { canonicalizeAgentSessionIdentity } from './agent-session-claim-identity'
 import { isTuiAgentEnabled } from '../../shared/tui-agent-selection'
 import { buildAgentResumeStartupPlan } from '../../shared/tui-agent-startup'
+import { agentLaunchQuotingShell } from '../../shared/agent-launch-runtime'
 import { OrchestrationError } from './orchestration/orchestration-error'
 import {
   resolveTuiAgentLaunchArgs,
@@ -125,7 +126,8 @@ export class OrcaRuntimeWithGetAgentSessionExecutionNamespace extends OrcaRuntim
       throw new Error('Selected agent is disabled. Choose an enabled agent before resuming.')
     }
     const launchRuntime = this.resolveAgentLaunchRuntime(workspace)
-    const { platform, quotingShell: shell } = launchRuntime
+    const { platform } = launchRuntime
+    const shell = agentLaunchQuotingShell(launchRuntime)
     // Why: `workspace.repo` is display metadata and may be a row from another host; the launch
     // shape must match the PTY route this scope already resolved.
     const isRemote = Boolean(workspace.connectionId)

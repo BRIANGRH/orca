@@ -1,4 +1,5 @@
 import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
+import type { WslShellRule } from './agent-launch-scope-runtime'
 import type { SpawnIntent } from '../../shared/host-spawn-admission'
 import type { ParsedAgentStatusPayload } from '../../shared/agent-status-types'
 import type {
@@ -78,8 +79,11 @@ export type TerminalCreateOptions = {
   /** Launch-convergence parity: a promptless Codex waits for the shell, as window launches do.
    *  Absent is the host's no-wait. Dies when one rule is chosen. */
   codexNoPromptShellWait?: boolean
-  /** Main-internal: the runtime fact this agent launch was planned for; its spawn takes the PTY
-   *  shell from it. Set by `resolveAgentTerminalCreateOptions`, never by a client. */
+  /** Launch-convergence parity: absent is `host-legacy`, today's host WSL-shell outcome. Dies in
+   *  C8 (`WslShellRule`). */
+  wslShellRule?: WslShellRule
+  /** Main-internal: the runtime fact this agent's command was quoted for; its spawn takes the PTY
+   *  shell from it. Set by the host planner or a host caller that quoted with it, never a client. */
   launchRuntime?: AgentLaunchRuntime
   launchPreferences?: AgentLaunchPreferences
   terminalKittyKeyboardProtocol?: boolean
