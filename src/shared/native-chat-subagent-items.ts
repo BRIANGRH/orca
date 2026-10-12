@@ -34,17 +34,14 @@ export function subagentEntryOf(
   block: NativeChatSubagentBlock,
   label = block.label
 ): NativeChatSubagentEntry {
-  const entry: NativeChatSubagentEntry = { id: block.id, label, state: block.state }
-  if (block.tokens !== undefined) {
-    entry.tokens = block.tokens
+  return {
+    id: block.id,
+    label,
+    state: block.state,
+    ...(block.tokens !== undefined ? { tokens: block.tokens } : {}),
+    ...(block.startedAt !== undefined ? { startedAt: block.startedAt } : {}),
+    ...(block.settledAt !== undefined ? { settledAt: block.settledAt } : {})
   }
-  if (block.startedAt !== undefined) {
-    entry.startedAt = block.startedAt
-  }
-  if (block.settledAt !== undefined) {
-    entry.settledAt = block.settledAt
-  }
-  return entry
 }
 
 /** The subagents a block names: an older host's group row lists them, a subagent's own row is one. */
