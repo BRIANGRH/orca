@@ -39,6 +39,7 @@ import {
 import type { MobileNativeChatSendErrorReporter } from './use-mobile-native-chat-send-error'
 import { useMobileStructuredQueuedMessageControls } from './use-mobile-structured-queued-message-controls'
 import { useMobileStructuredBackgroundTasks } from './use-mobile-structured-background-tasks'
+import { useMobileStructuredSends } from './use-mobile-structured-sends'
 
 export function useMobileStructuredAgentSession(args: {
   client: RpcClient | null
@@ -112,18 +113,6 @@ export function useMobileStructuredAgentSession(args: {
     [conversationCommands, invokeStructuredOption, optionSnapshot, setStructuredOption]
   )
 
-  const sendWithOutcome = useMobileStructuredSendWithOutcome({
-    agent,
-    client,
-    sessionId,
-    enabled,
-    queueCapable,
-    commandsWait,
-    stateRef,
-    commandPending: commandPendingRef,
-    controller: sendController,
-    onSendError
-  })
   const { groupedDraft, respondPermission, respondQuestion } = useMobileStructuredPromptResponses({
     stateRef,
     sessionKey,
@@ -141,13 +130,17 @@ export function useMobileStructuredAgentSession(args: {
       }),
     [agent, state.items]
   )
+  const sends = useMobileStructuredSends({
+    sessionKey,
+    submissions: state.submissions,
+    queuedMessages,
+    onSendError
+  })
   const messages = useMemo(
-    // Off: the phone hands a rejected message back to its composer, so a row would show it twice.
+    // A message the host recorded and then rejected stays where it was sent, as not sent.
     () =>
-      projectStructuredAgentSessionMessages(transcriptItems, [], state.submissions, {
-        rejectedInPlace: false
-      }),
-    [transcriptItems, state.submissions]
+      projectStructuredAgentSessionMessages(transcriptItems, sends.optimistic, state.submissions),
+    [transcriptItems, sends.optimistic, state.submissions]
   )
   const turnId = runningStructuredAgentSessionTurnId(state)
   const turnTiming = useMobileStructuredAgentTurnTiming(
@@ -179,6 +172,21 @@ export function useMobileStructuredAgentSession(args: {
       stopPressed: stopPress.pressed
     }) === 'stopping'
   const stopRequestInFlight = isWorking && stopPress.pressed
+  const sendWithOutcome = useMobileStructuredSendWithOutcome({
+    agent,
+    client,
+    sessionId,
+    enabled,
+    queueCapable,
+    commandsWait,
+    stateRef,
+    stopping,
+    accept: sends.accept,
+    hold: sends.hold,
+    commandPending: commandPendingRef,
+    controller: sendController,
+    onSendError
+  })
   const turnIndicator = useMemo(
     () => ({
       thinking,
@@ -259,6 +267,7 @@ export function useMobileStructuredAgentSession(args: {
   return {
     ...options,
     visualSource,
+    imagePreviewsByMessageId: sends.imagePreviewsByMessageId,
     session: {
       messages,
       status,

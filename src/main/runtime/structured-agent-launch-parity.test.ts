@@ -156,7 +156,7 @@ type Agent = (typeof AGENTS)[number]
 /** What each fake binary prints for `--version`: a release every launch gate accepts. */
 const VERSIONS: Record<Agent, string> = {
   claude: '2.1.120 (Claude Code)',
-  codex: 'codex-cli 0.130.0',
+  codex: 'codex-cli 0.136.0',
   grok: '1.0.50',
   opencode: '2.0.20',
   omp: '17.1.0',

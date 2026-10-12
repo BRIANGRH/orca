@@ -4065,7 +4065,12 @@
             "ariaLabel": "{{value0}} chats disponibles para reanudar",
             "tooltip": "Abrir chats interrumpidos disponibles para reanudar",
             "resumingProgressLabel": "Reanudando chats {{value0}}/{{value1}}",
-            "resumingProgressAria": "Reanudando chats, {{value0}} de {{value1}} listos. Haz clic para ver los detalles."
+            "resumingProgressAria": "Reanudando chats, {{value0}} de {{value1}} listos. Haz clic para ver los detalles.",
+            "resumedLabelOne": "1 chat reanudado",
+            "resumedLabel": "{{value0}} chats reanudados",
+            "resumedAriaOne": "1 chat reanudado. Haz clic para verlo.",
+            "resumedAria": "{{value0}} chats reanudados. Haz clic para verlos.",
+            "resumedTooltip": "Chats que Orca reanudó tras el reinicio. Haz clic para verlos."
           },
           "RuntimeHostStatusRow": {
             "previous_connection_closed": "La conexión anterior cerrada.",
@@ -17749,6 +17754,7 @@
         "couldNotStart": "{{agent}} no pudo iniciarse.",
         "editSavedArguments": "Edítalos en Ajustes > Agentes > Argumentos.",
         "couldNotRestart": "{{agent}} no pudo reiniciarse.",
+        "codexCliTooOld": "Codex {{installedVersion}} es demasiado antiguo para los chats. Actualiza a {{minimumVersion}} o una versión posterior.",
         "notSignedIn": "{{agent}} no ha iniciado sesión.",
         "claudeSystemNotSignedIn": "Claude no ha iniciado sesión. Ejecuta `{{loginCommand}}` o elige una cuenta en los ajustes de Cuentas de Claude.",
         "claudeManagedNotSignedIn": "Esta cuenta de Claude no ha iniciado sesión. Vuelve a iniciar sesión en la configuración de Cuentas de Claude.",
@@ -17772,8 +17778,8 @@
         "chooseClaudeAccountThenSend": "Elija o agregue una en la configuración de Cuentas de Claude y vuelva a enviar su mensaje.",
         "providerExitedRow": "{{agent}} se detuvo mientras esta respuesta estaba en curso. Puede continuar en esta conversación.",
         "providerExitedRejection": "{{agent}} se detuvo antes de que se enviara este mensaje.",
-        "providerRejected": "El proveedor no aceptó este mensaje.",
-        "providerRejectedQuoted": "El proveedor no aceptó este mensaje: {{detail}}.",
+        "providerRejected": "{{agent}} no aceptó este mensaje.",
+        "providerRejectedQuoted": "{{agent}} no aceptó este mensaje: {{detail}}.",
         "attachmentEmpty": "Una imagen de este mensaje está vacía, así que el mensaje no se envió.",
         "attachmentTooLarge": "Una imagen de este mensaje es demasiado grande, así que el mensaje no se envió.",
         "attachmentLargerThan": "Una imagen de este mensaje supera los {{size}} MB, así que el mensaje no se envió.",
@@ -18102,8 +18108,11 @@
       },
       "transcriptLabel": "Conversación",
       "toggle": {
-        "showTerminal": "Mostrar terminal",
-        "showChat": "Mostrar vista de chat"
+        "showTerminal": "Mostrar terminal"
+      },
+      "resumeInNewChat": {
+        "notSavedYet": "{{agent}} aún no ha guardado esta conversación. Inténtalo de nuevo cuando responda.",
+        "cannotResume": "Esta conversación de {{agent}} no se puede reanudar en un chat nativo."
       },
       "state": {
         "loading": {
@@ -18354,6 +18363,8 @@
         "subtitle": "Los archivos se añaden a tu mensaje como rutas que el agente puede leer."
       },
       "copyCode": "Copiar código",
+      "wrapLines": "Ajustar líneas",
+      "disableLineWrap": "Desactivar ajuste de línea",
       "context": {
         "unavailable": "El uso del contexto aún no se conoce. Estará disponible cuando el agente vuelva a responder.",
         "summary": "Contexto: {{used}} / {{window}} tokens ({{percent}} %), estimado a partir de la última respuesta.",
