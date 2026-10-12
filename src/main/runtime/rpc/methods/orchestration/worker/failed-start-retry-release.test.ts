@@ -111,6 +111,20 @@ describe('retrying a failed worker-start', () => {
     expect(h.db.getWorkerTerminalArchive(failed.dispatchId)).toBeTruthy()
   })
 
+  it('also releases a worker that ran and reported its own failure', async () => {
+    h.setup()
+    giveRetryItsOwnTerminal()
+    const ran = await h.startSettledWorker('failed')
+    vi.spyOn(h.runtime, 'waitForTerminal').mockResolvedValue(BLOCKED_WAIT)
+
+    await retry(ran)
+
+    await vi.waitFor(() =>
+      expect(h.db.getWorkerTerminalResourceByOwner(ran.dispatchId)?.release_state).toBe('released')
+    )
+    expect(h.runtime.closeTerminal).toHaveBeenCalledWith('term_worker')
+  })
+
   it('keeps a pane the user typed into', async () => {
     h.setup()
     const failed = await failFirstStart()
@@ -170,9 +184,11 @@ describe('retrying a failed worker-start', () => {
       failure_count: 3
     })
     await expect(retry({ taskId: first.taskId, dispatchId: third })).rejects.toThrow(
-      /failed 3 times in a row, so Orca will not retry it again/
+      /failed 3 times, so Orca will not retry it again/
     )
     expect(h.runtime.createTerminal).toHaveBeenCalledTimes(3)
+    // The refused retry replaced nothing, so the last attempt's pane stays for the user.
+    expect(h.db.getWorkerTerminalResourceByOwner(third)?.release_state).toBe('not_requested')
   })
 })
 

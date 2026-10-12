@@ -50,7 +50,7 @@ describe('failed worker starts and the circuit breaker', () => {
     expect(db.getTask(taskId)?.status).toBe('failed')
   })
 
-  it('trips on the third consecutive failed start and refuses a fourth retry', () => {
+  it('trips on the third failed start and refuses a fourth retry', () => {
     const taskId = newTask()
     const [, , third] = failedStarts(taskId, 3)
 
@@ -69,8 +69,11 @@ describe('failed worker starts and the circuit breaker', () => {
     }
     expect(refusal).toMatchObject({
       code: 'task_not_startable',
-      message: `Task ${taskId} failed 3 times in a row, so Orca will not retry it again (last error: ${BLOCKED}). Fix what keeps it failing, or report the Task as failed.`,
-      data: { taskId, status: 'failed', retryOf: third }
+      message: `Task ${taskId} failed 3 times, so Orca will not retry it again (last error: ${BLOCKED}). Report the failure to the user instead of retrying.`,
+      data: { taskId, status: 'failed', retryOf: third, failureCount: 3 }
+    })
+    expect(refusal).toMatchObject({
+      data: { nextSteps: [expect.stringMatching(/^Do not retry this Task/), expect.any(String)] }
     })
     expect(db.getTask(taskId)?.status).toBe('failed')
   })
@@ -114,6 +117,18 @@ describe('failed worker starts and the circuit breaker', () => {
       status: 'circuit_broken',
       last_failure: 'broke on X'
     })
+    expect(
+      db.settleWorkerReport({ taskId, dispatchId: third, outcome: 'failed', result: 'broke on X' })
+    ).toEqual({ action: 'settled', outcome: 'failed', duplicate: true })
     expect(() => start(taskId, third)).toThrow(/will not retry it again/)
+  })
+
+  it('starts a fresh count for a new start that is not a retry', () => {
+    const taskId = newTask()
+    const [failed] = failedStarts(taskId, 1)
+    db.transitionLifecycle({ entity: 'task', id: taskId, from: 'failed', to: 'ready' })
+
+    expect(db.getDispatchContextById(failed)?.failure_count).toBe(1)
+    expect(db.getDispatchContextById(start(taskId))?.failure_count).toBe(0)
   })
 })

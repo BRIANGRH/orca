@@ -8,7 +8,6 @@ import { insertStartingDispatchContextRow } from '../dispatch-row-writer'
 import { recordedCreatorIdentity, type DispatchCreator } from '../dispatch-depth'
 import { transitionLifecycleWithDb } from '../lifecycle-transition'
 import { taskNotFoundError, taskNotStartableError } from '../../task-dispatch-refusal'
-import { priorTaskDispatchFailures } from '../dispatch-context/dispatch-circuit-breaker'
 
 export function createStartingWorkerDispatch(
   this: OrchestrationDb,
@@ -90,6 +89,7 @@ export function createStartingWorkerDispatch(
       const taskId = params.taskId ?? ''
       throw taskNotFoundError(`Task ${taskId} was not found.`, { taskId })
     }
+    let priorFailures = 0
     if (params.retryOf) {
       const prior = this.getDispatchContextById(params.retryOf)
       const priorWorker = this.getWorkerDispatch(params.retryOf)
@@ -97,9 +97,10 @@ export function createStartingWorkerDispatch(
       if (prior?.task_id === task.id && prior.status === 'circuit_broken') {
         throw taskNotStartableError(
           this,
-          `Task ${task.id} failed ${prior.failure_count} times in a row, so Orca will not retry it again (last error: ${prior.last_failure ?? 'unknown'}). Fix what keeps it failing, or report the Task as failed.`,
+          `Task ${task.id} failed ${prior.failure_count} times, so Orca will not retry it again (last error: ${prior.last_failure ?? 'unknown'}). Report the failure to the user instead of retrying.`,
           task,
-          params.retryOf
+          params.retryOf,
+          prior.failure_count
         )
       }
       // Why: a context-only Dispatch has no worker row, so its settled state lives on the Dispatch row.
@@ -120,6 +121,8 @@ export function createStartingWorkerDispatch(
           params.retryOf
         )
       }
+      // Only a retry chain inherits failures; a fresh start after a worker exit keeps its own count.
+      priorFailures = prior.failure_count
     } else if (task.status !== 'ready') {
       throw taskNotStartableError(
         this,
@@ -151,7 +154,7 @@ export function createStartingWorkerDispatch(
       launchTokenHash: params.launchTokenHash ?? null,
       depth: this.resolveChildDispatchDepth(params.creator, params.maxDepth),
       retryOfDispatchId: params.retryOf ?? null,
-      priorFailures: priorTaskDispatchFailures(this.db, task.id),
+      priorFailures,
       creatorDispatchId,
       ...recordedCreatorIdentity(params.creator)
     })

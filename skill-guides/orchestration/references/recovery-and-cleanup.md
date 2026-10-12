@@ -118,10 +118,11 @@ ORCA orchestration worker-start --task <task_id> --retry-of <dispatch_id> --work
 ```
 
 After three consecutive failures for one Task, its dispatch context
-circuit-breaks and the Task is failed. A `worker-start` that failed counts; a
-worker's own `failed` report does not. `--retry-of` a circuit-broken Dispatch is
-refused with `task_not_startable`: report the Task as failed instead. Do not
-route around that boundary with a new Run or an unrelated Dispatch.
+circuit-breaks and the Task is failed. Failed `worker-start` attempts count
+across `--retry-of`; a worker's own `failed` report does not. `--retry-of` a
+circuit-broken Dispatch is refused with `task_not_startable`: report the failure
+to the user instead. Do not route around that boundary with a new Run, Task, or
+unrelated Dispatch.
 
 For `outcome_unknown`, inspect first, then make an explicit choice:
 

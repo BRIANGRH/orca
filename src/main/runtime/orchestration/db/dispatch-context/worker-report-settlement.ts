@@ -103,9 +103,11 @@ export function settleWorkerReportInTransaction(
     dispatch.last_failure === AGENT_PROMPT_STALLED_ERROR &&
     task.status === 'failed'
   const reportingWorker = this.getWorkerDispatch(params.dispatchId)
+  // A tripped breaker is a failed Dispatch, so a repeated failed report is still a duplicate.
+  const settledDispatchStatus = dispatch.status === 'circuit_broken' ? 'failed' : dispatch.status
   if (
     !settledByUnobservedPrompt &&
-    dispatch.status === expectedDispatchStatus &&
+    settledDispatchStatus === expectedDispatchStatus &&
     task.status === expectedTaskStatus
   ) {
     recordAcceptedReportFact(this, params)

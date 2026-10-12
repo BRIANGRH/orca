@@ -10,7 +10,6 @@ import type { OrchestrationDb } from '../orchestration-db'
 import { transitionLifecycleWithDb } from '../lifecycle-transition'
 import { taskNotFoundError, taskNotStartableError } from '../../task-dispatch-refusal'
 import { dispatchAssigneeOrcaSessionId } from '../../dispatch-assignee-orca-session-id'
-import { priorTaskDispatchFailures } from './dispatch-circuit-breaker'
 
 export function createDispatchContext(
   this: OrchestrationDb,
@@ -49,7 +48,11 @@ export function createDispatchContext(
     )
   }
 
-  const priorFailures = priorTaskDispatchFailures(this.db, taskId)
+  // Carry forward failure_count so the circuit breaker accumulates across retries for the same task.
+  const prior = this.db
+    .prepare('SELECT MAX(failure_count) as max_failures FROM dispatch_contexts WHERE task_id = ?')
+    .get(taskId) as { max_failures: number | null } | undefined
+  const priorFailures = prior?.max_failures ?? 0
 
   const paneSuffix =
     assigneePaneKey && parsePaneKey(assigneePaneKey) ? paneKeyMatchSuffix(assigneePaneKey) : null
