@@ -13,6 +13,12 @@ import {
 import { serveSignalExitError } from './serve-signal-exit-diagnostic'
 import { waitForMacBundleVersion } from './mac-app-update-bundle'
 import {
+  mayRespawn,
+  supervisedStopSignal,
+  trackServeChild,
+  untrackServeChild
+} from './serve-supervised-stop'
+import {
   decideAfterServeChildExit,
   type InstallRequestedHandoff,
   type ServeReadiness
@@ -41,6 +47,9 @@ export async function resumeInterruptedServeUpdate(
     args.handoffPath,
     args.handoff
   )
+  if (!(await mayRespawn())) {
+    return 0
+  }
   const child = args.spawnChild(args.executable, args.childArgs, args.spawnOptions)
   return superviseForegroundServe({ ...args, child, expectedHandoff })
 }
@@ -50,8 +59,13 @@ async function awaitInstalledHandoff(
   handoffPath: string,
   handoff: InstallRequestedHandoff
 ): Promise<InstallRequestedHandoff | null> {
-  if (await waitForMacBundleVersion(executable, handoff.targetVersion)) {
+  const stop = supervisedStopSignal()
+  if (await waitForMacBundleVersion(executable, handoff.targetVersion, undefined, stop)) {
     return handoff
+  }
+  if (stop.aborted) {
+    // A stop is not a failed update: the next start resumes this handoff.
+    return null
   }
   await recordServeUpdateHandoffFailure(
     handoffPath,
@@ -107,6 +121,9 @@ export async function superviseForegroundServe(
           args.handoffPath,
           decision.handoff
         )
+        if (!(await mayRespawn())) {
+          return 0
+        }
         child = args.spawnChild(args.executable, args.childArgs, args.spawnOptions)
     }
   }
@@ -168,6 +185,7 @@ function waitForForegroundChild(
       }
       forceKillTimer ??= setTimeout(() => child.kill('SIGKILL'), SERVE_CHILD_FORCE_KILL_GRACE_MS)
     }
+    const tracked = { pid: child.pid ?? null, stop: () => forwardSignal('SIGTERM') }
     const handleMessage = (value: unknown): void => {
       const message = parseServeSupervisorMessage(value)
       if (!message || !expected || readiness !== 'pending') {
@@ -195,6 +213,7 @@ function waitForForegroundChild(
       })
     }
     const cleanup = (): void => {
+      untrackServeChild(tracked)
       process.off('SIGINT', forwardSignal)
       process.off('SIGTERM', forwardSignal)
       if (forwardsHangup) {
@@ -218,6 +237,7 @@ function waitForForegroundChild(
     if (typeof child.on === 'function') {
       child.on('message', handleMessage)
     }
+    trackServeChild(tracked)
     if (expected) {
       readyTimer = setTimeout(() => {
         rejectReplacement(

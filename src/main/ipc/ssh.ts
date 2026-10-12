@@ -12,17 +12,6 @@ import {
   setSshTargetRegistryStore
 } from '../ssh/ssh-target-registry'
 
-// Why re-exported: the registry moved to ../ssh/ssh-target-registry so the runtime can
-// read it without pulling ipcMain in, but many existing importers reference these from
-// here. Re-exporting keeps them working without a repo-wide rename.
-export {
-  connectRegisteredSshTarget,
-  getActiveMultiplexer,
-  getRegisteredSshState,
-  getSshConnectionManager,
-  listRegisteredRemovedSshTargetLabels,
-  listRegisteredSshTargets
-} from '../ssh/ssh-target-registry'
 import { registerSshBrowseHandler } from './ssh-browse'
 import { registerCredentialHandler } from './ssh-passphrase'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
@@ -79,6 +68,7 @@ const SSH_IPC_CHANNELS = [
   'ssh:getState',
   'ssh:needsPassphrasePrompt',
   'ssh:testConnection',
+  'ssh:endOldRelayTerminals',
   'ssh:addPortForward',
   'ssh:updatePortForward',
   'ssh:removePortForward',

@@ -1,7 +1,7 @@
 import React from 'react'
 import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'
-import { getCodeBlockLanguageLabel } from '@/components/editor/rich-markdown-code-block-languages'
+import { getCodeFenceLanguageLabel } from './code-fence-language-label'
 import { NativeChatCopyButton } from './NativeChatCopyButton'
 import { NativeChatHighlightedCode } from './NativeChatHighlightedCode'
 
@@ -25,7 +25,7 @@ export function NativeChatCodeBlock({
             data-code-language={language}
             className="min-w-0 font-sans text-xs text-chat-foreground-faint"
           >
-            <span className="truncate">{getCodeBlockLanguageLabel(language)}</span>
+            <span className="truncate">{getCodeFenceLanguageLabel(language)}</span>
           </span>
           {code ? (
             <NativeChatCopyButton
@@ -39,7 +39,7 @@ export function NativeChatCodeBlock({
       <pre
         data-native-chat-code-content
         className={cn(
-          'scrollbar-sleek m-0 max-w-full overflow-x-auto font-mono text-[12px] text-chat-code-foreground',
+          'scrollbar-sleek m-0 max-w-full overflow-x-auto font-mono text-chat-code text-chat-code-foreground',
           language ? 'px-3.5 pt-0.5 pb-3' : 'p-3 pr-10'
         )}
       >
