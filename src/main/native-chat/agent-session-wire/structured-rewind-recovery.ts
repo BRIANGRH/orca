@@ -5,7 +5,6 @@ import {
 import { isDeepStrictEqual } from 'node:util'
 import {
   agentJournalItemKey,
-  agentJournalSubmissionKey,
   parseAgentJournalItemKey
 } from '../../../shared/agent-session-journal-item-key'
 import type { AgentSessionRewindRecord } from '../../../shared/agent-session-rewind'
@@ -180,21 +179,11 @@ export async function recoverStructuredRewind(
   }
   // A crash after the journal transaction must settle its existing epoch, not replace it twice.
   const alreadyReplaced = journal.cursor().epoch !== rewind.expectedEpoch
-  // A restated accepted send's bubble is its submission's; the retained row names its provider item.
-  const providerIds = new Map(
-    journal
-      .submissions()
-      .flatMap(({ clientMessageId, dispatchState, providerItemId }) =>
-        dispatchState === 'accepted' && providerItemId
-          ? [[agentJournalSubmissionKey(clientMessageId), providerItemId] as const]
-          : []
-      )
-  )
   if (
     alreadyReplaced &&
     !isDeepStrictEqual(
       journal.snapshot().items.map(({ itemId }) => ({
-        itemId: providerIds.get(itemId) ?? itemId,
+        itemId,
         body: journal.itemBody(itemId)
       })),
       replacement.map(({ identity, body }) => ({ itemId: agentJournalItemKey(identity), body }))

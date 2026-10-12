@@ -11,12 +11,11 @@ import type { JournalReplacementItem } from './journal-epoch-replacement'
 import type { JournalReducerState } from './journal-reducer'
 import { buildJournalItemRow, buildJournalTombstoneRow } from './journal-row-builders'
 import type { JournalRowWriter, JournalOperationReceipt } from './journal-row-writer'
-import { journalRestatedSendRows } from './journal-rewind-restated-send-rows'
+import { buildJournalQueueClearRow } from './journal-stop-and-resume-rows'
 import {
-  buildJournalQueueClearRow,
-  buildJournalQueueReopenRow,
-  buildJournalStopEventRow
-} from './journal-stop-and-resume-rows'
+  journalRestatedAppendRows,
+  journalRestatedSendRows
+} from './journal-rewind-restated-send-rows'
 import { journalQueuePauseRestatement } from './queued-message-pause'
 import type { JournalQueuedMessages } from './journal-queued-messages'
 import type { JournalRow } from './journal-row-schema'
@@ -39,13 +38,11 @@ export async function rewindJournalContext(input: {
       if (state.epoch !== input.floor.epoch || !state.queuePauseMarks.cleared) {
         throw new Error('agent_session_rewind:stale-context')
       }
-      const restatement = journalQueuePauseRestatement(
+      const pause = journalQueuePauseRestatement(
         state.queuePauseMarks,
         state.latestAcceptedTurnSequence,
         input.cards.pauses()
-      )
-      const pause = restatement.cleared!
-      const { liveStop, reopened } = restatement
+      ).cleared!
       const removed = new Map<string, boolean>()
       for (const item of state.items.values()) {
         if (item.sequence > input.floor.sequence) {
@@ -59,7 +56,6 @@ export async function rewindJournalContext(input: {
       }
       const revisions = new Map<string, number>()
       const plan: ((seq: number, ts: number) => JournalRow)[] = []
-      let restatesTurn = false
       for (const [itemId, retireSubmission] of removed) {
         const row = buildJournalTombstoneRow({ state, itemId, seq: 0, ts: 0, fence: input.fence })
         revisions.set(itemId, row.revision)
@@ -71,6 +67,8 @@ export async function rewindJournalContext(input: {
         }))
       }
       for (const item of input.items) {
+        // A restated stopped send's rows come first; the item row below brings back its bubble,
+        // which the tombstone above shadows.
         const restated = journalRestatedSendRows({
           state,
           providerHandle,
@@ -80,12 +78,7 @@ export async function rewindJournalContext(input: {
         plan.push(
           ...restated.map((build) => (seq: number, ts: number) => build(seq, item.observedAt ?? ts))
         )
-        restatesTurn ||= restated.length > 0 && item.send?.submission.dispatchState === 'accepted'
-        // A restated send's bubble is its submission's, which the tombstone above shadows.
-        const itemId =
-          restated.length > 0 && item.send
-            ? agentJournalSubmissionKey(item.send.submission.clientMessageId)
-            : agentJournalItemKey(item.identity)
+        const itemId = agentJournalItemKey(item.identity)
         const existing = state.items.get(itemId)
         if (existing && existing.sequence <= input.floor.sequence) {
           throw new Error('agent_session_rewind:proof-mismatch')
@@ -100,8 +93,7 @@ export async function rewindJournalContext(input: {
         plan.push((seq, ts) => ({
           ...buildJournalItemRow({
             state,
-            itemId,
-            body: item.body,
+            ...item,
             linkage: item,
             seq,
             ts: item.observedAt ?? ts,
@@ -111,16 +103,7 @@ export async function rewindJournalContext(input: {
           revision
         }))
       }
-      // A restated accepted send reads as a turn after these pauses and would end them: restate them
-      // above it, as an epoch does. Otherwise they keep their place, so later cards stay unheld.
-      if (restatesTurn && liveStop) {
-        plan.push((seq, ts) =>
-          buildJournalStopEventRow({ state, seq, ts, fence: input.fence, event: liveStop })
-        )
-      }
-      if (restatesTurn && reopened) {
-        plan.push((seq, ts) => buildJournalQueueReopenRow({ state, seq, ts, fence: input.fence }))
-      }
+      plan.push(...journalRestatedAppendRows({ state, fence: input.fence, items: input.items }))
       plan.push((seq, ts) =>
         buildJournalQueueClearRow({ state, seq, ts, fence: input.fence, clear: pause })
       )

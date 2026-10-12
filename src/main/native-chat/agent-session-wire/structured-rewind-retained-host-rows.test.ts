@@ -13,10 +13,6 @@ import {
   retainedRowReplacement
 } from './structured-rewind-retained-host-rows'
 import { restoreRewindJournalBody } from './structured-rewind-journal-body'
-import {
-  stoppedHistoryElement,
-  stoppedHistoryFrame
-} from './structured-agent-session-stopped-history-frame'
 import type * as RewindJournalBody from './structured-rewind-journal-body'
 
 vi.mock('./structured-rewind-journal-body', async (importOriginal) => {
@@ -161,7 +157,7 @@ describe('rewind keeps each retained row attributed', () => {
   })
 })
 
-describe('a rewind keeps a send only the host holds', () => {
+describe('a rewind keeps a stopped send, which only the host holds', () => {
   const said = (text: string): AgentJournalItemBody => ({
     kind: 'message',
     role: 'user',
@@ -178,21 +174,20 @@ describe('a rewind keeps a send only the host holds', () => {
       reason: null,
       submittedAt: 1,
       resolvedAt: 1
-    },
-    carries: []
+    }
   })
 
   it('where it sat, and only when the rewind restates it', () => {
     const stopped = orcaKey('stopped')
     const failed = orcaKey('failed')
-    // An accepted carrier is keyed by its provider item: kept only while the provider holds it.
+    // Keyed by a provider item the provider no longer holds: gone with it.
     const gone = codexKey('gone', 0)
     const merged = mergeRetainedHostLifecycleRows(
       [
         retained(codexKey('a', 1), prose('before')),
         retained(stopped, said('stopped')),
         retained(failed, said('failed')),
-        retained(gone, said('carrier')),
+        retained(gone, said('gone')),
         retained(codexKey('b', 1), prose('after'))
       ],
       [
@@ -279,35 +274,6 @@ describe("a rewind keeps another agent's messages its", () => {
       NO_RESTATED_SENDS
     )
     expect(merged.map((row) => 'from' in row.body)).toEqual([false, false])
-  })
-
-  it("keeps the person's own words in a send that carried stopped history, as the live fold does", () => {
-    const carrier = codexKey('turn-2', 0)
-    const mail = codexKey('turn-3', 0)
-    // Codex stores what it received: the framed stopped message ahead of the send.
-    const frame = stoppedHistoryFrame({
-      elements: [
-        stoppedHistoryElement({
-          number: 1,
-          text: 'A',
-          images: { first: 1, count: 0 },
-          omittedImages: 0
-        })
-      ],
-      notIncluded: 0,
-      shortened: 0,
-      sendImages: { first: 1, count: 0 }
-    })
-    const framed = user(`${frame}\nB`)
-    const merged = mergeRetainedHostLifecycleRows(
-      [retained(carrier, user('B')), retained(mail, { ...user('mail'), from })],
-      [providerItem(carrier, framed), providerItem(mail, user('mail, as Codex holds it'))],
-      NO_RESTATED_SENDS
-    )
-    expect(JSON.stringify(framed)).toContain('<stopped-history>')
-    expect(merged[0]?.body).toEqual(user('B'))
-    // Another sender's message still takes the provider's body.
-    expect(merged[1]?.body).toEqual({ ...user('mail, as Codex holds it'), from })
   })
 })
 

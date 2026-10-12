@@ -16,6 +16,7 @@ import type { JournalLoad } from './journal-open'
 import { applyJournalRow, createJournalReducerState } from './journal-reducer'
 import { buildJournalItemRow, journalRowBase } from './journal-row-builders'
 import {
+  journalRestatedAppendRows,
   journalRestatedSendRows,
   type JournalRestatedSend
 } from './journal-rewind-restated-send-rows'
@@ -42,7 +43,7 @@ export type JournalReplacementItem = AgentJournalProducerLinkage & {
   /** Absent for history rebuilt from a source that never stated one: derived from position, as
    *  a legacy row's is, and then written down. */
   turnScope?: AgentJournalTurnScope
-  /** A rewind's: the send this row is, restated with its own rows instead of an item row. */
+  /** A rewind's: the stopped send this row is, restated with its own rows instead of an item row. */
   send?: JournalRestatedSend
 }
 
@@ -71,14 +72,15 @@ export function replaceJournalEpoch(input: {
   }
   const rows: JournalRow[] = [epochRow]
   applyJournalRow(state, epochRow)
+  const append = (build: (seq: number, ts: number) => JournalRow, ts: number) => {
+    const row = build(state.lastSequence + 1, ts)
+    applyJournalRow(state, row)
+    rows.push(row)
+  }
   for (const item of input.items) {
     const restated = journalRestatedSendRows({ state, providerHandle, fence: input.fence, item })
     if (restated.length > 0) {
-      for (const build of restated) {
-        const row = build(state.lastSequence + 1, item.observedAt ?? input.now())
-        applyJournalRow(state, row)
-        rows.push(row)
-      }
+      restated.forEach((build) => append(build, item.observedAt ?? input.now()))
       continue
     }
     const row = buildJournalItemRow({
@@ -94,6 +96,13 @@ export function replaceJournalEpoch(input: {
     assertJournalFence(row.fence, state.highestFence)
     applyJournalRow(state, row)
     rows.push(row)
+  }
+  for (const build of journalRestatedAppendRows({
+    state,
+    fence: input.fence,
+    items: input.items
+  })) {
+    append(build, input.now())
   }
   const { lifted, liveStop, reopened } = input.queuePause
   const place = () => ({ state, seq: state.lastSequence + 1, fence: input.fence, ts: input.now() })

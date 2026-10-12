@@ -1,7 +1,7 @@
-// A rewind keeps a person's stopped messages and what carried them: a stopped message before the
-// rewind point keeps its bubble and stays owed unless a send that survives the rewind carried it.
-// Against the real host, store and journal, with a Codex-shaped rewind that answers with the items
-// its thread still holds.
+// A Codex rewind keeps a person's stopped messages before the rewind point: each keeps its bubble and
+// the record of its append, as Codex keeps the appended pair that sits just before the next turn, so
+// it is never appended twice. One after the point goes, as Codex drops its pair. Against the real
+// host, store and journal, with a Codex-shaped rewind that answers with the items its thread holds.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -27,7 +27,6 @@ import {
   hostTestMessage,
   hostTestOperationId
 } from './structured-agent-session-host-test-data'
-import { RigPreparedDispatch } from './structured-agent-session-queued-message-rig-provider.test-fixture'
 
 let rig: QueuedMessageTestRig
 /** What the Codex thread holds, oldest first: each accepted send in the words it received. */
@@ -66,12 +65,19 @@ function text(body: AgentJournalMessageItem): string {
   return body.blocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
 }
 
-/** Each dispatch as `carrier <- [history]`, the history as the prepared send carries it. */
+/** Each send, with the stopped messages appended to the agent's log ahead of it. */
 function dispatched(): string[] {
-  return rig.dispatch.mock.calls.map(([input]) => {
-    const prepared = input.prepared instanceof RigPreparedDispatch ? input.prepared : null
-    expect(input.prepared === undefined || prepared !== null).toBe(true)
-    return prepared ? `${text(input.body)} <- [${prepared.history.join(', ')}]` : text(input.body)
+  const appends = rig.appendStoppedMessages.mock.calls.map(([input], index) => ({
+    at: rig.appendStoppedMessages.mock.invocationCallOrder[index]!,
+    texts: input.messages.map((entry) => text(entry.body))
+  }))
+  let previous = 0
+  return rig.dispatch.mock.calls.map(([input], index) => {
+    const at = rig.dispatch.mock.invocationCallOrder[index]!
+    const ahead = appends.filter((append) => append.at > previous && append.at < at)
+    previous = at
+    const history = ahead.flatMap((append) => append.texts)
+    return history.length > 0 ? `[${history.join(', ')}] -> ${text(input.body)}` : text(input.body)
   })
 }
 
@@ -170,12 +176,16 @@ async function expectStillStopped(id: string): Promise<void> {
   })
 }
 
-/** Stop A, then B carries it and the agent takes B (received with A's history ahead of it). */
-async function stoppedThenCarried(): Promise<{ stopped: string; carrier: string }> {
+/** Stop A, then B's handover appends it and the agent takes B. */
+async function stoppedThenAppended(): Promise<{ stopped: string; next: string }> {
   const stopped = await stopWhileStarting('A')
-  const carrier = await nextSend('B')
-  await accepted(carrier, 'B', 'history A, then B')
-  return { stopped, carrier }
+  const next = await nextSend('B')
+  await accepted(next, 'B', 'B')
+  return { stopped, next }
+}
+
+function appendedIds(): string[] {
+  return [...journal().stoppedHistory.appended().values()].flat()
 }
 
 describe.each([
@@ -199,24 +209,24 @@ describe.each([
     expect(journal().cursor().epoch === epochBefore).toBe(cleared)
   }
 
-  it('rewound before the carrier: the stopped message stays and rides with the next send', async () => {
+  it('rewound before the send that appended it: the bubble and its record stay', async () => {
     await begin()
-    const { stopped, carrier } = await stoppedThenCarried()
+    const { stopped, next } = await stoppedThenAppended()
     const epoch = journal().cursor().epoch
 
-    await rewindTo(carrier)
+    await rewindTo(next)
 
     expectRebuildPath(epoch)
     expect(await transcripts()).toEqual(shown('A (stopped)', 'Stopped manually'))
     await expectStillStopped(stopped)
-    const next = await nextSend('C')
-    expect(dispatched()).toEqual(['B <- [A]', 'C <- [A]'])
-    expect(journal().stoppedHistoryCarried().get(next)).toEqual([stopped])
+    expect(appendedIds()).toEqual([stopped])
+    await nextSend('C')
+    expect(dispatched()).toEqual(['[A] -> B', 'C'])
   })
 
-  it('rewound after the carrier: it stays covered and the carrier draws once, in its own words', async () => {
+  it('rewound after it: the bubble and its record stay', async () => {
     await begin()
-    const { stopped, carrier } = await stoppedThenCarried()
+    const { stopped } = await stoppedThenAppended()
     const later = await nextSend('C')
     await accepted(later, 'C', 'C')
     const epoch = journal().cursor().epoch
@@ -226,146 +236,52 @@ describe.each([
     expectRebuildPath(epoch)
     expect(await transcripts()).toEqual(shown('A (stopped)', 'Stopped manually', 'B'))
     await expectStillStopped(stopped)
-    expect(journal().stoppedHistoryCarried().get(carrier)).toEqual([stopped])
+    expect(appendedIds()).toEqual([stopped])
     await nextSend('D')
-    expect(dispatched()).toEqual(['B <- [A]', 'C', 'D'])
+    expect(dispatched()).toEqual(['[A] -> B', 'C', 'D'])
   })
 
-  it.each([
-    { point: 'before', owed: 'D <- [A]' },
-    { point: 'after', owed: 'D' }
-  ])(
-    'a host restart after a rewind $point the carrier keeps its answer',
-    async ({ point, owed }) => {
-      await begin()
-      const { stopped, carrier } = await stoppedThenCarried()
-      const later = await nextSend('C')
-      await accepted(later, 'C', 'C')
-
-      await rewindTo(point === 'before' ? carrier : later)
-      await rig.restartHostProcess()
-      await expectStillStopped(stopped)
-      await nextSend('D')
-
-      expect(dispatched().at(-1)).toBe(owed)
-    }
-  )
-
-  it.each([
-    { sends: 'a carrier', mail: false },
-    { sends: 'mail only', mail: true }
-  ])('a card the person stopped stays paused through a rewind after $sends', async ({ mail }) => {
-    await begin()
-    await stopWhileStarting('A')
-    const carrier = await nextSend('B', mail)
-    await accepted(carrier, 'B', mail ? 'B' : 'history A, then B')
-    const later = await nextSend('C', mail)
-    await accepted(later, 'C', 'C')
-    const working = rig.send('W')
-    expect(await working.result).toMatchObject({ ok: true })
-    await eventually(async () =>
-      expect((await rig.submission(working.id))?.handedOverAt).toBeDefined()
-    )
-    const queued = await rig.send('Q', 'queue-if-active').result
-    if (!queued.ok || !('queued' in queued.value)) {
-      throw new Error('expected a queued receipt')
-    }
-    expect(await rig.stop()).toMatchObject({ ok: true })
-    await rig.settleRejected(working.id, 'interrupted')
-    const sent = dispatched()
-
-    await rewindTo(later)
-    await new Promise((resolve) => setTimeout(resolve, 250))
-
-    expect(await rig.drafts()).toEqual([
-      { messageId: queued.value.queued.messageId, state: 'waiting' }
-    ])
-    expect(await rig.queuePause()).toEqual({ reason: 'stopped' })
-    expect(dispatched()).toEqual(sent)
-  })
-
-  it('a card held since a restart stays held through a rewind after a carrier', async () => {
-    await begin()
-    await stoppedThenCarried()
-    const later = await nextSend('C')
-    await accepted(later, 'C', 'C')
-    const working = rig.send('W')
-    expect(await working.result).toMatchObject({ ok: true })
-    await eventually(async () =>
-      expect((await rig.submission(working.id))?.handedOverAt).toBeDefined()
-    )
-    const queued = await rig.send('Q', 'queue-if-active').result
-    if (!queued.ok || !('queued' in queued.value)) {
-      throw new Error('expected a queued receipt')
-    }
-    await rig.restartHostProcess()
-    const waiting = [{ messageId: queued.value.queued.messageId, state: 'waiting' }]
-    expect(await rig.drafts()).toEqual(waiting)
-    // Sent before the restart, so its turn ends nothing the restart paused.
-    await accepted(working.id, 'W', 'W')
-    expect(
-      journal()
-        .queuedMessages.pauses()
-        .map(({ reason }) => reason)
-    ).toEqual(['restarted'])
-
-    await rewindTo(later)
-    await new Promise((resolve) => setTimeout(resolve, 250))
-
-    expect(await rig.drafts()).toEqual(waiting)
-    expect(
-      journal()
-        .queuedMessages.pauses()
-        .map(({ reason }) => reason)
-    ).toEqual(['restarted'])
-    expect(dispatched()).toEqual(['B <- [A]', 'C', 'W'])
-  })
-
-  it('a stopped message nothing carried survives the rewind and stays owed', async () => {
+  it('one still owed stays owed through the rewind', async () => {
     await begin()
     const stopped = await stopWhileStarting('A')
-    // Another agent's mail never carries a person's stopped messages.
-    const mail = await nextSend('mail', true)
-    await accepted(mail, 'mail', 'mail')
-    const later = await nextSend('more mail', true)
-    await accepted(later, 'more', 'more mail')
+    // A Codex without `thread/inject_items` refuses each append.
+    rig.appendStoppedMessages.mockResolvedValue({ outcome: 'refused', reason: '-32601' })
+    const next = await nextSend('B')
+    await accepted(next, 'B', 'B')
+    const later = await nextSend('C')
+    await accepted(later, 'C', 'C')
 
     await rewindTo(later)
 
     await expectStillStopped(stopped)
-    await nextSend('C')
-    expect(dispatched()).toEqual(['mail', 'more mail', 'C <- [A]'])
-  })
-})
-
-describe('a rewind that stopped after its history committed', () => {
-  it('settles on reopen with the carrier restated, never replacing the history twice', async () => {
-    await start()
-    const { stopped, carrier } = await stoppedThenCarried()
-    const later = await nextSend('C')
-    await accepted(later, 'C', 'C')
-    const replace = journal().replaceEpochItems.bind(journal())
-    vi.spyOn(journal(), 'replaceEpochItems').mockImplementationOnce(async (...args) => {
-      await replace(...args)
-      throw new Error('crashed after the commit')
-    })
-
-    await expect(
-      rig.host.rewind(QUEUED_RIG_CALLER, {
-        itemId: agentJournalSubmissionKey(later),
-        expectedEpoch: journal().cursor().epoch,
-        envelope: rig.envelope(
-          { itemId: agentJournalSubmissionKey(later), expectedEpoch: journal().cursor().epoch },
-          'agentSession.rewind',
-          hostTestOperationId()
-        )
-      })
-    ).rejects.toThrow('crashed after the commit')
-    await rig.restartHostProcess()
+    expect(appendedIds()).toEqual([])
     await nextSend('D')
+    expect(dispatched()).toEqual(['[A] -> B', '[A] -> C', '[A] -> D'])
+  })
 
-    expect(rig.store.getRecord(SESSION)?.rewind?.phase).toBe('completed')
-    expect(journal().stoppedHistoryCarried().get(carrier)).toEqual([stopped])
-    expect(dispatched()).toEqual(['B <- [A]', 'C', 'D'])
+  it('one stopped after the rewind point goes, as Codex drops its pair', async () => {
+    await begin()
+    const first = await nextSend('B')
+    await accepted(first, 'B', 'B')
+    await stopWhileStarting('A')
+    const next = await nextSend('C')
+    await accepted(next, 'C', 'C')
+
+    await rewindTo(first)
+
+    expect(await transcripts()).toEqual(shown())
+    await nextSend('D')
+    expect(dispatched()).toEqual(['B', '[A] -> C', 'D'])
+  })
+
+  it('a host restart after a rewind keeps the record: nothing is appended twice', async () => {
+    await begin()
+    const { stopped, next } = await stoppedThenAppended()
+    await rewindTo(next)
+    await rig.restartHostProcess()
+    await nextSend('C')
+
+    expect(appendedIds()).toEqual([stopped])
+    expect(dispatched()).toEqual(['[A] -> B', 'C'])
   })
 })

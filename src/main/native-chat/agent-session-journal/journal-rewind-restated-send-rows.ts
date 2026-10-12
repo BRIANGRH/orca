@@ -1,6 +1,7 @@
-// A rewind rebuilds history from the provider's items, which hold none of the host's facts about a
-// send. A send the stopped-history derivation reads (one Orca proved never reached the agent, or one
-// that carried stopped messages) is restated with the rows that first recorded it, copied verbatim.
+// A rewind rebuilds history from the provider's items, which never hold a person's stopped message:
+// Orca proved it never reached the agent as a send. So each one before the rewind point is restated
+// with the rows that first recorded it, copied verbatim, and with the append record that covers it,
+// so it keeps its bubble and is never appended again.
 
 import { readAgentSessionFailureFact } from '../../../shared/agent-session-failure'
 import {
@@ -11,36 +12,35 @@ import {
 } from '../../../shared/agent-session-journal-types'
 import { buildJournalSubmissionRow, journalRowBase } from './journal-row-builders'
 import type { JournalReducerState } from './journal-reducer'
-import type { JournalDispatchRow, JournalRow } from './journal-row-schema'
+import type { JournalRow } from './journal-row-schema'
 import type { JournalReplacementItem } from './journal-epoch-replacement'
+import { buildJournalStoppedMessageAppendRow } from './journal-stopped-message-appends'
 
 export type JournalRestatedSend = {
   submission: AgentJournalSubmission
-  /** What it carries in the rebuilt history: only stopped messages restated beside it. */
-  carries: readonly string[]
+  /** The append whose record covers it, when one does. */
+  appendId?: string
 }
 
-/** The submission and dispatch rows that restate `item`'s send, in the order they were first
- *  written; empty when the item restates none. */
+type RowBuilder = (seq: number, ts: number) => JournalRow
+
+/** The submission and dispatch rows that restate `item`'s stopped send, in the order they were
+ *  first written; empty when the item restates none. */
 export function journalRestatedSendRows(input: {
   state: JournalReducerState
   providerHandle: AgentSessionJournalProviderHandle
   fence: number
   item: JournalReplacementItem
-}): ((seq: number, ts: number) => JournalRow)[] {
+}): RowBuilder[] {
   const { item, fence } = input
   const send = item.send
-  if (!send || item.body.kind !== 'message') {
+  if (!send || item.body.kind !== 'message' || send.submission.dispatchState !== 'rejected') {
     return []
   }
   const body: AgentJournalMessageItem = item.body
-  const { submission, carries } = send
+  const { submission } = send
   const { clientMessageId } = submission
-  const base = (seq: number, ts: number) => ({
-    ...journalRowBase(input.state.epoch, seq, fence, ts),
-    ...(submission.recovered ? { recovered: submission.recovered } : {})
-  })
-  const rows: ((seq: number, ts: number) => JournalRow)[] = [
+  const rows: RowBuilder[] = [
     (seq, ts) => ({
       ...buildJournalSubmissionRow({
         state: input.state,
@@ -61,7 +61,7 @@ export function journalRestatedSendRows(input: {
       ...(submission.source !== undefined ? { source: { kind: submission.source.kind } } : {})
     })
   ]
-  if (submission.handedOverAt !== undefined || carries.length > 0) {
+  if (submission.handedOverAt !== undefined) {
     rows.push((seq, ts) => ({
       kind: 'dispatch',
       clientMessageId,
@@ -69,42 +69,14 @@ export function journalRestatedSendRows(input: {
       providerItemId: null,
       reason: null,
       ...journalRowBase(input.state.epoch, seq, fence, ts),
-      turnScope: item.turnScope ?? AGENT_JOURNAL_THREAD_SCOPE,
-      ...(carries.length > 0 ? { carries: [...carries] } : {})
+      turnScope: item.turnScope ?? AGENT_JOURNAL_THREAD_SCOPE
     }))
-  }
-  const settled = settlingDispatch(submission)
-  if (settled) {
-    rows.push((seq, ts) => ({ ...settled, clientMessageId, ...base(seq, ts) }))
-  }
-  return rows
-}
-
-type SettlingDispatch = Pick<
-  JournalDispatchRow,
-  'kind' | 'state' | 'providerItemId' | 'reason' | 'rejection' | 'keptAsQueuedMessageId'
-> & { answeredInTurn?: JournalDispatchRow['answeredInTurn'] }
-
-/** The row that settled it, as the reducer folded it; none while it is still pending. */
-function settlingDispatch(submission: AgentJournalSubmission): SettlingDispatch | null {
-  if (submission.dispatchState === 'accepted') {
-    return {
-      kind: 'dispatch',
-      state: 'accepted',
-      providerItemId: submission.providerItemId,
-      reason: null
-    }
-  }
-  if (submission.dispatchState === 'unknown') {
-    return { kind: 'dispatch', state: 'unknown', providerItemId: null, reason: submission.reason }
-  }
-  if (submission.dispatchState !== 'rejected') {
-    return null
   }
   // A fact this build cannot read is left off: the stored reason still classifies it.
   const rejection = readAgentSessionFailureFact(submission.rejection)
-  return {
+  rows.push((seq, ts) => ({
     kind: 'dispatch',
+    clientMessageId,
     state: 'rejected',
     providerItemId: null,
     reason: submission.reason,
@@ -114,6 +86,37 @@ function settlingDispatch(submission: AgentJournalSubmission): SettlingDispatch 
       : {}),
     ...(submission.answeredInTurn !== undefined
       ? { answeredInTurn: submission.answeredInTurn }
-      : {})
+      : {}),
+    ...journalRowBase(input.state.epoch, seq, fence, ts),
+    ...(submission.recovered ? { recovered: submission.recovered } : {})
+  }))
+  return rows
+}
+
+/** Each append record that covers a restated send, naming only the sends restated with it. */
+export function journalRestatedAppendRows(input: {
+  state: JournalReducerState
+  fence: number
+  items: readonly JournalReplacementItem[]
+}): RowBuilder[] {
+  const appends = new Map<string, string[]>()
+  for (const { send } of input.items) {
+    if (send?.appendId !== undefined) {
+      appends.set(send.appendId, [
+        ...(appends.get(send.appendId) ?? []),
+        send.submission.clientMessageId
+      ])
+    }
   }
+  return [...appends].map(
+    ([appendId, messageIds]) =>
+      (seq, ts) =>
+        buildJournalStoppedMessageAppendRow({
+          state: input.state,
+          seq,
+          fence: input.fence,
+          ts,
+          append: { appendId, messageIds }
+        })
+  )
 }

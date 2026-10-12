@@ -37,8 +37,8 @@ export function isRetainedHostLifecycleRow(item: RetainedRow): boolean {
   )
 }
 
-/** `reference` fixes where each carried row sits; provider items are the ordered spine. A send
- *  only the host holds is carried when it is restated (`structured-rewind-restated-sends.ts`). */
+/** `reference` fixes where each carried row sits; provider items are the ordered spine. A stopped
+ *  send, which only the host holds, is carried when it is restated (`structured-rewind-restated-sends.ts`). */
 export function mergeRetainedHostLifecycleRows(
   reference: readonly RetainedRow[],
   providerItems: readonly RetainedRow[],
@@ -133,7 +133,7 @@ export function retainedRowReplacement(row: RetainedRow): AgentJournalProducerLi
 }
 
 /** A provider item the old epoch held keeps that row's scope, producer and first-seen time; only
- *  its body is the provider's, except that a user message keeps what the host recorded on it. */
+ *  its body is the provider's, and a user message keeps the sender the host recorded on it. */
 function withHeldAttribution(item: RetainedRow, held: RetainedRow | undefined): RetainedRow {
   if (!held) {
     return item
@@ -142,22 +142,21 @@ function withHeldAttribution(item: RetainedRow, held: RetainedRow | undefined): 
   return { ...item, ...attribution, body: withHeldSender(item.body, heldBody) }
 }
 
-/** A person's own message keeps Orca's body, as the live fold does: the provider's copy may hold
- *  context Orca sent with it. Another sender's keeps the provider's copy with that sender put back,
- *  since no provider ever carries it. */
+/** The provider's copy of a user message, with the sender the host recorded on it put back: no
+ *  provider ever carries it. */
 function withHeldSender(
   provider: RetainedRow['body'],
   held: RetainedRow['body']
 ): RetainedRow['body'] {
   if (
     !isAdmissibleAgentJournalMessageBody(held) ||
-    !isAdmissibleAgentJournalMessageBody(provider) ||
-    held.role !== 'user' ||
-    provider.role !== 'user'
+    !isAdmissibleAgentJournalMessageBody(provider)
   ) {
     return provider
   }
-  return held.from === undefined ? held : Object.assign({}, provider, { from: held.from })
+  return held.from !== undefined && held.role === 'user' && provider.role === 'user'
+    ? Object.assign({}, provider, { from: held.from })
+    : provider
 }
 
 /** Provider turn id → the item id of its turn record: the turn's own, or the command turn that
