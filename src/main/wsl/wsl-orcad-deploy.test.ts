@@ -25,7 +25,7 @@ vi.mock('../ssh/orcad-remote-context', () => ({ resolveOrcadRemoteContext: mocks
 vi.mock('../ssh/orcad-activation-recovery', () => ({
   recoverInterruptedOrcadActivation: mocks.recover
 }))
-vi.mock('../ssh/orcad-artifact-materializer', () => ({
+vi.mock('../orcad/orcad-artifact-materializer', () => ({
   materializeOrcadArtifact: async () => '/local/orcad'
 }))
 vi.mock('../ssh/orcad-remote-deploy', () => ({ deployOrcad: mocks.deploy }))
