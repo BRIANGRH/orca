@@ -4,8 +4,24 @@ import type { WslHostDistroCandidate } from './wsl-host-distro-list'
 import { wslDistroHolderKey } from './wsl-distro-holder-record'
 
 export const WSL_HOSTS_DISABLED_MESSAGE = 'WSL hosts are turned off in Settings → Experimental.'
+export const WSL_HOST_SERVER_FILES_MISSING_MESSAGE =
+  'This build of Orca can’t run WSL hosts (server files missing).'
 
 type WslHostAddRefusal = Extract<WslHostAddResult, { ok: false }>
+
+/** Why no WSL host may run at all right now; null when they may. */
+export function wslHostRunRefusal(gate: {
+  isEnabled: () => boolean
+  hasServerFiles: () => boolean
+}): WslHostAddRefusal | null {
+  if (!gate.isEnabled()) {
+    return { ok: false, kind: 'disabled', message: WSL_HOSTS_DISABLED_MESSAGE }
+  }
+  // Why before any deploy work: without the packaged template C4 fails deep inside with a raw error.
+  return gate.hasServerFiles()
+    ? null
+    : { ok: false, kind: 'server-files-missing', message: WSL_HOST_SERVER_FILES_MISSING_MESSAGE }
+}
 
 export function sameWslDistro(left: string, right: string): boolean {
   return wslDistroHolderKey(left) === wslDistroHolderKey(right)

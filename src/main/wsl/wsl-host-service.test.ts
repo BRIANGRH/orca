@@ -67,6 +67,7 @@ describe('WslHostService', () => {
   let userDataPath: string
   let published: WslHostStatus[]
   let enabled: boolean
+  let serverFiles: boolean
   const pairingChanged = vi.fn()
   const ready = vi.fn()
   const removed = vi.fn()
@@ -75,6 +76,7 @@ describe('WslHostService', () => {
     const service = new WslHostService({
       userDataPath: () => userDataPath,
       isEnabled: () => enabled,
+      hasServerFiles: () => serverFiles,
       publish: (status) => published.push(status),
       pairingChanged,
       ready,
@@ -88,6 +90,7 @@ describe('WslHostService', () => {
     userDataPath = mkdtempSync(join(tmpdir(), 'orca-wsl-host-service-'))
     published = []
     enabled = true
+    serverFiles = true
     vi.clearAllMocks()
     vi.spyOn(console, 'warn').mockImplementation(() => {})
   })
@@ -244,6 +247,28 @@ describe('WslHostService', () => {
 
     await service.remove('wsl:ubuntu')
     expect(listEnvironments(userDataPath)).toEqual([])
+  })
+
+  it('refuses to add or connect, before any deploy work, when this build lacks the server files', async () => {
+    const connector = makeConnector([UBUNTU])
+    const service = makeService(connector)
+    await service.add({ distro: 'Ubuntu' })
+    connector.connect.mockClear()
+    connector.listDistros.mockClear()
+    await connector.disconnect('Ubuntu')
+    serverFiles = false
+
+    await expect(service.add({ distro: 'Debian' })).resolves.toEqual({
+      ok: false,
+      kind: 'server-files-missing',
+      message: 'This build of Orca can’t run WSL hosts (server files missing).'
+    })
+    expect(connector.listDistros).not.toHaveBeenCalled()
+    await expect(service.connect('wsl:ubuntu')).rejects.toThrow('server files missing')
+    service.setVisibleWork(['wsl:ubuntu'])
+    await service.ensureForRuntimeCall('wsl:ubuntu')
+    expect(connector.connect).not.toHaveBeenCalled()
+    expect(service.hasServerFiles()).toBe(false)
   })
 
   it('removes a host: closes its connection, stops its server, releases the holder, drops both records', async () => {

@@ -3,11 +3,13 @@ import { ipcRenderer } from 'electron'
 import {
   WSL_HOST_STATUS_CHANNEL,
   type WslHostAddResult,
+  type WslHostCapability,
   type WslHostDistro,
   type WslHostStatus
 } from '../../shared/wsl-host-types'
 
 export type WslHostsPreloadApi = {
+  getCapability: () => Promise<WslHostCapability>
   listDistros: () => Promise<WslHostDistro[]>
   add: (args: { distro: string; startIfStopped?: boolean }) => Promise<WslHostAddResult>
   remove: (args: { environmentId: string }) => Promise<void>
@@ -19,6 +21,7 @@ export type WslHostsPreloadApi = {
 }
 
 const wslHostsApi: WslHostsPreloadApi = {
+  getCapability: () => ipcRenderer.invoke('wslHosts:getCapability'),
   listDistros: () => ipcRenderer.invoke('wslHosts:listDistros'),
   add: (args) => ipcRenderer.invoke('wslHosts:add', args),
   remove: (args) => ipcRenderer.invoke('wslHosts:remove', args),

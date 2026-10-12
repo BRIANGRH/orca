@@ -29,6 +29,12 @@ export type WslHostStatus = {
   detail: string | null
 }
 
+/** What this build can do for WSL hosts; the UI reads it once at startup. */
+export type WslHostCapability = {
+  /** False when the packaged orcad template is missing, so no WSL host can deploy or connect. */
+  serverFiles: boolean
+}
+
 export type WslHostAddFailureKind =
   | 'unsupported-wsl1'
   | 'distro-stopped'
@@ -36,6 +42,7 @@ export type WslHostAddFailureKind =
   | 'ssh-managed'
   | 'deferred'
   | 'disabled'
+  | 'server-files-missing'
   | 'failed'
 
 export type WslHostAddResult =

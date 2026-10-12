@@ -1,12 +1,17 @@
 /** IPC for WSL hosts (WSL-via-orcad C7); Windows only, or an e2e fake on any OS. */
 import { BrowserWindow, ipcMain } from 'electron'
-import { WSL_HOST_STATUS_CHANNEL, type WslHostStatus } from '../../shared/wsl-host-types'
+import {
+  WSL_HOST_STATUS_CHANNEL,
+  type WslHostCapability,
+  type WslHostStatus
+} from '../../shared/wsl-host-types'
 import type { Store } from '../persistence'
 import { createWslHostConnector } from '../wsl/wsl-host-connector'
 import {
   createFakeWslHostConnector,
   readFakeWslHostsConfig
 } from '../wsl/wsl-host-e2e-fake-connector'
+import { hasOrcadTemplate } from '../orcad/orcad-artifact-materializer'
 import { WslHostService } from '../wsl/wsl-host-service'
 import { getWslHostService, setWslHostService } from '../wsl/wsl-host-service-instance'
 import { retireRemovedRuntimeEnvironment } from './runtime-environment-removal-cleanup'
@@ -18,7 +23,8 @@ export const WSL_HOST_HANDLER_CHANNELS = [
   'wslHosts:remove',
   'wslHosts:connect',
   'wslHosts:getStatuses',
-  'wslHosts:setVisibleWork'
+  'wslHosts:setVisibleWork',
+  'wslHosts:getCapability'
 ] as const
 
 function publish(status: WslHostStatus): void {
@@ -45,6 +51,7 @@ function createService(args: {
   const created = new WslHostService({
     userDataPath: args.getUserDataPath,
     isEnabled: () => args.store.getSettings().experimentalWslHosts === true,
+    hasServerFiles: fake ? () => fake.serverFiles !== 'missing' : hasOrcadTemplate,
     publish,
     pairingChanged: (environmentId) => void args.invalidateTransport(environmentId),
     ready: (environmentId) => {
@@ -101,6 +108,9 @@ export function registerWslHostHandlers(args: {
   ipcMain.handle('wslHosts:connect', async (_event, request: { environmentId: string }) => {
     await wsl?.connect(request.environmentId)
   })
+  ipcMain.handle('wslHosts:getCapability', (): WslHostCapability => ({
+    serverFiles: wsl?.hasServerFiles() ?? false
+  }))
   ipcMain.handle('wslHosts:getStatuses', () => wsl?.getStatuses() ?? [])
   ipcMain.handle('wslHosts:setVisibleWork', (_event, request: { environmentIds: string[] }) => {
     wsl?.setVisibleWork(Array.isArray(request.environmentIds) ? request.environmentIds : [])

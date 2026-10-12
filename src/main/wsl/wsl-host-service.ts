@@ -23,11 +23,7 @@ import { OrcadHostUnsupportedError } from '../orcad/orcad-host-unavailable'
 import type { WslHostDistroCandidate } from './wsl-host-distro-list'
 import { findServerSharingWslOrcad } from './wsl-host-ssh-orcad-conflict'
 import { wslDistroHolderKey } from './wsl-distro-holder-record'
-import {
-  admitWslHostDistro,
-  sameWslDistro,
-  WSL_HOSTS_DISABLED_MESSAGE
-} from './wsl-host-add-admission'
+import { admitWslHostDistro, sameWslDistro, wslHostRunRefusal } from './wsl-host-add-admission'
 import { WslOrcadLaunchDeferredError, type WslOrcadConnection } from './wsl-orcad-connection'
 import type { WslOrcadConnectionStatus } from './wsl-orcad-connection-status'
 import { defaultWslOrcadEnvironmentId } from './wsl-orcad-deploy'
@@ -51,6 +47,8 @@ export type WslHostConnector = {
 export type WslHostServiceDependencies = {
   userDataPath: () => string
   isEnabled: () => boolean
+  /** Whether this build ships the orcad template a WSL host deploys from. */
+  hasServerFiles: () => boolean
   publish: (status: WslHostStatus) => void
   /** The environment's pairing changed: transports that authenticate with the old one retire. */
   pairingChanged: (environmentId: string) => void
@@ -168,8 +166,9 @@ export class WslHostService {
     if (!record) {
       throw new Error('This server is not a WSL host.')
     }
-    if (!this.deps.isEnabled()) {
-      throw new Error(WSL_HOSTS_DISABLED_MESSAGE)
+    const refusal = wslHostRunRefusal(this.deps)
+    if (refusal) {
+      throw new Error(refusal.message)
     }
     await this.wsl.connect(record.distro)
   }
@@ -177,7 +176,7 @@ export class WslHostService {
   /** Before a call to a WSL host: connect only when an open project or terminal needs it. */
   async ensureForRuntimeCall(environmentId: string): Promise<void> {
     const record = this.recordForEnvironment(environmentId)
-    if (!record || !this.connector || !this.deps.isEnabled()) {
+    if (!record || !this.connector || !this.canRun()) {
       return
     }
     if (this.connector.get(record.distro) || !this.visible.has(environmentId)) {
@@ -189,7 +188,7 @@ export class WslHostService {
   setVisibleWork(environmentIds: readonly string[]): void {
     const previous = this.visible
     this.visible = new Set(environmentIds)
-    if (!this.connector || !this.deps.isEnabled()) {
+    if (!this.connector || !this.canRun()) {
       return
     }
     for (const environmentId of this.visible) {
@@ -212,10 +211,19 @@ export class WslHostService {
 
   /** Startup: keep the holders a previous run left, without booting anything. */
   async start(): Promise<void> {
-    if (!this.connector || !this.deps.isEnabled() || this.records().length === 0) {
+    if (!this.connector || !this.canRun() || this.records().length === 0) {
       return
     }
     await this.connector.adoptHolders()
+  }
+
+  /** What the UI shows before offering any WSL host action. */
+  hasServerFiles(): boolean {
+    return this.deps.hasServerFiles()
+  }
+
+  private canRun(): boolean {
+    return wslHostRunRefusal(this.deps) === null
   }
 
   async dispose(): Promise<void> {
@@ -226,8 +234,9 @@ export class WslHostService {
     distro: string
     startIfStopped?: boolean
   }): Promise<WslHostAddResult> {
-    if (!this.deps.isEnabled()) {
-      return { ok: false, kind: 'disabled', message: WSL_HOSTS_DISABLED_MESSAGE }
+    const refusal = wslHostRunRefusal(this.deps)
+    if (refusal) {
+      return refusal
     }
     const admission = admitWslHostDistro({
       requested: args.distro,

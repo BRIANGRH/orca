@@ -16,7 +16,9 @@ const FakeWslHostsSchema = z.object({
       version: z.union([z.literal(1), z.literal(2)])
     })
   ),
-  pairingCode: z.string().min(1)
+  pairingCode: z.string().min(1),
+  /** `missing` stands in for a build shipped without the orcad template. */
+  serverFiles: z.enum(['present', 'missing']).optional()
 })
 
 export function readFakeWslHostsConfig(
