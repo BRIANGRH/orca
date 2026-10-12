@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { detectAgentCommandsOnHost } from '../preflight/agent-detection'
 import { resolveAgentTerminalCreateOptions } from './runtime-agent-terminal-startup'
 
@@ -13,25 +13,19 @@ const host = {
   hostIdentity: 'host-1',
   toSessionOptions: () => undefined
 }
-const onWindows = async <T>(run: () => Promise<T>): Promise<T> => {
-  const platform = process.platform
-  Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
-  try {
-    return await run()
-  } finally {
-    Object.defineProperty(process, 'platform', { configurable: true, value: platform })
-  }
-}
+const original = process.platform
+const setPlatform = (value: string) =>
+  Object.defineProperty(process, 'platform', { configurable: true, value })
+beforeEach(() => setPlatform('win32'))
+afterEach(() => setPlatform(original))
 
 // The host planner's inputs. Relied on by C2, whose pane spawns run this plan.
 describe('host agent planner', () => {
   it("quotes for the fact's shell and hands that same fact to the spawn", async () => {
-    const launch = await onWindows(() =>
-      resolveAgentTerminalCreateOptions(
-        workspace,
-        { startupAgent: 'claude', agentArgs: '--model opus' },
-        host
-      )
+    const launch = await resolveAgentTerminalCreateOptions(
+      workspace,
+      { startupAgent: 'claude', agentArgs: '--model opus' },
+      host
     )
     expect(launch.command).toBe('claude "--model" "opus"')
     expect(launch.launchRuntime).toEqual({
@@ -42,19 +36,17 @@ describe('host agent planner', () => {
 
   it("rewrites Qoder once, probing where the fact's PTY runs (C2 skips the window copy)", async () => {
     vi.mocked(detectAgentCommandsOnHost).mockClear()
-    const launch = await onWindows(() =>
-      resolveAgentTerminalCreateOptions(
-        workspace,
-        {
-          startupAgent: 'qoder',
-          agentArgs: null,
-          launchRuntime: {
-            platform: 'linux',
-            pty: { shellOverride: 'wsl.exe', terminalWindowsWslDistro: 'Ubuntu' }
-          }
-        },
-        host
-      )
+    const launch = await resolveAgentTerminalCreateOptions(
+      workspace,
+      {
+        startupAgent: 'qoder',
+        agentArgs: null,
+        launchRuntime: {
+          platform: 'linux',
+          pty: { shellOverride: 'wsl.exe', terminalWindowsWslDistro: 'Ubuntu' }
+        }
+      },
+      host
     )
     expect(launch.command).toBe('qoder')
     expect(detectAgentCommandsOnHost).toHaveBeenCalledTimes(1)

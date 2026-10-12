@@ -36,6 +36,13 @@ export function agentLaunchFailureCode(error: unknown): string {
   return code.length > 0 ? code.slice(0, LAUNCH_FAILURE_CODE_MAX_LENGTH) : 'agent_launch_failed'
 }
 
+/** A coded refusal's own words, kept beside its code so a replay says the same; bounded likewise. */
+export function agentLaunchFailureMessage(error: unknown): string | undefined {
+  return error instanceof OrchestrationError
+    ? error.message.slice(0, FOLDER_CREATE_REFUSAL_MAX_LENGTH)
+    : undefined
+}
+
 /**
  * A refused folder create names its folder, and the user is shown that path, so a replay carries all
  * of it or none: a path cut short names a different folder. Any path a filesystem stat accepts

@@ -7,11 +7,7 @@ import {
   resolveAgentLaunchRuntime
 } from './agent-launch-scope-runtime'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
-import {
-  agentLaunchQuotingShell,
-  PROJECT_RUNTIME_REPAIR_REQUIRED_CODE
-} from '../../shared/agent-launch-runtime'
-import { mapRuntimeError } from './rpc/errors'
+import { agentLaunchQuotingShell } from '../../shared/agent-launch-runtime'
 
 const WIN = 'C:\\repo'
 const SHARE = '\\\\wsl$\\Ubuntu\\home\\a\\repo'
@@ -58,6 +54,8 @@ function store(args: {
 
 const claudeRuntime = (s: never, launchScope: TerminalWorkspaceLaunchScope) =>
   resolveAgentLaunchRuntime(s, launchScope, undefined, 'claude')
+const WORK = folder('C:\\work')
+const IN_WORK = scope('C:\\work', { folder: WORK })
 
 const original = process.platform
 const setPlatform = (value: string) =>
@@ -74,18 +72,14 @@ describe("the window's runtime rule, on the host", () => {
     ['repo, project WSL', store({ project: UBUNTU }), scope(WIN, { repo: repo(WIN) }), 'linux'],
     [
       'folder holding one WSL-project repo',
-      store({
-        project: UBUNTU,
-        repos: [repo(WIN)],
-        folder: folder('C:\\work')
-      }),
-      scope('C:\\work', { folder: folder('C:\\work') }),
+      store({ project: UBUNTU, repos: [repo(WIN)], folder: WORK }),
+      IN_WORK,
       'linux'
     ],
     [
       'repo-less folder ignores the global default, as the window does',
-      store({ global: UBUNTU, folder: folder('C:\\work') }),
-      scope('C:\\work', { folder: folder('C:\\work') }),
+      store({ global: UBUNTU, folder: WORK }),
+      IN_WORK,
       'win32'
     ]
   ])('%s', (_name, s, launchScope, platform) => {
@@ -97,7 +91,7 @@ describe("the window's runtime rule, on the host", () => {
 it("answers from main's WSL cache, which the window may not have read yet", () => {
   _setWslCachesForTests({ available: true, distros: ['Debian'] })
   expect(() => claudeRuntime(store({ project: UBUNTU }), scope(WIN, { repo: repo(WIN) }))).toThrow(
-    'wsl-distro-missing'
+    'Ubuntu is not installed in WSL'
   )
   // A `\\wsl$` path proves its distro, so a stale cache never refuses it.
   expect(claudeRuntime(store({}), scope(SHARE, { repo: repo(SHARE) })).platform).toBe('linux')
@@ -115,41 +109,14 @@ it('quotes for the shell the PTY gets, not a setting the runtime replaced', () =
 
 // TEMPORARY until STA-10231. Only folders reach it: every local repo has a project runtime.
 it("keeps a folder's WSL Terminal shell where its repo's project is set to Windows host", () => {
-  const windowsHost = { kind: 'windows-host' }
+  const project = { kind: 'windows-host' }
   const legacy = claudeRuntime(
-    store({
-      project: windowsHost,
-      shell: 'wsl.exe',
-      repos: [repo(WIN)],
-      folder: folder('C:\\work')
-    }),
-    scope('C:\\work', { folder: folder('C:\\work') })
+    store({ project, shell: 'wsl.exe', repos: [repo(WIN)], folder: WORK }),
+    IN_WORK
   )
   expect([legacy.platform, legacy.pty.shellOverride, agentLaunchQuotingShell(legacy)]).toEqual([
     'win32',
     'wsl.exe',
     'posix'
   ])
-})
-
-// W5d: refused while planning, before any spawn, so `orca agent launch` shows the refusal (it reads
-// any code but `runtime_error` as one) instead of "could not confirm the launch outcome".
-it('refuses a runtime that needs repair under its own code on the wire', () => {
-  _setWslCachesForTests({ available: true, distros: ['Ubuntu'] })
-  const work = folder('C:\\work')
-  const s = store({
-    project: { kind: 'wsl', distro: 'NoSuchDistro' },
-    repos: [repo(WIN)],
-    folder: work
-  })
-  let thrown: unknown
-  try {
-    resolveAgentLaunchRuntime(s, scope('C:\\work', { folder: work }), undefined, 'codex')
-  } catch (error) {
-    thrown = error
-  }
-  expect(mapRuntimeError('req-1', { runtimeId: 'runtime-1' }, thrown).error).toMatchObject({
-    code: PROJECT_RUNTIME_REPAIR_REQUIRED_CODE,
-    message: 'Project runtime requires repair before terminal spawn: wsl-distro-missing'
-  })
 })
