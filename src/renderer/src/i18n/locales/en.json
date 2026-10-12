@@ -18054,6 +18054,7 @@
         "sendAgainToTryOnceMore": "Send your message again to try once more.",
         "couldNotStart": "{{agent}} couldn't start.",
         "couldNotRestart": "{{agent}} couldn't restart.",
+        "codexCliTooOld": "Codex {{installedVersion}} is too old for chats. Update to {{minimumVersion}} or newer.",
         "notSignedIn": "{{agent}} is not signed in.",
         "claudeSystemNotSignedIn": "Claude isn't signed in. Run `{{loginCommand}}`, or choose an account in Claude Accounts settings.",
         "claudeManagedNotSignedIn": "This Claude account isn't signed in. Sign in again in Claude Accounts settings.",
@@ -18077,8 +18078,8 @@
         "chooseClaudeAccountThenSend": "Choose or add one in Claude Accounts settings, then send your message again.",
         "providerExitedRow": "{{agent}} stopped while this response was in progress. You can continue in this conversation.",
         "providerExitedRejection": "{{agent}} stopped before this message was sent.",
-        "providerRejected": "The provider did not accept this message.",
-        "providerRejectedQuoted": "The provider did not accept this message: {{detail}}.",
+        "providerRejected": "{{agent}} didn't accept this message.",
+        "providerRejectedQuoted": "{{agent}} didn't accept this message: {{detail}}.",
         "attachmentEmpty": "An image on this message is empty, so the message was not sent.",
         "attachmentTooLarge": "An image on this message is too large, so the message was not sent.",
         "attachmentLargerThan": "An image on this message is larger than {{size}} MB, so the message was not sent.",
@@ -19087,7 +19088,15 @@
         "inlineVisualsCopy": "Let the agent show charts, diagrams and mockups inside its replies. Applies to newly started chats.",
         "inlineVisualsToggleLabel": "Toggle inline visuals",
         "queueFollowUpsCopy": "Messages you send while the agent is working wait as cards you can steer, edit, or delete. Messages with images send right away.",
-        "queueFollowUpsToggleLabel": "Toggle queue follow-ups"
+        "queueFollowUpsToggleLabel": "Toggle queue follow-ups",
+        "behaviorTitle": "Behavior",
+        "resumeSearchUpdate": "update",
+        "resumeSearchRelaunch": "relaunch",
+        "queueSearchQueue": "queue",
+        "queueSearchSteer": "steer",
+        "shellEnvSearchVariables": "environment variables",
+        "shellEnvSearchPath": "PATH",
+        "shellEnvSearchProxy": "proxy"
       }
     },
     "agentChildRow": {

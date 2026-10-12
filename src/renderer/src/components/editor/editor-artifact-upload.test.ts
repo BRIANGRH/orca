@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenFile } from '@/store/slices/editor'
 import {
-  createCurrentMarkdownArtifactRequest,
-  createMarkdownArtifactRequest,
-  markdownArtifactSourceKey
-} from './markdown-artifact-upload'
+  createCurrentEditorArtifactRequest,
+  createEditorArtifactRequest,
+  editorArtifactContentType,
+  editorArtifactSourceKey
+} from './editor-artifact-upload'
 
 const mocks = vi.hoisted(() => ({
   drafts: {} as Record<string, string>,
@@ -36,10 +37,10 @@ function openFile(overrides: Partial<OpenFile> = {}): OpenFile {
   }
 }
 
-describe('Markdown artifact upload', () => {
+describe('Editor artifact upload', () => {
   it('uses the ordinary file path for local and folder workspaces', () => {
-    expect(markdownArtifactSourceKey(openFile())).toBe('/repo/notes.md')
-    expect(createMarkdownArtifactRequest(openFile(), '# Draft')).toEqual({
+    expect(editorArtifactSourceKey(openFile())).toBe('/repo/notes.md')
+    expect(createEditorArtifactRequest(openFile(), '# Draft', 'text/markdown')).toEqual({
       sourceKey: '/repo/notes.md',
       content: '# Draft',
       contentType: 'text/markdown',
@@ -65,7 +66,7 @@ describe('Markdown artifact upload', () => {
         }
       }
     })
-    expect(JSON.parse(markdownArtifactSourceKey(file))).toEqual([
+    expect(JSON.parse(editorArtifactSourceKey(file))).toEqual([
       'ssh',
       'build-box',
       '/repo/notes.md'
@@ -74,7 +75,7 @@ describe('Markdown artifact upload', () => {
 
   it('matches the SSH CLI source identity for external files', () => {
     expect(
-      JSON.parse(markdownArtifactSourceKey(openFile({ externalSshTargetId: 'build-box' })))
+      JSON.parse(editorArtifactSourceKey(openFile({ externalSshTargetId: 'build-box' })))
     ).toEqual(['ssh', 'build-box', '/repo/notes.md'])
   })
 
@@ -84,8 +85,22 @@ describe('Markdown artifact upload', () => {
     })
 
     expect(
-      createCurrentMarkdownArtifactRequest(openFile(), '/repo/notes.md', '# Stale content').content
+      createCurrentEditorArtifactRequest(
+        openFile(),
+        '/repo/notes.md',
+        '# Stale content',
+        'text/markdown'
+      ).content
     ).toBe('# Latest edit')
     expect(mocks.flush).toHaveBeenCalledWith('/repo/notes.md')
+  })
+
+  it('shares Markdown and HTML documents only', () => {
+    expect(editorArtifactContentType('/repo/notes.md', true)).toBe('text/markdown')
+    expect(editorArtifactContentType('/repo/report.html', false)).toBe('text/html')
+    expect(editorArtifactContentType('/repo/REPORT.HTM', false)).toBe('text/html')
+    // Why: JSP highlights as HTML but is not a page a share link can render.
+    expect(editorArtifactContentType('/repo/index.jsp', false)).toBeNull()
+    expect(editorArtifactContentType('/repo/main.ts', false)).toBeNull()
   })
 })

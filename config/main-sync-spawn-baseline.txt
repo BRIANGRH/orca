@@ -53,7 +53,6 @@
 1 src/main/plugins/plugin-private-marketplace-ssh-shim.cjs
 2 src/main/plugins/plugin-secrets-store.ts
 2 src/main/plugins/plugin-storage-store.ts
-1 src/main/providers/working-directory-validation.ts
 1 src/main/pty/posix-pty-foreground-group.ts
 1 src/main/pty/posix-pty-process-groups.ts
 1 src/main/pwsh.ts
@@ -72,8 +71,7 @@
 1 src/main/startup/linux-secret-service-probe.ts
 2 src/main/win32-utils.ts
 1 src/main/worktree-runner-script.ts
-2 src/main/wsl-availability.ts
-5 src/main/wsl.ts
+3 src/main/wsl.ts
 3 src/main/zcode/zcode-plan-api-key-store.ts
 2 src/main/zsh-startup-hook-pty-harness.ts
 1 src/shared/bounded-secure-json-file.ts
