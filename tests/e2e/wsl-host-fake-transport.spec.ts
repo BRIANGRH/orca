@@ -4,7 +4,7 @@
  * host through the real add-host UI, adds a project on it, and runs a terminal there.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
@@ -81,12 +81,11 @@ async function launchDesktopWithFakeWsl(
   }
 }
 
-/** Every distro the fake connector was asked to start, read from the desktop's main process. */
-async function fakeWslConnects(app: ElectronApplication): Promise<string[]> {
-  return app.evaluate(() => {
-    const log: unknown = Reflect.get(globalThis, '__orcaE2EWslFakeConnects')
-    return Array.isArray(log) ? log.map(String) : []
-  })
+/** Every distro the fake connector was asked to start, from the log file it appends to. */
+function fakeWslConnects(connectLogFile: string): string[] {
+  return existsSync(connectLogFile)
+    ? readFileSync(connectLogFile, 'utf8').split('\n').filter(Boolean)
+    : []
 }
 
 async function setWslHostsEnabled(page: Page, enabled: boolean): Promise<void> {
@@ -133,7 +132,11 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
   const distrosDir = mkdtempSync(path.join(os.tmpdir(), 'orca-e2e-wsl-distros-'))
   const distrosFile = path.join(distrosDir, 'distros.json')
   writeFileSync(distrosFile, JSON.stringify([LEGACY_DISTRO]))
-  const desktop = await launchDesktopWithFakeWsl(offer.pairingUrl, testInfo, { distrosFile })
+  const connectLogFile = path.join(distrosDir, 'connects.log')
+  const desktop = await launchDesktopWithFakeWsl(offer.pairingUrl, testInfo, {
+    distrosFile,
+    connectLogFile
+  })
   const projectPath = createGitProject()
   try {
     const { page } = desktop
@@ -312,9 +315,10 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     expect(
       await page.evaluate(() => window.__store?.getState().activeWorktreeId ?? null)
     ).toBeNull()
-    const connectsAfterRemoval = await fakeWslConnects(desktop.app)
+    const connectsAfterRemoval = fakeWslConnects(connectLogFile)
+    expect(connectsAfterRemoval).toContain('Ubuntu')
     await new Promise((resolve) => setTimeout(resolve, 3_000))
-    expect(await fakeWslConnects(desktop.app)).toEqual(connectsAfterRemoval)
+    expect(fakeWslConnects(connectLogFile)).toEqual(connectsAfterRemoval)
   } finally {
     await desktop.dispose()
     rmSync(projectPath, { recursive: true, force: true })
