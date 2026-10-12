@@ -16,7 +16,10 @@ import {
   recordRendererErrorReport
 } from './crash-reporting-renderer-error-report'
 import { recordRendererBreadcrumbFromRenderer } from './crash-reporting-renderer-breadcrumbs'
-import { profileRendererHeapHighwaterBreadcrumb } from '../crash-reporting/renderer-heap-allocation-profile'
+import {
+  profiledRendererFor,
+  profileRendererMemoryBreadcrumb
+} from '../crash-reporting/renderer-heap-allocation-profile'
 import {
   getLatestPendingReport,
   getLatestSendableReport,
@@ -72,7 +75,7 @@ export function registerCrashReportingHandlers(store: CrashReportStore): void {
         typeof sender?.id === 'number' ? rendererCrashBreadcrumbOrigin(sender.id) : undefined
       recordRendererBreadcrumbFromRenderer(args, origin)
       if (sender && origin) {
-        profileRendererHeapHighwaterBreadcrumb(sender, args, origin)
+        profileRendererMemoryBreadcrumb(profiledRendererFor(sender), args, origin)
       }
     }
   )

@@ -1,53 +1,59 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  noteRendererHeapHighwater,
-  noteRendererMemorySample,
-  profileRendererHeapHighwaterBreadcrumb,
+  noteRendererHeapReading,
+  profileRendererMemoryBreadcrumb,
   resetRendererHeapAllocationProfilesForTests,
-  summarizeSamplingProfile,
-  type ProfiledRenderer
+  type ProfiledRenderer,
+  type RendererHeapReading
 } from './renderer-heap-allocation-profile'
-import { getCrashBreadcrumbSnapshot, clearCrashBreadcrumbsForTest } from './crash-breadcrumb-store'
+import { clearCrashBreadcrumbsForTest, getCrashBreadcrumbSnapshot } from './crash-breadcrumb-store'
 
-function frame(functionName: string, url: string, lineNumber = 9, columnNumber = 4) {
-  return { functionName, url, lineNumber, columnNumber, scriptId: '1' }
-}
-
-const APP =
-  'file:///Users/someone/Applications/Orca.app/Contents/Resources/app.asar/out/renderer/assets'
+const PAGE = 'file:///Users/someone/Orca.app/Contents/Resources/app.asar/out/renderer/index.html'
+const BUNDLE = 'file:///Users/someone/Orca.app/Contents/Resources/app.asar/out/renderer/assets/'
 
 const profile = {
   head: {
-    callFrame: frame('(root)', ''),
+    callFrame: { functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 },
     selfSize: 0,
     children: [
       {
-        callFrame: frame('appendChunk', `${APP}/terminal-Ab12.js`),
-        selfSize: 0,
-        children: [
-          {
-            callFrame: frame('sliceOutput', `${APP}/terminal-Ab12.js`, 20),
-            selfSize: 3 * 1024 * 1024
-          },
-          { callFrame: frame('evil', 'data:text/javascript,secret/stuff.js'), selfSize: 512 * 1024 }
-        ]
-      },
-      { callFrame: frame('(V8 API)', ''), selfSize: 1024 * 1024 }
+        callFrame: {
+          functionName: 'sliceOutput',
+          url: `${BUNDLE}terminal-Ab12.js`,
+          scriptId: '7',
+          lineNumber: 20,
+          columnNumber: 4
+        },
+        selfSize: 3 * 1024 * 1024
+      }
     ]
   }
 }
 
-function fakeRenderer(id = 1, attached = false) {
-  const destroyed: (() => void)[] = []
-  const detachListeners = new Set<() => void>()
+function fakeRenderer(id: number, { attached = false, holdStart = false } = {}) {
+  const documentEndWatchers = new Set<() => void>()
   let isAttached = attached
-  const sendCommand = vi.fn(async (method: string) =>
-    method === 'HeapProfiler.getSamplingProfile' ? { profile } : {}
-  )
+  let releaseStart = (): void => undefined
+  const started = holdStart
+    ? new Promise<void>((resolve) => {
+        releaseStart = resolve
+      })
+    : Promise.resolve()
+  const sendCommand = vi.fn(async (method: string) => {
+    if (method === 'HeapProfiler.startSampling') {
+      await started
+    }
+    return method === 'HeapProfiler.getSamplingProfile' ? { profile } : {}
+  })
+  const detachListeners = new Set<() => void>()
   const renderer: ProfiledRenderer = {
     id,
     isDestroyed: () => false,
-    once: (_event, listener) => destroyed.push(listener),
+    getURL: () => PAGE,
+    watchDocumentEnd: (onEnd) => {
+      documentEndWatchers.add(onEnd)
+      return () => documentEndWatchers.delete(onEnd)
+    },
     debugger: {
       isAttached: () => isAttached,
       attach: vi.fn(() => {
@@ -55,126 +61,159 @@ function fakeRenderer(id = 1, attached = false) {
       }),
       detach: vi.fn(() => {
         isAttached = false
+        detachListeners.forEach((listener) => listener())
       }),
       sendCommand,
       on: (_event, listener) => detachListeners.add(listener),
       removeListener: (_event, listener) => detachListeners.delete(listener)
     }
   }
-  return { renderer, sendCommand, destroy: () => destroyed.forEach((listener) => listener()) }
+  return {
+    renderer,
+    sendCommand,
+    releaseStart: () => releaseStart(),
+    endDocument: () => [...documentEndWatchers].forEach((onEnd) => onEnd()),
+    watcherCount: () => documentEndWatchers.size,
+    reads: () =>
+      sendCommand.mock.calls.filter(([method]) => method === 'HeapProfiler.getSamplingProfile')
+        .length
+  }
 }
 
+const sample = (heapRatio: number): RendererHeapReading => ({
+  heapRatio,
+  rendererSurface: null,
+  isHighwaterMark: false
+})
+const mark = (heapRatio: number): RendererHeapReading => ({
+  heapRatio,
+  rendererSurface: 'main',
+  isHighwaterMark: true
+})
+const sampling = (sendCommand: ReturnType<typeof fakeRenderer>['sendCommand']) =>
+  vi.waitFor(() =>
+    expect(sendCommand).toHaveBeenCalledWith('HeapProfiler.startSampling', {
+      samplingInterval: 512 * 1024
+    })
+  )
+
 afterEach(() => {
+  vi.useRealTimers()
   resetRendererHeapAllocationProfilesForTests()
   clearCrashBreadcrumbsForTest()
 })
 
-describe('summarizeSamplingProfile', () => {
-  it('names allocation sites by bundle file and line, never paths or script content', () => {
-    const summary = summarizeSamplingProfile(profile)
-
-    expect(summary).toEqual({
-      sampledLiveMB: 5,
-      siteCount: 3,
-      site01: '3072KB sliceOutput@terminal-Ab12.js:21:5 < appendChunk@terminal-Ab12.js:10:5',
-      site02: '1024KB (V8 API)',
-      site03: '512KB evil@(script):10:5 < appendChunk@terminal-Ab12.js:10:5'
-    })
-    expect(JSON.stringify(summary)).not.toContain('someone')
-    expect(JSON.stringify(summary)).not.toContain('secret')
-  })
-})
-
-describe('noteRendererHeapHighwater', () => {
-  it('starts sampling at the first heap mark and refreshes the profile on later samples', async () => {
+describe('noteRendererHeapReading', () => {
+  it('starts at 60% and refreshes on later marks and on samples a minute apart', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
-    const { renderer, sendCommand } = fakeRenderer()
+    const fake = fakeRenderer(1)
     const record = vi.fn()
 
-    noteRendererHeapHighwater(renderer, 60, 'main', record)
-    await vi.waitFor(() =>
-      expect(sendCommand).toHaveBeenCalledWith('HeapProfiler.startSampling', {
-        samplingInterval: 512 * 1024
-      })
-    )
-    noteRendererMemorySample(renderer, record)
-    expect(record).not.toHaveBeenCalled()
+    noteRendererHeapReading(fake.renderer, sample(0.59), record)
+    expect(fake.renderer.debugger.attach).not.toHaveBeenCalled()
+    noteRendererHeapReading(fake.renderer, sample(0.61), record)
+    noteRendererHeapReading(fake.renderer, mark(0.61), record)
+    await sampling(fake.sendCommand)
 
+    noteRendererHeapReading(fake.renderer, sample(0.62), record)
+    expect(fake.reads()).toBe(0)
     vi.setSystemTime(Date.now() + 60_000)
-    noteRendererMemorySample(renderer, record)
+    noteRendererHeapReading(fake.renderer, sample(0.65), record)
     await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1))
     expect(record.mock.calls[0][0]).toMatchObject({
       rendererSurface: 'main',
-      startedAtPct: 60,
+      startedAtPct: 61,
       sampledMinutes: 1,
-      sampledLiveMB: 5
+      site01: '3072KB sliceOutput@terminal-Ab12.js:21:5'
     })
 
-    noteRendererHeapHighwater(renderer, 80, 'main', record)
+    noteRendererHeapReading(fake.renderer, mark(0.81), record)
     await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(2))
-    expect(renderer.debugger.attach).toHaveBeenCalledTimes(1)
-    expect(renderer.debugger.detach).not.toHaveBeenCalled()
-    vi.useRealTimers()
+    expect(fake.renderer.debugger.attach).toHaveBeenCalledTimes(1)
   })
 
-  it('never takes over a debugger that is already attached', () => {
-    const { renderer, sendCommand } = fakeRenderer(2, true)
+  it('does not read, or spend a refresh, before sampling has started', async () => {
+    const fake = fakeRenderer(2, { holdStart: true })
+    const record = vi.fn()
 
-    noteRendererHeapHighwater(renderer, 60, 'main', vi.fn())
+    noteRendererHeapReading(fake.renderer, mark(0.85), record)
+    noteRendererHeapReading(fake.renderer, mark(0.85), record)
+    expect(fake.reads()).toBe(0)
 
-    expect(renderer.debugger.attach).not.toHaveBeenCalled()
-    expect(sendCommand).not.toHaveBeenCalled()
+    fake.releaseStart()
+    await sampling(fake.sendCommand)
+    await vi.waitFor(() => {
+      noteRendererHeapReading(fake.renderer, mark(0.86), record)
+      expect(record).toHaveBeenCalledTimes(1)
+    })
   })
 
-  it('stops sampling when the renderer goes away before the next mark', async () => {
-    const { renderer, destroy } = fakeRenderer(3)
-    noteRendererHeapHighwater(renderer, 60, 'main', vi.fn())
+  it('releases the debugger once the heap falls below 50%, and starts again at 60%', async () => {
+    const fake = fakeRenderer(3)
+    noteRendererHeapReading(fake.renderer, sample(0.7), vi.fn())
+    await sampling(fake.sendCommand)
 
-    destroy()
+    noteRendererHeapReading(fake.renderer, sample(0.55), vi.fn())
+    expect(fake.renderer.debugger.detach).not.toHaveBeenCalled()
+    noteRendererHeapReading(fake.renderer, sample(0.45), vi.fn())
+    expect(fake.renderer.debugger.detach).toHaveBeenCalledTimes(1)
+    expect(fake.sendCommand).toHaveBeenCalledWith('HeapProfiler.stopSampling')
+    expect(fake.watcherCount()).toBe(0)
 
-    expect(renderer.debugger.detach).toHaveBeenCalled()
-    expect(renderer.debugger.sendCommand).toHaveBeenCalledWith('HeapProfiler.stopSampling')
+    noteRendererHeapReading(fake.renderer, sample(0.6), vi.fn())
+    expect(fake.renderer.debugger.attach).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops when the window loads a new document or goes away, leaving no listeners', async () => {
+    const fake = fakeRenderer(4)
+    for (let cycle = 0; cycle < 3; cycle++) {
+      noteRendererHeapReading(fake.renderer, sample(0.7), vi.fn())
+      await sampling(fake.sendCommand)
+      fake.endDocument()
+    }
+
+    expect(fake.renderer.debugger.detach).toHaveBeenCalledTimes(3)
+    expect(fake.watcherCount()).toBe(0)
+  })
+
+  it('never takes over a debugger someone else attached', () => {
+    const fake = fakeRenderer(5, { attached: true })
+
+    noteRendererHeapReading(fake.renderer, mark(0.9), vi.fn())
+
+    expect(fake.renderer.debugger.attach).not.toHaveBeenCalled()
+    expect(fake.sendCommand).not.toHaveBeenCalled()
   })
 })
 
-describe('profileRendererHeapHighwaterBreadcrumb', () => {
-  it('records a retained profile crumb for heap-ratio marks only', async () => {
-    const { renderer, sendCommand } = fakeRenderer(4)
-    const origin = 'renderer:4'
+describe('profileRendererMemoryBreadcrumb', () => {
+  it('reads heap use from memory crumbs and records a retained crumb for the sender', async () => {
+    const fake = fakeRenderer(6)
+    const origin = 'renderer:6'
+    const crumb = (name: string, usedHeapMB: number, extra: Record<string, unknown> = {}) =>
+      profileRendererMemoryBreadcrumb(
+        fake.renderer,
+        { name, data: { usedHeapMB, heapLimitMB: 4000, ...extra } },
+        origin
+      )
 
-    profileRendererHeapHighwaterBreadcrumb(
-      renderer,
-      {
-        name: 'renderer_memory_highwater',
-        data: { rendererSurface: 'main', thresholdPrivateMB: 600 }
-      },
-      origin
-    )
-    expect(renderer.debugger.attach).not.toHaveBeenCalled()
+    crumb('renderer_memory_highwater', 900, { rendererSurface: 'main', thresholdPrivateMB: 600 })
+    crumb('renderer_click', 3900)
+    expect(fake.renderer.debugger.attach).not.toHaveBeenCalled()
 
-    profileRendererHeapHighwaterBreadcrumb(
-      renderer,
-      { name: 'renderer_memory_highwater', data: { rendererSurface: 'main', thresholdPct: 60 } },
-      origin
-    )
-    await vi.waitFor(() =>
-      expect(sendCommand).toHaveBeenCalledWith('HeapProfiler.startSampling', expect.anything())
-    )
-    profileRendererHeapHighwaterBreadcrumb(
-      renderer,
-      { name: 'renderer_memory_highwater', data: { rendererSurface: 'main', thresholdPct: 80 } },
-      origin
-    )
-
-    await vi.waitFor(() =>
-      expect(getCrashBreadcrumbSnapshot().map((crumb) => crumb.name)).toContain(
+    crumb('renderer_memory', 2500)
+    crumb('renderer_memory_highwater', 2500, { rendererSurface: 'main', thresholdPct: 60 })
+    await sampling(fake.sendCommand)
+    await vi.waitFor(() => {
+      crumb('renderer_memory_highwater', 3300, { rendererSurface: 'main', thresholdPct: 80 })
+      expect(getCrashBreadcrumbSnapshot().map((entry) => entry.name)).toContain(
         'renderer_heap_allocation_profile'
       )
-    )
-    const crumb = getCrashBreadcrumbSnapshot().find(
+    })
+    const recorded = getCrashBreadcrumbSnapshot().find(
       (entry) => entry.name === 'renderer_heap_allocation_profile'
     )
-    expect(crumb?.origin).toBe(origin)
-    expect(crumb?.data?.site01).toContain('sliceOutput@terminal-Ab12.js:21:5')
+    expect(recorded?.origin).toBe(origin)
+    expect(recorded?.data).toMatchObject({ rendererSurface: 'main', startedAtPct: 63 })
   })
 })

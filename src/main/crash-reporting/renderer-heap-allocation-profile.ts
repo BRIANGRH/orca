@@ -1,24 +1,23 @@
+import type { WebContents } from 'electron'
 import type { CrashReportBreadcrumbData } from '../../shared/crash-reporting'
 import {
   RENDERER_HEAP_ALLOCATION_PROFILE_BREADCRUMB,
   recordCrashBreadcrumb
 } from './crash-breadcrumb-store'
+import {
+  readSamplingProfile,
+  summarizeSamplingProfile,
+  trustedScriptPrefixFor
+} from './renderer-heap-allocation-sites'
 
 // Why 512 KB: V8's sampler then records ~2 stacks per MB allocated, cheap enough to leave on near OOM.
 const SAMPLING_INTERVAL_BYTES = 512 * 1024
-const MAX_SITES = 12
-const MAX_STACK_FRAMES = 4
-const MAX_FUNCTION_NAME_LENGTH = 48
-const MAX_FILE_NAME_LENGTH = 64
-const SCRIPT_FILE_NAME = /^[\w.-]+\.[cm]?js$/
-const BUNDLE_SCRIPT_URL = /^(?:file|https?):\/\//
-
-type SamplingProfileNode = {
-  callFrame: { functionName: string; url: string; lineNumber: number; columnNumber: number }
-  selfSize: number
-  children?: SamplingProfileNode[]
-}
-type SamplingProfile = { head: SamplingProfileNode }
+// Sampling runs while the heap is at least 60% full and stops once it falls below 50%.
+const START_HEAP_RATIO = 0.6
+const STOP_HEAP_RATIO = 0.5
+// Why: a fast leak can go from the first mark to OOM between two marks, so the profile is
+// refreshed on each periodic memory sample and the crash report keeps the newest one.
+const PROFILE_REFRESH_MS = 55_000
 
 export type ProfiledDebugger = {
   isAttached(): boolean
@@ -33,56 +32,86 @@ export type ProfiledRenderer = {
   id: number
   debugger: ProfiledDebugger
   isDestroyed(): boolean
-  once(event: 'destroyed', listener: () => void): unknown
+  getURL(): string
+  // Calls onEnd when the renderer is destroyed, its process dies, or it loads a new document.
+  watchDocumentEnd(onEnd: () => void): () => void
+}
+
+export function profiledRendererFor(contents: WebContents): ProfiledRenderer {
+  return {
+    id: contents.id,
+    debugger: contents.debugger,
+    isDestroyed: () => contents.isDestroyed(),
+    getURL: () => contents.getURL(),
+    watchDocumentEnd: (onEnd) => {
+      // Why: a new document starts with a fresh heap and its own high-water marks.
+      const onNavigation = (details: { isMainFrame: boolean; isSameDocument: boolean }): void => {
+        if (details.isMainFrame && !details.isSameDocument) {
+          onEnd()
+        }
+      }
+      contents.on('destroyed', onEnd)
+      contents.on('render-process-gone', onEnd)
+      contents.on('did-start-navigation', onNavigation)
+      return () => {
+        contents.removeListener('destroyed', onEnd)
+        contents.removeListener('render-process-gone', onEnd)
+        contents.removeListener('did-start-navigation', onNavigation)
+      }
+    }
+  }
+}
+
+/** One heap reading from a renderer crumb: a periodic sample or a high-water mark. */
+export type RendererHeapReading = {
+  heapRatio: number
+  // Periodic samples do not carry the surface; the high-water mark in the same sample does.
+  rendererSurface: string | null
+  isHighwaterMark: boolean
 }
 
 type SamplingSession = {
   rendererSurface: string
   startedAtPct: number
   startedAtMs: number
+  trustedScriptPrefix: string | null
+  // Reads before startSampling resolves would fail and are skipped, not counted as a refresh.
+  ready: boolean
   lastReadAtMs: number
   reading: boolean
-  release: () => void
+  stop: () => void
 }
-
-// Why: a fast leak can go from the first mark to OOM between two marks, so the profile is
-// refreshed on each periodic memory sample and the crash report keeps the newest one.
-const PROFILE_REFRESH_MS = 55_000
 
 const sessions = new Map<number, SamplingSession>()
 
 /**
- * The first heap-ratio high-water mark starts V8's sampling heap profiler on that renderer.
- * From then on every memory sample re-reads which code allocated the memory still alive and
- * overwrites one retained crumb, so a crash report names the allocation sites behind the growth.
+ * Samples which code allocates the renderer heap while it is near its limit, and keeps the newest
+ * summary in one retained crumb so a crash report names the allocation sites behind the growth.
+ * Whether to sample is re-derived from every reading, so recovery or a reload releases the debugger.
  */
-export function noteRendererHeapHighwater(
+export function noteRendererHeapReading(
   renderer: ProfiledRenderer,
-  thresholdPct: number,
-  rendererSurface: string,
+  reading: RendererHeapReading,
   record: (data: CrashReportBreadcrumbData) => void
 ): void {
   if (renderer.isDestroyed()) {
     return
   }
   const session = sessions.get(renderer.id)
-  if (session) {
-    refreshProfile(renderer, session, record)
-  } else {
-    startSampling(renderer, thresholdPct, rendererSurface)
+  if (session && reading.rendererSurface) {
+    session.rendererSurface = reading.rendererSurface
   }
-}
-
-export function noteRendererMemorySample(
-  renderer: ProfiledRenderer,
-  record: (data: CrashReportBreadcrumbData) => void
-): void {
-  const session = sessions.get(renderer.id)
-  if (
-    session &&
-    !renderer.isDestroyed() &&
-    Date.now() - session.lastReadAtMs >= PROFILE_REFRESH_MS
-  ) {
+  if (!session) {
+    if (reading.heapRatio >= START_HEAP_RATIO) {
+      startSampling(renderer, reading)
+    }
+    return
+  }
+  if (reading.heapRatio < STOP_HEAP_RATIO) {
+    session.stop()
+    return
+  }
+  if (reading.isHighwaterMark || Date.now() - session.lastReadAtMs >= PROFILE_REFRESH_MS) {
     refreshProfile(renderer, session, record)
   }
 }
@@ -92,7 +121,7 @@ function refreshProfile(
   session: SamplingSession,
   record: (data: CrashReportBreadcrumbData) => void
 ): void {
-  if (session.reading) {
+  if (!session.ready || session.reading) {
     return
   }
   session.reading = true
@@ -106,7 +135,7 @@ function refreshProfile(
           rendererSurface: session.rendererSurface,
           startedAtPct: session.startedAtPct,
           sampledMinutes: Math.round((Date.now() - session.startedAtMs) / 60_000),
-          ...summarizeSamplingProfile(profile)
+          ...summarizeSamplingProfile(profile, session.trustedScriptPrefix)
         })
       }
     })
@@ -116,39 +145,9 @@ function refreshProfile(
     })
 }
 
-/** Feeds a renderer-sent breadcrumb to the profiler: heap-ratio marks start it, samples refresh it. */
-export function profileRendererHeapHighwaterBreadcrumb(
-  renderer: ProfiledRenderer,
-  args: { name?: unknown; data?: unknown } | undefined,
-  origin: string
-): void {
-  const record = (data: CrashReportBreadcrumbData): void => {
-    recordCrashBreadcrumb(RENDERER_HEAP_ALLOCATION_PROFILE_BREADCRUMB, data, origin)
-  }
-  if (args?.name === 'renderer_memory') {
-    noteRendererMemorySample(renderer, record)
-    return
-  }
-  const data = args?.data
-  if (args?.name !== 'renderer_memory_highwater' || !data || typeof data !== 'object') {
-    return
-  }
-  const thresholdPct = 'thresholdPct' in data ? data.thresholdPct : undefined
-  const rendererSurface = 'rendererSurface' in data ? data.rendererSurface : undefined
-  if (typeof thresholdPct !== 'number' || !Number.isFinite(thresholdPct)) {
-    return
-  }
-  noteRendererHeapHighwater(
-    renderer,
-    thresholdPct,
-    typeof rendererSurface === 'string' ? rendererSurface : 'unknown',
-    record
-  )
-}
-
-function startSampling(renderer: ProfiledRenderer, thresholdPct: number, surface: string): void {
+function startSampling(renderer: ProfiledRenderer, reading: RendererHeapReading): void {
   const debug = renderer.debugger
-  // Why: never take over a debugger someone else (DevTools, an automation) attached.
+  // Why: never take over a debugger someone else (DevTools, a diagnostic script) attached.
   if (debug.isAttached()) {
     return
   }
@@ -157,14 +156,16 @@ function startSampling(renderer: ProfiledRenderer, thresholdPct: number, surface
   } catch {
     return
   }
-  let released = false
-  const release = (): void => {
-    if (released) {
+  let stopped = false
+  let unwatch = (): void => undefined
+  const stop = (): void => {
+    if (stopped) {
       return
     }
-    released = true
+    stopped = true
     sessions.delete(renderer.id)
     debug.removeListener('detach', onDetach)
+    unwatch()
     if (!renderer.isDestroyed() && debug.isAttached()) {
       void debug.sendCommand('HeapProfiler.stopSampling').catch(() => undefined)
       try {
@@ -174,21 +175,20 @@ function startSampling(renderer: ProfiledRenderer, thresholdPct: number, surface
       }
     }
   }
-  const onDetach = (): void => {
-    released = true
-    sessions.delete(renderer.id)
-    debug.removeListener('detach', onDetach)
-  }
+  const onDetach = (): void => stop()
   debug.on('detach', onDetach)
-  renderer.once('destroyed', release)
-  sessions.set(renderer.id, {
-    rendererSurface: surface,
-    startedAtPct: thresholdPct,
+  unwatch = renderer.watchDocumentEnd(stop)
+  const session: SamplingSession = {
+    rendererSurface: reading.rendererSurface ?? 'unknown',
+    startedAtPct: Math.round(reading.heapRatio * 100),
     startedAtMs: Date.now(),
+    trustedScriptPrefix: trustedScriptPrefixFor(renderer.getURL()),
+    ready: false,
     lastReadAtMs: Date.now(),
     reading: false,
-    release
-  })
+    stop
+  }
+  sessions.set(renderer.id, session)
   void debug
     .sendCommand('HeapProfiler.enable')
     .then(() =>
@@ -196,89 +196,50 @@ function startSampling(renderer: ProfiledRenderer, thresholdPct: number, surface
         samplingInterval: SAMPLING_INTERVAL_BYTES
       })
     )
-    .catch(release)
+    .then(() => {
+      session.ready = true
+    })
+    .catch(stop)
 }
 
-function readSamplingProfile(result: unknown): SamplingProfile | null {
-  if (!result || typeof result !== 'object' || !('profile' in result)) {
+/** Feeds a renderer-sent memory crumb to the profiler. */
+export function profileRendererMemoryBreadcrumb(
+  renderer: ProfiledRenderer,
+  args: { name?: unknown; data?: unknown } | undefined,
+  origin: string
+): void {
+  const reading = readHeapReading(args)
+  if (reading) {
+    noteRendererHeapReading(renderer, reading, (data) => {
+      recordCrashBreadcrumb(RENDERER_HEAP_ALLOCATION_PROFILE_BREADCRUMB, data, origin)
+    })
+  }
+}
+
+function readHeapReading(
+  args: { name?: unknown; data?: unknown } | undefined
+): RendererHeapReading | null {
+  const isHighwaterMark = args?.name === 'renderer_memory_highwater'
+  const data = args?.data
+  if ((!isHighwaterMark && args?.name !== 'renderer_memory') || !data || typeof data !== 'object') {
     return null
   }
-  const { profile } = result
-  if (!profile || typeof profile !== 'object' || !('head' in profile)) {
+  const used = 'usedHeapMB' in data ? data.usedHeapMB : undefined
+  const limit = 'heapLimitMB' in data ? data.heapLimitMB : undefined
+  if (typeof used !== 'number' || typeof limit !== 'number' || !(limit > 0)) {
     return null
   }
-  const { head } = profile
-  return isSamplingProfileNode(head) ? { head } : null
-}
-
-function isSamplingProfileNode(value: unknown): value is SamplingProfileNode {
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    'callFrame' in value &&
-    'selfSize' in value &&
-    typeof value.selfSize === 'number' &&
-    !!value.callFrame &&
-    typeof value.callFrame === 'object'
-  )
-}
-
-/**
- * Top allocation sites by sampled live bytes, as `KB fn@file:line < caller@file:line`.
- * Code locations only: file basenames of the app bundle, never paths, values or user data.
- */
-export function summarizeSamplingProfile(profile: SamplingProfile): CrashReportBreadcrumbData {
-  const sites = new Map<string, number>()
-  let totalBytes = 0
-  const walk: { node: SamplingProfileNode; stack: SamplingProfileNode[] }[] = [
-    { node: profile.head, stack: [] }
-  ]
-  for (let item = walk.pop(); item; item = walk.pop()) {
-    const { node, stack } = item
-    const frames = node === profile.head ? stack : [node, ...stack].slice(0, MAX_STACK_FRAMES)
-    if (node.selfSize > 0 && frames.length > 0) {
-      totalBytes += node.selfSize
-      const key = frames.map(describeFrame).join(' < ')
-      sites.set(key, (sites.get(key) ?? 0) + node.selfSize)
-    }
-    for (const child of node.children ?? []) {
-      walk.push({ node: child, stack: frames })
-    }
+  const surface = 'rendererSurface' in data ? data.rendererSurface : undefined
+  return {
+    heapRatio: used / limit,
+    rendererSurface: typeof surface === 'string' ? surface : null,
+    isHighwaterMark
   }
-  const top = [...sites.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_SITES)
-  const data: CrashReportBreadcrumbData = {
-    sampledLiveMB: Math.round(totalBytes / (1024 * 1024)),
-    siteCount: sites.size
-  }
-  top.forEach(([key, bytes], index) => {
-    data[`site${String(index + 1).padStart(2, '0')}`] = `${Math.round(bytes / 1024)}KB ${key}`
-  })
-  return data
-}
-
-function describeFrame(node: SamplingProfileNode): string {
-  const { functionName, url, lineNumber, columnNumber } = node.callFrame
-  const name = (functionName || '(anonymous)')
-    .replace(/[^\w$.<>()[\] ]/g, '')
-    .slice(0, MAX_FUNCTION_NAME_LENGTH)
-  const baseName =
-    url
-      .replace(/[?#].*$/, '')
-      .split(/[\\/]/)
-      .pop() ?? ''
-  // Why: only bundle file names; a data:/blob:/eval URL could carry page content.
-  const file = !url
-    ? ''
-    : BUNDLE_SCRIPT_URL.test(url) && SCRIPT_FILE_NAME.test(baseName)
-      ? baseName.slice(0, MAX_FILE_NAME_LENGTH)
-      : '(script)'
-  // Why: V8 reports native/runtime frames with no script; their name alone is the useful part.
-  return file ? `${name}@${file}:${lineNumber + 1}:${columnNumber + 1}` : name
 }
 
 export function resetRendererHeapAllocationProfilesForTests(): void {
   for (const session of sessions.values()) {
-    session.release()
+    session.stop()
   }
   sessions.clear()
 }
