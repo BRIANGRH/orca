@@ -29,7 +29,7 @@ export function docPreviewGrantFileOwner(owner: DocPreviewGrantOwner): FileArtif
 
 function docPreviewGrantReadContext(owner: DocPreviewGrantOwner): RuntimeFileOperationArgs {
   if (owner.kind === 'ssh') {
-    // Why the connection id is kept: this IPC refuses SSH reads, and dropping it would read locally.
+    // Why the connection id is kept: dropping it would read this path on this machine.
     return {
       target: { kind: 'local' },
       worktreeId: null,
