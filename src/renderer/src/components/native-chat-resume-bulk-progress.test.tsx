@@ -300,7 +300,7 @@ it('dismissing a failure after the reply never promotes it to resumed history', 
   await act(async () => dismiss?.click())
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Resumed 0 of 1 chat')
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Need you0')
-  expect(runStatus('Prompt a')).toBeNull()
+  expect(runStatus('Prompt a')).toBe('Prompt a: Couldn’t confirm the chat was resumed')
   expect(toasts()).toEqual([['Couldn’t confirm 1 chat was resumed']])
 })
 
@@ -313,7 +313,7 @@ it('keeps an unknown reply unconfirmed when it carries no confirmed failure list
   await mount(<NativeChatResumeOnRestartModal />)
   await act(async () => continueNativeChatRestartOffer(['a']))
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Resumed 0 of 1 chat')
-  expect(runStatus('Prompt a')).toBeNull()
+  expect(runStatus('Prompt a')).toBe('Prompt a: Couldn’t confirm the chat was resumed')
   expect(toasts()).toEqual([['Couldn’t confirm 1 chat was resumed']])
 })
 
@@ -337,5 +337,5 @@ it('a retry hides its old failure, then a dismissed final failure leaves Need yo
   await act(async () => dismiss?.click())
   expect(getNativeChatRestartOffer().failed).toEqual([])
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Need you0')
-  expect(runStatus('Prompt b')).toBeNull()
+  expect(runStatus('Prompt b')).toBe('Prompt b: Couldn’t confirm the chat was resumed')
 })

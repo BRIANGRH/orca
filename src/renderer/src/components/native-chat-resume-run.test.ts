@@ -140,9 +140,26 @@ describe('the dialog over a bulk action', () => {
     const finished = {
       ...run,
       inFlight: false,
-      continued: [{ sessionId: 'a', outcome: 'continued' as const }]
+      continued: [
+        { sessionId: 'a', outcome: 'continued' as const },
+        { sessionId: 'b', outcome: 'refused' as const }
+      ]
     }
-    expect(resumeRunView(finished, [], () => undefined, 'resumed').rows).toEqual([row('a')])
+    const recovered = resumeRunView(
+      {
+        ...finished,
+        entries: finished.entries.map((entry) => ({
+          ...entry,
+          observedStatus: { latestPrompt: '' }
+        }))
+      },
+      [],
+      () => undefined,
+      'resumed',
+      () => ({ latestPrompt: 'Continue', turnOutcome: 'success' })
+    )
+    expect(recovered.rows).toEqual([row('a'), row('b')])
+    expect(recovered.statusBySession.get('b')).toEqual({ kind: 'resumed-by-user' })
     const failed = resumeRunView(
       finished,
       [failure],
@@ -152,6 +169,32 @@ describe('the dialog over a bulk action', () => {
     expect(failed.rows).toEqual([failure])
     expect(failed.statusBySession.has('a')).toBe(false)
     expect(resumeRunPendingIds(finished)).toBe(resumeRunPendingIds(null))
+  })
+
+  it('does not attribute a delayed successful turn from the run’s already-ready agent to the user', () => {
+    const observed = observeResumeRun(run, () => ({
+      restartResume: { phase: 'unconfirmed' },
+      hostExecutionPhase: 'ready',
+      hostExecutionOwned: true,
+      latestPrompt: 'same prompt',
+      statusStartedAt: 1
+    }))
+    const view = resumeRunView(
+      { ...observed, inFlight: false },
+      [],
+      () => undefined,
+      'all',
+      () => ({
+        hostExecutionPhase: 'ready',
+        hostExecutionOwned: true,
+        latestPrompt: 'same prompt',
+        statusStartedAt: 2,
+        turnOutcome: 'success'
+      })
+    )
+    expect(view.counts.resumed).toBe(0)
+    expect(view.counts.attention).toBe(2)
+    expect(view.statusBySession.get('a')).toEqual({ kind: 'unconfirmed' })
   })
 
   it('shows final per-chat failures from the feed before the batch returns', () => {

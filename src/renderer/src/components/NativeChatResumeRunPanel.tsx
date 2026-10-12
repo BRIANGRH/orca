@@ -5,6 +5,7 @@ import { useNow } from '@/hooks/use-now'
 import type { ResumeCandidate, ResumeFailure } from './native-chat-resume-on-restart-grouping'
 import { resumeRunInFlight, type ResumeRun, type ResumeRunStarter } from './native-chat-resume-run'
 import { resumeRunView, type ResumeRunFilter } from './native-chat-resume-run-view'
+import { useResumeRunHostStatus } from './native-chat-resume-run-host-status'
 import { ResumeRunStatusIcon } from './NativeChatResumeRunStatusIcon'
 import { ResumeRunSummary } from './NativeChatResumeRunSummary'
 
@@ -84,6 +85,7 @@ export function useResumeRunPanel({
   rows,
   failureFor,
   selectableIds,
+  available,
   open
 }: {
   run: ResumeRun | null
@@ -91,6 +93,7 @@ export function useResumeRunPanel({
   failureFor: (sessionId: string) => ResumeFailure | undefined
   selectableIds: ReadonlySet<string>
   open: boolean
+  available: boolean
 }): ResumeRunPanel | null {
   // Each opening and completed run starts on All so its finished rows can be seen.
   const inFlight = run !== null && resumeRunInFlight(run)
@@ -108,7 +111,10 @@ export function useResumeRunPanel({
   }
   // Ticks only while a visible run is moving: the row timers and the running clock read it.
   const now = useNow(1000, open && inFlight)
-  const view = run ? resumeRunView(run, rows, failureFor, filter.value) : null
+  const hostStatusFor = useResumeRunHostStatus(run)
+  const view = run
+    ? resumeRunView(run, rows, failureFor, filter.value, hostStatusFor, available)
+    : null
   const inFlightIds = view
     ? [...view.statusBySession].flatMap(([sessionId, status]) =>
         status.kind === 'in-flight' ? [sessionId] : []
@@ -130,7 +136,8 @@ export function useResumeRunPanel({
           'Each chat is restored with its full context and asked to check where it stopped. You can close this; the status bar keeps track.'
         )
       : finishedDescription(
-          view.counts.resumed === view.counts.all,
+          view.counts.resumed === view.counts.all &&
+            ![...view.statusBySession.values()].some((status) => status.kind === 'resumed-by-user'),
           run.entries.some((entry) => entry.candidate.trigger === 'update')
         ),
     summary: (
@@ -144,7 +151,8 @@ export function useResumeRunPanel({
       />
     ),
     rows: view.rows,
-    finishedRowsVisible: run.entries.every((entry) => visibleIds.has(entry.candidate.sessionId)),
+    finishedRowsVisible:
+      available && run.entries.every((entry) => visibleIds.has(entry.candidate.sessionId)),
     // Current selection ignores the filter, so changing tabs never moves the layout.
     choosing: [...selectableIds].some((sessionId) => !view.statusBySession.has(sessionId)),
     startedBy: run.startedBy,

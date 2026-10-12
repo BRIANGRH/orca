@@ -82,7 +82,7 @@ function selectedByDefault(failure: ResumeFailure | undefined): boolean {
 
 export function NativeChatResumeOnRestartModal(): React.JSX.Element | null {
   const offerEnabled = useNativeChatRestartOfferEnabled()
-  const { candidates, failed, listedAt } = useNativeChatRestartOffer(offerEnabled)
+  const { candidates, failed, listedAt, available } = useNativeChatRestartOffer(offerEnabled)
   const rows = useMemo<ResumeCandidate[]>(() => [...candidates, ...failed], [candidates, failed])
   const failureBySession = useMemo(
     () => new Map(failed.map((failure) => [failure.sessionId, failure])),
@@ -152,6 +152,7 @@ export function NativeChatResumeOnRestartModal(): React.JSX.Element | null {
     rows,
     failureFor,
     selectableIds,
+    available,
     open
   })
   useEffect(() => {

@@ -150,6 +150,7 @@ export function createResumeModalFixture(rpc: Mock<RestartRpc>, statusStream: Re
               status: 'idle',
               latestPrompt: '',
               updatedAt: 1,
+              statusStartedAt: 1,
               restartResume: { phase }
             }
             statusStream.snapshot.set(sessionId, summary)

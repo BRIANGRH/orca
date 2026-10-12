@@ -8,6 +8,7 @@ import {
   useNativeChatRestartRun
 } from '../native-chat-resume-on-restart-store'
 import { resumeRunInFlight } from '../native-chat-resume-run'
+import { useResumeRunHostStatus } from '../native-chat-resume-run-host-status'
 import { resumeRunView } from '../native-chat-resume-run-view'
 
 // Why: closing the resume dialog is a snooze, not a decline — the host keeps the offer. This is
@@ -131,7 +132,7 @@ function resumedText(count: number): SegmentText {
           ),
     tooltip: translate(
       'auto.components.status.bar.NativeChatResumeStatusSegment.resumedTooltip',
-      'Chats Orca resumed after the restart. Click to see them.'
+      'Chats resumed after the restart. Click to see them.'
     )
   }
 }
@@ -174,10 +175,20 @@ export function NativeChatResumeStatusSegment({
   iconOnly: boolean
 }): React.JSX.Element | null {
   const offerEnabled = useNativeChatRestartOfferEnabled()
-  const { candidates, failed } = useNativeChatRestartOffer(offerEnabled)
+  const { candidates, failed, available } = useNativeChatRestartOffer(offerEnabled)
   const run = useNativeChatRestartRun()
+  const hostStatusFor = useResumeRunHostStatus(run)
   const failureBySession = new Map(failed.map((entry) => [entry.sessionId, entry]))
-  const view = run ? resumeRunView(run, candidates, (id) => failureBySession.get(id), 'all') : null
+  const view = run
+    ? resumeRunView(
+        run,
+        [...candidates, ...failed],
+        (id) => failureBySession.get(id),
+        'all',
+        hostStatusFor,
+        available
+      )
+    : null
   if (!offerEnabled) {
     return null
   }
@@ -187,9 +198,12 @@ export function NativeChatResumeStatusSegment({
   const inRun = new Set(running ? run.entries.map((entry) => entry.candidate.sessionId) : [])
   const waiting = failed.filter((failure) => !inRun.has(failure.sessionId))
   const pending = candidates.filter((candidate) => !inRun.has(candidate.sessionId)).length
-  const failures = waiting.length
+  const failures = running ? waiting.length : (view?.counts.attention ?? waiting.length)
   // An unconfirmed chat may be working, so "failed" would invite a duplicate "continue".
-  const unconfirmed = waiting.some((failure) => failure.outcome === 'unconfirmed')
+  const unconfirmed =
+    !available ||
+    failures > waiting.length ||
+    waiting.some((failure) => failure.outcome === 'unconfirmed')
   // Only this run's own completed rows establish its success; older host failures are separate.
   const resumed =
     run !== null &&

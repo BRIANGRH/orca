@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from 'react'
+import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
+import type { Tab } from '../../../shared/tab-types'
 import { expect, it, vi, type Mock } from 'vitest'
 import { NativeChatResumeOnRestartModal } from './NativeChatResumeOnRestartModal'
 import { NativeChatResumeStatusSegment } from './status-bar/NativeChatResumeStatusSegment'
@@ -44,6 +46,36 @@ vi.mock('sonner', () => ({ toast: vi.fn() }))
 
 const { mount, button, fakeHost, runStatus, toasts } = createResumeModalFixture(rpc, statusStream)
 const dialog = () => document.querySelector('[role="dialog"]')?.textContent
+
+function manualActivity(changes: Partial<AgentSessionStatusSummary> = {}): void {
+  const tab: Tab = {
+    id: 'tab-b',
+    entityId: 'b',
+    worktreeId: 'workspace',
+    groupId: 'group',
+    contentType: 'agent-session',
+    agentSessionAgent: 'codex',
+    label: 'Chat b',
+    customLabel: null,
+    color: null,
+    sortOrder: 0,
+    createdAt: 1
+  }
+  useAppStore.setState({ unifiedTabsByWorktree: { workspace: [tab] } })
+  const session: AgentSessionStatusSummary = {
+    sessionId: 'b',
+    workspaceId: 'workspace',
+    agent: 'codex',
+    status: 'working',
+    latestPrompt: '',
+    updatedAt: Date.now(),
+    hostExecutionOwned: true,
+    hostExecutionPhase: 'ready',
+    ...changes
+  }
+  statusStream.snapshot.set('b', session)
+  statusStream.emit({ type: 'status', session })
+}
 
 async function mountSurfaces(): Promise<void> {
   await mount(
@@ -129,6 +161,215 @@ it.each(['status entry', 'toast Show'] as const)(
     expect(dialog()).toBeUndefined()
   }
 )
+
+it.each(['refused', 'unknown'] as const)(
+  'keeps a %s chat in the result after confirmed manual recovery with an untouched offer',
+  async (verdict) => {
+    const untouched = { ...offered[0]!, sessionId: 'c', latestPrompt: 'Prompt c' }
+    const host = fakeHost({ sessions: [...offered, untouched] }, (sessionId) =>
+      sessionId === 'b' ? verdict : 'continued'
+    )
+    await mountSurfaces()
+    await act(async () => chatBox('c').click())
+    await act(async () => button('Resume 2 chats').click())
+    expect(getNativeChatRestartRun()?.finishedViewShown).toBeUndefined()
+    await act(async () => manualActivity())
+    host.state.failed = []
+    await act(async () => refreshNativeChatRestartOffer())
+    expect(button('2 chats resumed')).toBeTruthy()
+    expect(button('1 chat available to resume')).toBeTruthy()
+    await act(async () => button('1 chat available to resume').click())
+    expect(dialog()).toContain('Resumed 2 of 2 chats')
+    expect(dialog()).toContain('All3')
+    expect(dialog()).toContain('Need you0')
+    expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
+    expect(runStatus('Prompt b')).toBe('Prompt b: Resumed by you')
+    expect(chatBox('c').getAttribute('aria-checked')).toBe('true')
+    await act(async () => button('Resumed2').click())
+    expect(runStatus('Prompt b')).toBe('Prompt b: Resumed by you')
+    expect(dialog()).not.toContain('Prompt c')
+    await act(async () => button('All3').click())
+    await act(async () => button('Close').click())
+    expect(getNativeChatRestartRun()).toBeNull()
+    await act(async () => button('1 chat available to resume').click())
+    expect(dialog()).toContain('Resume interrupted chats?')
+    expect(dialog()).toContain('Prompt c')
+    expect(dialog()).not.toContain('Prompt a')
+    expect(dialog()).not.toContain('Prompt b')
+    expect(button('Resume 1 chat').disabled).toBe(false)
+  }
+)
+
+it.each(['refused', 'unknown'] as const)(
+  'retains an unviewed %s result when opening and closing over a failed read',
+  async (verdict) => {
+    fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : verdict))
+    await mountSurfaces()
+    await act(async () => button('Resume 2 chats').click())
+    rpc.mockImplementationOnce(async () => {
+      throw new Error('host unavailable')
+    })
+    await act(async () => lastToastShow()?.())
+    expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
+    expect(runStatus('Prompt b')).toBe(
+      verdict === 'refused'
+        ? 'Prompt b: Couldn’t resume'
+        : 'Prompt b: Couldn’t confirm the chat was resumed'
+    )
+    expect(dialog()).toContain('All2')
+    expect(dialog()).toContain('Need you1')
+    expect(getNativeChatRestartRun()?.finishedViewShown).toBeUndefined()
+    await act(async () => button('Done').click())
+    expect(getNativeChatRestartRun()?.entries).toHaveLength(2)
+    expect(document.body.textContent).not.toContain('chat resumed')
+    await act(async () => button('1 chat to check').click())
+    expect(dialog()).toContain('Resumed 1 of 2 chats')
+    expect(runStatus('Prompt a')).toBe('Prompt a: Resumed')
+    expect(runStatus('Prompt b')).not.toBeNull()
+    expect(getNativeChatRestartRun()?.finishedViewShown).toBe(true)
+    await act(async () => button('Close').click())
+    expect(getNativeChatRestartRun()).toBeNull()
+  }
+)
+
+it('does not establish manual recovery until a successful reread confirms the withdrawal', async () => {
+  const host = fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'refused'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => manualActivity())
+  host.state.failed = []
+  rpc.mockImplementationOnce(async () => ({ sessions: null }))
+  await act(async () => lastToastShow()?.())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Couldn’t resume')
+  expect(getNativeChatRestartRun()?.finishedViewShown).toBeUndefined()
+  await act(async () => refreshNativeChatRestartOffer())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Resumed by you')
+  expect(dialog()).toContain('Resumed 2 of 2 chats')
+  expect(getNativeChatRestartRun()?.finishedViewShown).toBe(true)
+  await act(async () => button('Done').click())
+  expect(getNativeChatRestartRun()).toBeNull()
+})
+
+it('recognizes a manually sent message even after its agent has finished', async () => {
+  const host = fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'unknown'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () =>
+    manualActivity({
+      latestPrompt: 'Continue with my changes',
+      status: 'idle',
+      turnOutcome: 'success',
+      hostExecutionOwned: undefined,
+      hostExecutionPhase: undefined,
+      statusStartedAt: Date.now()
+    })
+  )
+  host.state.failed = []
+  await act(async () => lastToastShow()?.())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Resumed by you')
+  expect(dialog()).toContain('Resumed 2 of 2 chats')
+})
+
+it('recognizes a later completed turn even when the user sends the same prompt', async () => {
+  const host = fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'unknown'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () =>
+    manualActivity({
+      latestPrompt: '',
+      status: 'idle',
+      turnOutcome: 'success',
+      statusStartedAt: 2,
+      hostExecutionOwned: undefined,
+      hostExecutionPhase: undefined
+    })
+  )
+  host.state.failed = []
+  await act(async () => lastToastShow()?.())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Resumed by you')
+  expect(dialog()).toContain('Resumed 2 of 2 chats')
+})
+
+it.each(['reply', 'lost reply'] as const)(
+  'does not call an explicit dismissal a manual resume after %s despite newer cached activity',
+  async (delivery) => {
+    const host = fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'unknown'))
+    await mountSurfaces()
+    await act(async () => button('Resume 2 chats').click())
+    await act(async () => manualActivity())
+    await act(async () => lastToastShow()?.())
+    if (delivery === 'lost reply') {
+      rpc.mockImplementationOnce(async () => {
+        host.state.failed = []
+        throw new Error('dismiss reply lost')
+      })
+    }
+    await act(async () => button('Dismiss "Prompt b" in workspace').click())
+    expect(runStatus('Prompt b')).toBe('Prompt b: Couldn’t confirm the chat was resumed')
+    expect(dialog()).toContain('Resumed 1 of 2 chats')
+    expect(dialog()).toContain('Need you0')
+  }
+)
+
+it('does not report manual recovery when an accepted message fails to start its agent', async () => {
+  const host = fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'refused'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () =>
+    manualActivity({
+      latestPrompt: 'Continue with my changes',
+      status: 'idle',
+      turnOutcome: 'failure',
+      statusStartedAt: 2,
+      hostExecutionOwned: undefined,
+      hostExecutionPhase: undefined
+    })
+  )
+  host.state.failed = []
+  await act(async () => lastToastShow()?.())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Couldn’t confirm the chat was resumed')
+  expect(dialog()).toContain('Resumed 1 of 2 chats')
+  expect(dialog()).toContain('Need you1')
+})
+
+it('keeps older-host withdrawal without positive activity unconfirmed', async () => {
+  const host = fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'unknown'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () =>
+    manualActivity({
+      latestPrompt: '',
+      status: 'idle',
+      statusStartedAt: undefined,
+      hostExecutionOwned: undefined,
+      hostExecutionPhase: undefined
+    })
+  )
+  host.state.failed = []
+  await act(async () => lastToastShow()?.())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Couldn’t confirm the chat was resumed')
+  expect(dialog()).toContain('All2')
+  expect(dialog()).toContain('Need you1')
+  expect(dialog()).toContain('Resumed 1 of 2 chats')
+  await act(async () => button('Done').click())
+  expect(getNativeChatRestartRun()).toBeNull()
+})
+
+it('keeps a closed chat visible without attributing its cached activity to a resume', async () => {
+  const host = fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'refused'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => manualActivity())
+  await act(async () => useAppStore.setState({ unifiedTabsByWorktree: { workspace: [] } }))
+  host.state.failed = []
+  await act(async () => lastToastShow()?.())
+  expect(dialog()).toContain('Prompt b')
+  expect(runStatus('Prompt b')).toBe('Prompt b: Couldn’t confirm the chat was resumed')
+  expect(dialog()).toContain('Resumed 1 of 2 chats')
+  expect(dialog()).toContain('Need you0')
+  await act(async () => button('Done').click())
+  expect(getNativeChatRestartRun()).toBeNull()
+})
 
 it('shows the resumed entry after a launch that resumed without asking', async () => {
   useAppStore.setState((state) => ({

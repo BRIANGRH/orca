@@ -4348,7 +4348,7 @@
             "resumedLabel": "{{value0}} chats resumed",
             "resumedAriaOne": "1 chat resumed. Click to see it.",
             "resumedAria": "{{value0}} chats resumed. Click to see them.",
-            "resumedTooltip": "Chats Orca resumed after the restart. Click to see them."
+            "resumedTooltip": "Chats resumed after the restart. Click to see them."
           },
           "StatusBarUsageChangeNotices": {
             "compactTitle": "Usage display is now compact",
@@ -17906,6 +17906,7 @@
         "finishedPartialUpdate": "These chats were working when Orca installed an update. The ones Orca resumed were restored where they stopped, with their full context, and asked to check what they were doing before carrying on. Your own prompts weren’t re-sent. Check the list for chats that still need attention or can be resumed."
       },
       "NativeChatResumeRunStatusIcon": {
+        "resumedByYou": "Resumed by you",
         "waitingForReply": "Waiting for a reply",
         "starting": "Starting",
         "waitingToStart": "Waiting to start",

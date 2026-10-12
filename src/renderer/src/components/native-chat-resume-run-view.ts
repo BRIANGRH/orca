@@ -1,12 +1,17 @@
 import type { ResumeCandidate, ResumeFailure } from './native-chat-resume-on-restart-grouping'
-import type { ResumeRun, ResumeRunHostStatus } from './native-chat-resume-run'
+import type {
+  ResumeRun,
+  ResumeRunHostStatus,
+  ResumeRunRecoveryStatus
+} from './native-chat-resume-run'
 
-/** Only current host failures create attention obligations after a run. */
+/** Finished outcomes derive from run history and a confirmed host observation. */
 
 /** Where one chat of the run stands, as the leading icon shows it in place of the checkbox. */
 export type ResumeRunRowStatus =
   | { kind: 'in-flight'; startedAt: number; phase: 'starting' | 'ready' | null }
   | { kind: 'resumed' }
+  | { kind: 'resumed-by-user' }
   | { kind: 'refused' }
   | { kind: 'unconfirmed' }
 
@@ -38,7 +43,10 @@ export function resumeRunView(
   listed: readonly ResumeCandidate[],
   failureFor: (sessionId: string) => ResumeFailure | undefined,
   filter: ResumeRunFilter,
-  hostStatusFor: (sessionId: string) => ResumeRunHostStatus | undefined = () => undefined
+  hostStatusFor: (
+    sessionId: string
+  ) => (ResumeRunHostStatus & Partial<ResumeRunRecoveryStatus>) | undefined = () => undefined,
+  available = true
 ): ResumeRunView {
   const listedById = new Map(listed.map((row) => [row.sessionId, row]))
   const continuedBySession = new Map(
@@ -80,6 +88,44 @@ export function resumeRunView(
       placed.push({ row, category: 'attention', index: placed.length })
     } else if (listedById.has(sessionId)) {
       placed.push({ row, category: 'other', index: placed.length })
+    } else if (!run.inFlight) {
+      const current = hostStatusFor(sessionId)
+      const before = entry.observedStatus
+      const newPrompt =
+        before?.latestPrompt !== undefined &&
+        current?.latestPrompt !== undefined &&
+        current.latestPrompt !== before.latestPrompt
+      const newTurn =
+        before?.statusStartedAt !== undefined &&
+        current?.statusStartedAt !== undefined &&
+        current.statusStartedAt > before.statusStartedAt &&
+        (before.hostExecutionPhase !== 'ready' || newPrompt)
+      const newStart =
+        before?.latestPrompt !== undefined &&
+        before.hostExecutionPhase !== 'ready' &&
+        current?.hostExecutionOwned === true &&
+        current.hostExecutionPhase === 'ready'
+      const carriedOn =
+        current?.turnOutcome !== 'failure' &&
+        ((current?.hostExecutionOwned === true && current.hostExecutionPhase === 'ready') ||
+          current?.turnOutcome === 'success')
+      if (available && !entry.dismissed && carriedOn && (newPrompt || newTurn || newStart)) {
+        statusBySession.set(sessionId, { kind: 'resumed-by-user' })
+        placed.push({ row, category: 'resumed', index: placed.length })
+      } else {
+        const outcome = continuedBySession.get(sessionId)
+        const observed = entry.observedStatus?.restartResume?.phase
+        const kind =
+          !available && (outcome === 'refused' || observed === 'refused')
+            ? 'refused'
+            : 'unconfirmed'
+        statusBySession.set(sessionId, { kind })
+        placed.push({
+          row,
+          category: available && (!current || entry.dismissed) ? 'other' : 'attention',
+          index: placed.length
+        })
+      }
     }
   }
   for (const row of listed) {

@@ -36,6 +36,11 @@ function statusText(status: ResumeRunRowStatus, phase: ResumeRunStartPhase, now:
       )
     case 'resumed':
       return translate('auto.components.NativeChatResumeRunStatusIcon.resumed', 'Resumed')
+    case 'resumed-by-user':
+      return translate(
+        'auto.components.NativeChatResumeRunStatusIcon.resumedByYou',
+        'Resumed by you'
+      )
     case 'unconfirmed':
       return translate(
         'auto.components.NativeChatResumeOutcomeRow.unconfirmed',
@@ -51,6 +56,7 @@ function StatusGlyph({ status }: { status: ResumeRunRowStatus }): React.JSX.Elem
     case 'in-flight':
       return <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
     case 'resumed':
+    case 'resumed-by-user':
       return <Check className="size-3.5 text-status-success" />
     case 'unconfirmed':
       // The same glyphs a failure row uses, so a status does not change look when its row arrives.

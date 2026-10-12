@@ -15,6 +15,8 @@ import {
 } from './native-chat-resume-on-restart-grouping'
 import {
   beginResumeRun,
+  finishResumeRun,
+  markResumeRunDismissed,
   resumeRunInFlight,
   resumeRunPendingIds,
   type ResumeRun,
@@ -54,9 +56,11 @@ export type NativeChatRestartOffer = Readonly<{
   /** Stamped when the list arrived. Row ages read against this rather than a render-time
    *  `Date.now()`, so they stay stable across re-renders and the render stays pure. */
   listedAt: number
+  /** False when the latest read could not confirm host membership. */
+  available: boolean
 }>
 
-const EMPTY: NativeChatRestartOffer = { candidates: [], failed: [], listedAt: 0 }
+const EMPTY: NativeChatRestartOffer = { candidates: [], failed: [], listedAt: 0, available: false }
 let offer: NativeChatRestartOffer = EMPTY
 let launch: Promise<void> | undefined
 /** Continue and dismiss calls, begun and settled. Each ends by publishing the host's answer, which
@@ -87,8 +91,8 @@ function publish(next: NativeChatRestartOffer): void {
 
 /** A confirmed host answer. One with nothing left also retires any open request for the dialog,
  *  unless it is showing a run; a failed read only hides rows, so it keeps the request. */
-function publishAnswer(answer: NativeChatRestartOffer): void {
-  const next = withUnsentResumes(answer)
+function publishAnswer(answer: Omit<NativeChatRestartOffer, 'available'>): void {
+  const next = withUnsentResumes({ ...answer, available: true })
   publish(next)
   if (next.candidates.length === 0 && next.failed.length === 0 && run === null) {
     consumeNativeChatResumeOnRestartDialogRequest()
@@ -131,13 +135,13 @@ export function getNativeChatRestartRun(): ResumeRun | null {
 
 /** A finished summary must be shown before closing can retire it. */
 export function markFinishedNativeChatRestartRunShown(shown: ResumeRun): void {
-  if (run === shown && !shown.inFlight && !shown.finishedViewShown) {
+  if (offer.available && run === shown && !shown.inFlight && !shown.finishedViewShown) {
     setRun({ ...shown, finishedViewShown: true })
   }
 }
 
 export function releaseFinishedNativeChatRestartRun(): void {
-  if (run?.finishedViewShown && !resumeRunInFlight(run)) {
+  if (offer.available && run?.finishedViewShown && !resumeRunInFlight(run)) {
     setRun(null)
   }
 }
@@ -267,6 +271,7 @@ export async function continueNativeChatRestartOffer(
       reopenNativeChatRestartOffer
     ]
   } finally {
+    const settledStatuses = getStructuredAgentSessionStatusFeed(LOCAL).getSnapshot()
     release()
     if (releaseRunStatus === release) {
       releaseRunStatus = undefined
@@ -274,12 +279,7 @@ export async function continueNativeChatRestartOffer(
     actionsSettled += 1
     // Publish the offer first: reopening must never expose the old selection as actionable.
     if (run === actionRun) {
-      setRun({
-        ...actionRun,
-        entries: actionRun.entries.filter((entry) => !skipped.has(entry.candidate.sessionId)),
-        inFlight: false,
-        continued
-      })
+      setRun(finishResumeRun(actionRun, skipped, continued, (id) => settledStatuses.get(id)))
     }
   }
   announceRestartResults(...outcome)
@@ -317,6 +317,15 @@ export async function dismissNativeChatRestartOffer(sessionIds?: readonly string
     await refreshNativeChatRestartOffer()
   } finally {
     actionsSettled += 1
+    if (offer.available && run && !run.inFlight) {
+      setRun(
+        markResumeRunDismissed(
+          run,
+          sessionIds,
+          [...offer.candidates, ...offer.failed].map((row) => row.sessionId)
+        )
+      )
+    }
   }
 }
 
