@@ -98,7 +98,7 @@ describe('native chat skill editor', () => {
     const first = setup('one')
     const second = setup('second')
     act(() => first.input.setSelectionRange(3, 3))
-    act(() => first.input.insertText('!'))
+    act(() => first.input.insertText!('!'))
     expect(first.input.value).toBe('one!')
     expect(first.input.selectionStart).toBe(4)
     expect(second.input.value).toBe('second')
