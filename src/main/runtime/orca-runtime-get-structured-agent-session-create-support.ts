@@ -22,10 +22,7 @@ import {
   isFloatingWorkspaceSelector
 } from '../../shared/floating-workspace-worktree'
 import { parseWorkspaceKey } from '../../shared/workspace-scope'
-import {
-  isLegacyAgentSessionAccountHome,
-  type AgentSessionAccountHome
-} from '../../shared/agent-session-account-home'
+import type { AgentSessionAccountHome } from '../../shared/agent-session-account-home'
 import type { StructuredAgentId } from '../../shared/agent-session-provider-handle'
 
 export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaRuntimeWithGetWorktreePs {
@@ -228,17 +225,12 @@ export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaR
       return committedReplay
     }
     const selectedAccountHome = await resolveAccountHome({ launchEnv, location })
-    if (input.resumeFrom && !isLegacyAgentSessionAccountHome(selectedAccountHome)) {
-      throw agentSessionRefusalError('structured_agent_session_unsupported', {
-        reason: 'hostUnsupported'
-      })
-    }
     // Adopting pins the account home to wherever the conversation actually lives, which is not
     // necessarily the one a fresh create would pick: Codex resolves its rollout under
     // `accountHome.path`, and Claude reads its transcript under `<home>/projects`. Resuming under
     // the wrong home finds nothing and lands the user in a blank chat wearing the old chat's name.
     const adoption =
-      input.resumeFrom && transcriptImport && isLegacyAgentSessionAccountHome(selectedAccountHome)
+      input.resumeFrom && transcriptImport
         ? await resolveStructuredAgentSessionAdoptionForCreate({
             host,
             settings,
@@ -246,7 +238,7 @@ export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaR
             transcriptImport,
             providerSessionId: input.resumeFrom.providerSessionId,
             selfSessionId: input.envelope.sessionId,
-            selectedAccountHomePath: selectedAccountHome.path
+            selectedAccountHome
           })
         : null
     return {
@@ -259,10 +251,7 @@ export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaR
       location,
       provider: input.agent,
       agent: input.agent,
-      accountHome:
-        adoption && isLegacyAgentSessionAccountHome(selectedAccountHome)
-          ? { variable: selectedAccountHome.variable, path: adoption.accountHomePath }
-          : selectedAccountHome,
+      accountHome: adoption ? adoption.accountHome : selectedAccountHome,
       ...(options ? { options } : {}),
       ...(input.resumeFrom && adoption
         ? {

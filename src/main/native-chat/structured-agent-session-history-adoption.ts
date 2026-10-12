@@ -13,6 +13,10 @@ import type {
 } from '../../shared/agent-session-provider-handle'
 import type { AgentSessionLease, AgentSessionRecord } from '../../shared/agent-session-record'
 import { agentSessionLeaseAdmitsWriter } from '../../shared/agent-session-lease-adjudication'
+import {
+  agentSessionAccountHomesEqual,
+  type AgentSessionAccountHome
+} from '../../shared/agent-session-account-home'
 
 export type StructuredAgentSessionAdoptionOwnership = {
   sessionId: string
@@ -23,8 +27,8 @@ export type StructuredAgentSessionAdoptionOwnership = {
 }
 
 export type StructuredAgentSessionAdoption = {
-  /** The account home the transcript was actually found under — never a client-supplied path. */
-  accountHomePath: string
+  /** The account home the transcript was actually found under — never a client-supplied one. */
+  accountHome: AgentSessionAccountHome
   transcriptPath: string
 }
 
@@ -120,25 +124,24 @@ export function structuredAdoptionConflictError(
  */
 export async function resolveStructuredAgentSessionAdoption(input: {
   providerSessionId: string
-  candidateAccountHomes: readonly string[]
+  candidateAccountHomes: readonly AgentSessionAccountHome[]
   resolveTranscript: (args: {
     providerSessionId: string
-    accountHomePath: string
+    accountHome: AgentSessionAccountHome
   }) => Promise<string | null>
 }): Promise<StructuredAgentSessionAdoption> {
-  const seen = new Set<string>()
-  for (const accountHomePath of input.candidateAccountHomes) {
-    const trimmed = accountHomePath.trim()
-    if (!trimmed || seen.has(trimmed)) {
+  const seen: AgentSessionAccountHome[] = []
+  for (const accountHome of input.candidateAccountHomes) {
+    if (seen.some((home) => agentSessionAccountHomesEqual(home, accountHome))) {
       continue
     }
-    seen.add(trimmed)
+    seen.push(accountHome)
     const transcriptPath = await input.resolveTranscript({
       providerSessionId: input.providerSessionId,
-      accountHomePath: trimmed
+      accountHome
     })
     if (transcriptPath) {
-      return { accountHomePath: trimmed, transcriptPath }
+      return { accountHome, transcriptPath }
     }
   }
   // Refuse rather than fall back to the default home. Resuming under a home that does not hold the

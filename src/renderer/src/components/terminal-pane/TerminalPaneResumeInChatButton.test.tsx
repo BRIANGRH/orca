@@ -136,6 +136,15 @@ describe('TerminalPaneResumeInChatButton', () => {
     expect(mocks.resumeInNewChat).toHaveBeenCalledWith(grokRow, 'grok', 'wt-1', expect.any(String))
   })
 
+  it('resumes an OpenCode 2 row in an OpenCode chat', async () => {
+    const row = { ...CLI_ROW, agent: 'opencode2' as const, sessionId: 'ses_1' }
+    mocks.subject = { ...CLI_SUBJECT, agent: 'opencode2', providerSessionId: 'ses_1' }
+    mocks.move = { action: 'resume-in-new-chat', worktreeId: 'wt-1' }
+    mocks.listSessions.mockResolvedValue({ sessions: [row], issues: [], scannedAt: 'now' })
+    await clickResume()
+    expect(mocks.resumeInNewChat).toHaveBeenCalledWith(row, 'opencode', 'wt-1', expect.any(String))
+  })
+
   it('opens the native chat that already holds the conversation', async () => {
     const owned = { ...CLI_ROW, structuredSession: { sessionId: 'chat-1', workspaceId: 'wt-1' } }
     mocks.listSessions.mockResolvedValue({ sessions: [owned], issues: [], scannedAt: 'now' })

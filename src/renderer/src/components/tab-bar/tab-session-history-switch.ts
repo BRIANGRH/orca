@@ -20,7 +20,7 @@ import {
 } from '../../../../shared/execution-host'
 import {
   adoptsCliConversations,
-  type CliConversationAdoptingAgent
+  type CliConversationRowAgent
 } from '../../../../shared/structured-agent-cli-conversation-adoption'
 import { agentForksConversations } from '../../../../shared/agent-resume-argv'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
@@ -52,7 +52,7 @@ export type TabSessionHistorySubject = {
   | { kind: 'chat'; sessionId: string }
   | {
       kind: 'cli'
-      agent: CliConversationAdoptingAgent
+      agent: CliConversationRowAgent
       providerSessionId: string
     }
 )
