@@ -4,6 +4,10 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { withFullFirstUserPromptCapture } from './session-scanner-first-user-prompt-capture'
 import { extractGrokContentText, parseGrokSessionFile } from './session-scanner-grok-parser'
+import {
+  stoppedHistoryElement,
+  stoppedHistoryFrame
+} from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 let tempRoots: string[] = []
 
@@ -49,6 +53,26 @@ describe('AI Vault Grok session parser', () => {
 
     expect(hidden).toHaveLength(4092)
     expect(result).toBe('ask')
+  })
+
+  it('previews the new message of a send that carried stopped history longer than the scan cap', () => {
+    const frame = stoppedHistoryFrame({
+      elements: [
+        stoppedHistoryElement({
+          number: 1,
+          text: 'stopped words '.repeat(600),
+          images: { first: 1, count: 0 },
+          omittedImages: 0
+        })
+      ],
+      notIncluded: 0,
+      shortened: 0,
+      sendImages: { first: 1, count: 0 }
+    })
+    expect(frame.length).toBeGreaterThan(4096)
+    expect(extractGrokContentText(`<user_query>\n${frame}\nthe new ask\n</user_query>`)).toBe(
+      'the new ask'
+    )
   })
 
   it('stores the unwrapped user_query as firstUserPrompt under full capture', async () => {
