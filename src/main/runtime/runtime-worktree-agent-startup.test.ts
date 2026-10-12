@@ -33,11 +33,11 @@ function makeRepo(fields: Partial<Repo>): Repo {
   }
 }
 
-const LINUX: AgentLaunchRuntime = {
+const LINUX_FACT: AgentLaunchRuntime = {
   platform: 'linux',
-  remote: false,
   pty: { shellOverride: undefined, terminalWindowsWslDistro: null }
 }
+const LINUX = { platform: 'linux' as const, shell: 'posix' as const, launchRuntime: LINUX_FACT }
 
 const settings = {
   ...getDefaultSettings('/tmp'),
@@ -123,7 +123,6 @@ describe('buildWorktreeStartupForAgent host resolution', () => {
 it('quotes a worktree startup for its fact, not the Settings shell, and hands the fact on', () => {
   const powershell: AgentLaunchRuntime = {
     platform: 'win32',
-    remote: false,
     pty: { shellOverride: 'powershell.exe', terminalWindowsWslDistro: null }
   }
   const result = buildWorktreeStartupForAgent({
@@ -131,7 +130,11 @@ it('quotes a worktree startup for its fact, not the Settings shell, and hands th
     settings: { ...settings, terminalWindowsShell: 'wsl.exe' },
     agent: 'claude',
     prompt: "fix Bob's bug",
-    getLaunchRuntime: () => powershell,
+    getLaunchRuntime: () => ({
+      platform: 'win32' as const,
+      shell: 'powershell' as const,
+      launchRuntime: powershell
+    }),
     toSessionOptions: () => undefined
   })
   expect(result.startup.command).toContain("'fix Bob''s bug'")
@@ -147,7 +150,10 @@ describe('buildWorktreeStartupForAgent prompt carry', () => {
       prompt: 'summarize the diff\nthen list the risks',
       getLaunchRuntime: () => ({
         ...LINUX,
-        pty: { shellOverride: terminalDefaultShell, terminalWindowsWslDistro: null }
+        launchRuntime: {
+          ...LINUX_FACT,
+          pty: { shellOverride: terminalDefaultShell, terminalWindowsWslDistro: null }
+        }
       }),
       toSessionOptions: () => undefined,
       ...(onPromptCarry ? { onPromptCarry } : {})
@@ -295,7 +301,7 @@ describe('buildWorktreeStartupForAgent extra agent args', () => {
     const build = vi.fn(() => ({
       agent: 'claude' as const,
       startup: { command: 'claude' },
-      launchRuntime: LINUX
+      launchRuntime: LINUX_FACT
     }))
     const createArgs: RuntimeManagedWorktreeCreateArgs = {
       repoSelector: 'repo-1',

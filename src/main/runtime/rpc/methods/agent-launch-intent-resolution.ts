@@ -54,11 +54,7 @@ async function agentLaunchIntent(
     ...(params.cwd ? { cwd: params.cwd } : {}),
     ...(params.launchSource ? { launchSource: params.launchSource } : {}),
     ...(paneKey ? { paneKey } : {}),
-    ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-    ...(params.title ? { title: params.title } : {}),
-    ...(params.extraAgentArgs ? { extraAgentArgs: params.extraAgentArgs } : {}),
-    ...(params.requestKind ? { requestKind: params.requestKind } : {}),
-    ...(params.terminalOnly ? { terminalOnly: true } : {})
+    ...(params.sessionId ? { sessionId: params.sessionId } : {})
   }
 }
 

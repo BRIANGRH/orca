@@ -61,7 +61,6 @@ import {
 } from './agent-launch-legacy-host'
 import {
   AgentLaunchStructuredSessionRefusedError,
-  terminalLaunchInputs,
   type AgentLaunchStructuredSurface
 } from './agent-launch-surface-factories'
 import type {
@@ -94,7 +93,7 @@ export async function executeAgentLaunch(
         ...(execution.callerRendersStructured === false ? { callerRendersStructured: false } : {})
       },
       settings: readAgentLaunchModeSettings(runtime),
-      ...(execution.terminalOnly || intent.terminalOnly ? { terminalOnly: true } : {}),
+      ...(execution.terminalOnly ? { terminalOnly: true } : {}),
       vocabulary
     })
   // The create's startup terminal is this launch's only surface, and the create delivers the text.
@@ -320,12 +319,25 @@ async function createSurface(
 function ignoredStructuredAgentArgsWarning(
   intent: AgentLaunchIntent
 ): { warning: string } | undefined {
-  return intent.agentArgs === undefined && intent.extraAgentArgs === undefined
+  return intent.agentArgs === undefined
     ? undefined
     : {
         warning:
           'Started a structured chat session using saved agent Arguments; the per-launch argument override was ignored.'
       }
+}
+
+/** What every route that builds a terminal agent passes on, so the startup terminal of a new
+ *  workspace and the terminal of an existing one start the same agent. */
+function terminalLaunchInputs(intent: AgentLaunchIntent) {
+  return {
+    ...(intent.sessionOptions ? { options: intent.sessionOptions } : {}),
+    // `null` is a value the caller meant, so this tests for absence rather than falsiness.
+    ...(intent.agentArgs !== undefined ? { agentArgs: intent.agentArgs } : {}),
+    ...(intent.cwd ? { cwd: intent.cwd } : {}),
+    ...(intent.launchSource ? { launchSource: intent.launchSource } : {}),
+    ...(intent.paneKey ? { paneKey: intent.paneKey } : {})
+  }
 }
 
 /**

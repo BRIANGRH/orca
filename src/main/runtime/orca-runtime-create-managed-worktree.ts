@@ -78,6 +78,7 @@ export class OrcaRuntimeWithCreateManagedWorktree extends OrcaRuntimeWithGetWork
         : null
     const effectiveStartup = args.startup ?? agentStartup?.startup ?? draftStartup?.startup
     const effectiveStartupFollowup = agentStartup?.followup
+    // The repo's fact: the startup is planned before the new worktree's path exists.
     const startupLaunchRuntime = args.startup
       ? undefined
       : (agentStartup ?? draftStartup)?.launchRuntime

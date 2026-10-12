@@ -4,7 +4,7 @@ import { OrcaRuntimeWithGetStructuredAgentSessionCreateSupport } from './orca-ru
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import { collectSavedStructuredAgentSessionIds } from './saved-structured-agent-session-restoration'
 import { seedStructuredAgentSessionTabIndex } from './structured-agent-session-tab-index-seed'
-import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
+import { getRepoSshConnectionId, LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 import type {
   RuntimeMobileSessionAgentTab,
   RuntimeMobileSessionTabsSnapshot,
@@ -21,7 +21,7 @@ import {
 import {
   agentLaunchPlatformForScope,
   resolveAgentLaunchRuntime,
-  resolveRepoAgentLaunchRuntime
+  resolveStartupAgentLaunchRuntime
 } from './agent-launch-scope-runtime'
 import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
@@ -272,21 +272,24 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
     return agentLaunchPlatformForScope(this.requireStore(), scope)
   }
 
-  protected resolveAgentLaunchRuntime(
-    scope: TerminalWorkspaceLaunchScope,
-    requestedShellOverride?: string
-  ): AgentLaunchRuntime {
-    return resolveAgentLaunchRuntime(
-      this.requireStore(),
-      scope,
-      requestedShellOverride,
-      'host-legacy'
-    )
+  protected resolveAgentLaunchRuntime(scope: TerminalWorkspaceLaunchScope): AgentLaunchRuntime {
+    return resolveAgentLaunchRuntime(this.requireStore(), scope, undefined)
   }
 
-  protected resolveRepoAgentLaunchRuntime(
-    repo: Repo
-  ): ReturnType<typeof resolveRepoAgentLaunchRuntime> {
-    return resolveRepoAgentLaunchRuntime(this.requireStore(), repo)
+  /** A startup's fact: the workspace it starts in, else (a create, before it exists) the repo. */
+  protected resolveStartupAgentLaunchRuntime(
+    repo: Repo,
+    scope?: TerminalWorkspaceLaunchScope
+  ): ReturnType<typeof resolveStartupAgentLaunchRuntime> {
+    return resolveStartupAgentLaunchRuntime(
+      this.requireStore(),
+      scope ?? {
+        id: repo.id,
+        path: repo.path,
+        connectionId: getRepoSshConnectionId(repo),
+        repo,
+        folderWorkspace: null
+      }
+    )
   }
 }

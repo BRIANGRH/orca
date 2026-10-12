@@ -174,14 +174,19 @@ export class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh extends OrcaRu
           ReturnType<OrcaRuntimeService['resolveMobileSessionTerminalCommand']>
         > = {}
         if (tab.launchAgent) {
+          let workspace
           try {
-            const workspace = await this.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`)
+            workspace = await this.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`)
             agentStartup = await this.resolveMobileSessionTerminalCommand(workspace, {
               agent: tab.launchAgent
             })
           } catch {
             // Why: a disabled or unresolvable agent must not make the tab
-            // untappable; fall back to the plain-shell materialize.
+            // untappable; fall back to the plain-shell materialize. A runtime that needs repair
+            // rethrows its message here instead of leaving a plain shell under the agent icon.
+            if (workspace) {
+              this.resolveAgentLaunchRuntime(workspace)
+            }
           }
         }
         try {

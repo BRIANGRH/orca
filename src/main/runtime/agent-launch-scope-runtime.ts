@@ -1,18 +1,17 @@
-import type { Repo } from '../../shared/repo-types'
 import {
-  deriveAgentLaunchRuntime,
+  agentLaunchQuotingShell,
   executionRuntimePlatform,
   remoteExecutionPlatform,
   type AgentLaunchRuntime
 } from '../../shared/agent-launch-runtime'
-import { getRepoSshConnectionId } from '../../shared/execution-host'
+import type { AgentStartupShell } from '../../shared/tui-agent-startup-shell'
+import type { ProjectExecutionRuntimeResolution } from '../../shared/project-execution-runtime'
 import {
   resolveLocalLaunchScopeRuntime,
   resolveLocalProjectRuntimeForWorktreeId,
+  resolveLocalPtyOptions,
   type LaunchScopeRuntimeStore
 } from '../local-project-runtime-resolution'
-import { isWslShellName } from '../../shared/local-windows-terminal-runtime'
-import { resolveManagedSshHostLoginShell } from '../pty/managed-ssh-host-login-shell'
 import type { RuntimeStore } from './runtime-store-contract'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
 
@@ -34,65 +33,68 @@ export function agentLaunchPlatformForScope(
 }
 
 /**
- * TEMPORARY, removed by C8. `host-legacy` keeps today's host outcome for a Windows scope with no
- * project runtime of its own whose global default is the Windows host: a `wsl.exe` Terminal shell
- * still runs it in WSL. An explicit "Windows host" default cannot yet be told apart from the
- * shipped one. `window` is the "+" button's rule.
+ * The runtime an agent launched here runs in: the window's rule, except where main's host had no
+ * runtime for this scope and the rule answers "Windows host". There it keeps main's spawn in the
+ * Terminal shell, since an explicit Windows-host default can't be told from the shipped one.
+ * TEMPORARY (reachable only for folders): removed by the WSL-shell default decision, STA-10231.
  */
-export type WslShellRule = 'host-legacy' | 'window'
+export function agentLaunchProjectRuntime(
+  store: LaunchScopeRuntimeStore,
+  scope: TerminalWorkspaceLaunchScope
+): ProjectExecutionRuntimeResolution | undefined {
+  const runtime = resolveLocalLaunchScopeRuntime(store, scope)
+  return runtime?.status === 'resolved' &&
+    runtime.runtime.kind === 'windows-host' &&
+    !resolveLocalProjectRuntimeForWorktreeId(store, scope.id)
+    ? undefined
+    : runtime
+}
 
 /** The one runtime fact for an agent launched into this workspace. Throws, as the spawn would,
  *  when the workspace's runtime needs repair. */
 export function resolveAgentLaunchRuntime(
   store: AgentLaunchRuntimeStore,
   scope: TerminalWorkspaceLaunchScope,
-  requestedShellOverride: string | undefined,
-  wslShellRule: WslShellRule
+  requestedShellOverride: string | undefined
 ): AgentLaunchRuntime {
-  const settings = store.getSettings()
-  const projectRuntime = resolveLocalLaunchScopeRuntime(store, scope)
-  const keepsWslShell =
-    wslShellRule === 'host-legacy' &&
-    process.platform === 'win32' &&
-    projectRuntime?.status === 'resolved' &&
-    projectRuntime.runtime.kind === 'windows-host' &&
-    projectRuntime.runtime.reason === 'global-default' &&
-    isWslShellName(settings.terminalWindowsShell) &&
-    !resolveLocalProjectRuntimeForWorktreeId(store, scope.id)
-  return deriveAgentLaunchRuntime({
-    hostPlatform: process.platform,
-    remote: Boolean(scope.connectionId),
-    workspacePath: scope.path,
-    // With no runtime, the spawn runs the Terminal shell, as main's host did for these scopes.
-    projectRuntime: keepsWslShell ? undefined : projectRuntime,
-    requestedShellOverride,
-    settings,
-    sshLoginShell: resolveManagedSshHostLoginShell()
-  })
+  if (scope.connectionId) {
+    return {
+      platform: remoteExecutionPlatform(scope.path),
+      pty: { shellOverride: undefined, terminalWindowsWslDistro: null }
+    }
+  }
+  const projectRuntime = agentLaunchProjectRuntime(store, scope)
+  return {
+    platform: executionRuntimePlatform(projectRuntime, scope.path, process.platform),
+    pty: resolveLocalPtyOptions(store.getSettings(), projectRuntime, requestedShellOverride)
+  }
 }
 
 /**
- * The fact for an agent a new workspace of this repo starts, built before the workspace exists. A
- * runtime that needs repair returns its error with the platform to quote for, so the create goes on
- * and the startup fails with that error as its spawn would.
+ * The fact for a startup agent, planned before its terminal is created. A runtime that needs repair
+ * gives its error instead, so a worktree create goes on and the startup fails with that error as its
+ * spawn would; that startup is quoted for the Settings shell.
  */
-export function resolveRepoAgentLaunchRuntime(
+export function resolveStartupAgentLaunchRuntime(
   store: AgentLaunchRuntimeStore,
-  repo: Repo
-): AgentLaunchRuntime | { platform: NodeJS.Platform; repairError: Error } {
-  const scope = {
-    id: repo.id,
-    path: repo.path,
-    connectionId: getRepoSshConnectionId(repo),
-    repo,
-    folderWorkspace: null
-  }
+  scope: TerminalWorkspaceLaunchScope
+): {
+  platform: NodeJS.Platform
+  shell: AgentStartupShell | undefined
+  launchRuntime: AgentLaunchRuntime | Error
+} {
   try {
-    return resolveAgentLaunchRuntime(store, scope, undefined, 'host-legacy')
+    const launchRuntime = resolveAgentLaunchRuntime(store, scope, undefined)
+    return {
+      platform: launchRuntime.platform,
+      shell: agentLaunchQuotingShell(launchRuntime),
+      launchRuntime
+    }
   } catch (error) {
     return {
       platform: agentLaunchPlatformForScope(store, scope),
-      repairError: error instanceof Error ? error : new Error(String(error))
+      shell: undefined,
+      launchRuntime: error instanceof Error ? error : new Error(String(error))
     }
   }
 }

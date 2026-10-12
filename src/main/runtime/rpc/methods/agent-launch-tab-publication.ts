@@ -177,8 +177,7 @@ export async function publishAgentLaunchTabEarly(
       workspacePath: workspace.path,
       ...(params.cwd ? { cwd: params.cwd } : {})
     },
-    settings,
-    ...(params.terminalOnly ? { terminalOnly: true } : {})
+    settings
   })
   // A chat's tab is the session's; it appears when the session is created.
   if (preflight.mode !== 'terminal') {

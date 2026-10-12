@@ -8,7 +8,8 @@ import { getRepoSshConnectionId } from '../../shared/execution-host'
 import { isTuiAgent } from '../../shared/tui-agent-config'
 import { isTuiAgentEnabled, pickTuiAgent } from '../../shared/tui-agent-selection'
 import { resolveAgentStartupPlanInputs } from '../../shared/agent-startup-plan-inputs'
-import { agentLaunchQuotingShell, type AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
+import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
+import type { AgentStartupShell } from '../../shared/tui-agent-startup-shell'
 import { buildAgentDraftLaunchPlan, buildAgentStartupPlan } from '../../shared/tui-agent-startup'
 import { planStartupWithPromptCandidate } from '../../shared/startup-line-prompt-carry'
 import {
@@ -30,21 +31,19 @@ type AttributedWorktreeStartupLaunch = WorktreeStartupLaunch & {
 type StartupEnvironment = {
   repo: Repo
   settings: ReturnType<RuntimeStore['getSettings']>
-  /** Where the agent runs; its command is quoted for this and the create spawns with it. A runtime
-   *  that needs repair gives its error instead, which the startup spawn then fails with. */
-  getLaunchRuntime: () => AgentLaunchRuntime | { platform: NodeJS.Platform; repairError: Error }
+  /** Where the agent runs (`resolveStartupAgentLaunchRuntime`): what its command is quoted for, and
+   *  the fact the create spawns with, or the repair error its startup fails with. */
+  getLaunchRuntime: () => {
+    platform: NodeJS.Platform
+    shell: AgentStartupShell | undefined
+    launchRuntime: AgentLaunchRuntime | Error
+  }
   /** Replaces the configured arguments for this launch; `null` means none. */
   agentArgs?: string | null
   /** An automation's saved extras, merged over the launch's arguments. */
   extraAgentArgs?: string
   /** Caller-supplied telemetry attribution, validated leniently at the host boundary. */
   launchSource?: string
-  requestKind?: string
-}
-
-/** A startup that will fail with its repair error is quoted for the Settings shell, as before. */
-function startupQuotingShell(launchRuntime: AgentLaunchRuntime | Error) {
-  return launchRuntime instanceof Error ? undefined : agentLaunchQuotingShell(launchRuntime)
 }
 
 /** The agent a linked draft starts: the requested one, else the default, else one detected on the
@@ -94,13 +93,12 @@ export async function buildWorktreeStartupForDraft(
     return null
   }
 
-  const resolved = environment.getLaunchRuntime()
-  const launchRuntime = 'repairError' in resolved ? resolved.repairError : resolved
+  const { platform, shell, launchRuntime } = environment.getLaunchRuntime()
   const launchArgs = resolveAgentStartupPlanInputs({
     agent,
     settings,
-    platform: resolved.platform,
-    shell: startupQuotingShell(launchRuntime),
+    platform,
+    shell,
     isRemote: repoIsRemote(repo),
     ...(environment.agentArgs !== undefined ? { agentArgs: environment.agentArgs } : {})
   })
@@ -167,13 +165,12 @@ export function buildWorktreeStartupForAgent(
   if (!isTuiAgentEnabled(agent, settings.disabledTuiAgents)) {
     throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
   }
-  const resolved = environment.getLaunchRuntime()
-  const launchRuntime = 'repairError' in resolved ? resolved.repairError : resolved
+  const { platform, shell, launchRuntime } = environment.getLaunchRuntime()
   const planInputs = resolveAgentStartupPlanInputs({
     agent,
     settings,
-    platform: resolved.platform,
-    shell: startupQuotingShell(launchRuntime),
+    platform,
+    shell,
     isRemote: repoIsRemote(repo),
     ...(environment.agentArgs !== undefined ? { agentArgs: environment.agentArgs } : {}),
     ...(environment.extraAgentArgs ? { extraAgentArgs: environment.extraAgentArgs } : {}),
@@ -191,7 +188,7 @@ export function buildWorktreeStartupForAgent(
       }),
       provesAgentInFront: launchHostProvesAgentInFront({
         isRemote: repoIsRemote(repo),
-        launchPlatform: resolved.platform
+        launchPlatform: platform
       })
     })
     startupPlan = offered.plan
@@ -213,7 +210,7 @@ export function buildWorktreeStartupForAgent(
         ? { startupCommandDelivery: startupPlan.startupCommandDelivery }
         : {}),
       ...(startupPlan.env ? { env: startupPlan.env } : {}),
-      telemetry: agentStartedTelemetry(agent, environment.launchSource, environment.requestKind)
+      telemetry: agentStartedTelemetry(agent, environment.launchSource)
     },
     launchRuntime,
     ...(startupPlan.followupPrompt
@@ -237,7 +234,6 @@ export function resolveWorktreeCreateAgentStartup(
       agentArgs?: string | null
       extraAgentArgs?: string
       launchSource?: string
-      requestKind?: string
       onPromptCarry?: (carried: boolean) => void
     }
   ) => {
@@ -254,7 +250,6 @@ export function resolveWorktreeCreateAgentStartup(
     ...(args.startupAgentArgs !== undefined ? { agentArgs: args.startupAgentArgs } : {}),
     ...(args.startupExtraAgentArgs ? { extraAgentArgs: args.startupExtraAgentArgs } : {}),
     ...(args.startupLaunchSource ? { launchSource: args.startupLaunchSource } : {}),
-    ...(args.startupRequestKind ? { requestKind: args.startupRequestKind } : {}),
     ...(args.onStartupPromptCarry ? { onPromptCarry: args.onStartupPromptCarry } : {})
   })
 }

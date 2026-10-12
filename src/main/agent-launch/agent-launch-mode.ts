@@ -130,28 +130,18 @@ const HOST_SUPPORT_REASON: Record<
 export function decideAgentLaunchMode(args: {
   placement: AgentLaunchModePlacement
   settings: AgentLaunchModeSettings | null | undefined
-  /** The caller asked for a terminal (its contract is a terminal handle), so the chat default
-   *  cannot apply. */
+  /** Host-internal: the caller's contract is a terminal handle, so the chat default cannot apply. */
   terminalOnly?: boolean
   vocabulary?: AgentLaunchModeVocabulary
 }): AgentLaunchModeReceipt {
   const { placement, settings } = args
   const vocabulary = args.vocabulary ?? DEFAULT_LAUNCH_VOCABULARY
-  if (!isNativeChatEnabled(settings)) {
+  if (args.terminalOnly || !isNativeChatEnabled(settings)) {
     return {
       mode: 'terminal',
       preferred: 'terminal',
       reason: 'user_default',
       detail: `Started ${vocabulary.terminal}, the default for new agent tabs in your settings.`
-    }
-  }
-  if (args.terminalOnly) {
-    // No reason word says "the caller asked" yet; a new one needs a capability older peers read.
-    return {
-      mode: 'terminal',
-      preferred: 'terminal',
-      reason: 'user_default',
-      detail: `Started ${vocabulary.terminal} because this launch asked for one.`
     }
   }
   // A worker placed on another runtime starts through federation, which creates terminal agents

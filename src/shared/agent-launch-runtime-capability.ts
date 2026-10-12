@@ -45,11 +45,6 @@ export const AGENT_LAUNCH_PLACEMENT_RUNTIME_CAPABILITY = 'agent.launch.placement
 export const AGENT_LAUNCH_CREATE_FOLDER_WORKSPACE_RUNTIME_CAPABILITY =
   'agent.launch.create-folder-workspace.v1' as const
 
-// Host-advertised: reads `title`, `extraAgentArgs`, `requestKind` and `terminalOnly`. An older host
-// drops unknown keys, so a client sends them only to a host that advertises this.
-export const AGENT_LAUNCH_TERMINAL_INPUTS_RUNTIME_CAPABILITY =
-  'agent.launch.terminal-inputs.v1' as const
-
 // Client-advertised only: the client reads a listed launch tab with no terminal yet as "not
 // started", never as proof its agent runs. The host publishes a paired caller's tab before the
 // spawn only for a client that says so.
@@ -67,6 +62,5 @@ export const AGENT_LAUNCH_RUNTIME_CAPABILITIES = [
   AGENT_LAUNCH_PROMPT_CARRY_RUNTIME_CAPABILITY,
   AGENT_LAUNCH_PROMPT_UNCONFIRMED_RUNTIME_CAPABILITY,
   AGENT_LAUNCH_PLACEMENT_RUNTIME_CAPABILITY,
-  AGENT_LAUNCH_CREATE_FOLDER_WORKSPACE_RUNTIME_CAPABILITY,
-  AGENT_LAUNCH_TERMINAL_INPUTS_RUNTIME_CAPABILITY
+  AGENT_LAUNCH_CREATE_FOLDER_WORKSPACE_RUNTIME_CAPABILITY
 ] as const

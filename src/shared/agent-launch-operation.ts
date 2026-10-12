@@ -48,10 +48,6 @@ export type AgentLaunchFingerprintInput = {
   /** In: a retry that minted another session is a different request, since replaying would answer
    *  with a conversation this caller did not mint. */
   sessionId?: string
-  /** In: they change the command, as `agentArgs` does. */
-  extraAgentArgs?: string
-  /** In: it decides the surface, as `cwd` can. */
-  terminalOnly?: boolean
   /**
    * `launchSource` is deliberately absent, and this is the reasoned exclusion rather than an
    * oversight: it is telemetry, so two launches differing only in which button produced them do the
@@ -60,9 +56,8 @@ export type AgentLaunchFingerprintInput = {
    * digest covers what the call DOES — and the cost of leaving it out is only that a replay reports
    * the first attempt's attribution, which is the truthful answer: one launch happened.
    *
-   * `placement`, `presentation` and `title` are absent by the same rule: they say where the tab sits,
-   * whose view moves and what it is called, not what runs, so a retry that changed them replays the
-   * first answer. `requestKind` is telemetry, excluded as `launchSource` is.
+   * `placement` and `presentation` are absent by the same rule: they say where the tab sits and whose
+   * view moves, not what runs, so a retry that moved them replays the first answer.
    */
 }
 
@@ -80,9 +75,7 @@ export function computeAgentLaunchFingerprint(input: AgentLaunchFingerprintInput
     cwd: input.cwd,
     // Absent keys are dropped by the canonical form, so every digest without one is unchanged.
     paneKey: input.paneKey,
-    sessionId: input.sessionId,
-    extraAgentArgs: input.extraAgentArgs,
-    terminalOnly: input.terminalOnly
+    sessionId: input.sessionId
   })
 }
 

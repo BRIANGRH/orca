@@ -4,7 +4,7 @@
  * implements, not part of the sequencing it runs.
  */
 
-import type { AgentLaunchIntent, AgentLaunchPrompt } from '../../shared/agent-launch-intent'
+import type { AgentLaunchPrompt } from '../../shared/agent-launch-intent'
 import type { StructuredAgentId } from '../../shared/agent-session-provider-handle'
 import type { TuiAgent } from '../../shared/tui-agent'
 
@@ -39,10 +39,6 @@ export type AgentLaunchSurfaceFactory = {
     paneKey?: string
     /** The tab's first view, derived on the host by the window's own rule. */
     viewMode?: 'terminal' | 'chat'
-    /** As on the intent: the tab's title, saved extra arguments, and `agent_started.request_kind`. */
-    title?: AgentLaunchIntent['title']
-    extraAgentArgs?: AgentLaunchIntent['extraAgentArgs']
-    requestKind?: AgentLaunchIntent['requestKind']
   }): Promise<{
     handle: string
     /** The pane this create minted; a factory whose runtime reports none omits it, never invents. */
@@ -125,10 +121,6 @@ export type AgentLaunchWorkspaceFactory = {
     paneKey?: string
     /** The launch's session options, read as the startup terminal's model/effort/mode preferences. */
     options?: Readonly<Record<string, unknown>>
-    /** As on the intent: the tab's title, saved extra arguments, and `agent_started.request_kind`. */
-    title?: AgentLaunchIntent['title']
-    extraAgentArgs?: AgentLaunchIntent['extraAgentArgs']
-    requestKind?: AgentLaunchIntent['requestKind']
   }): Promise<{
     worktreeId: string
     /** The new workspace's SSH connection; `null` is local. The executor carries it but nothing
@@ -147,20 +139,4 @@ export type AgentLaunchWorkspaceFactory = {
   createFolderWorkspace?(args: {
     create: Readonly<Record<string, unknown>>
   }): Promise<{ worktreeId: string; connectionId: string | null }>
-}
-
-/** What every route that builds a terminal agent passes on, so the startup terminal of a new
- *  workspace and the terminal of an existing one start the same agent. */
-export function terminalLaunchInputs(intent: AgentLaunchIntent) {
-  return {
-    ...(intent.sessionOptions ? { options: intent.sessionOptions } : {}),
-    // `null` is a value the caller meant, so this tests for absence rather than falsiness.
-    ...(intent.agentArgs !== undefined ? { agentArgs: intent.agentArgs } : {}),
-    ...(intent.cwd ? { cwd: intent.cwd } : {}),
-    ...(intent.launchSource ? { launchSource: intent.launchSource } : {}),
-    ...(intent.paneKey ? { paneKey: intent.paneKey } : {}),
-    ...(intent.title ? { title: intent.title } : {}),
-    ...(intent.extraAgentArgs ? { extraAgentArgs: intent.extraAgentArgs } : {}),
-    ...(intent.requestKind ? { requestKind: intent.requestKind } : {})
-  }
 }

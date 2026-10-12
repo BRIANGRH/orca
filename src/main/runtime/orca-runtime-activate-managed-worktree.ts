@@ -8,6 +8,7 @@ import {
 } from '../../shared/runtime-navigation'
 import { getRepoExecutionHostId } from '../../shared/execution-host'
 import type { Repo } from '../../shared/repo-types'
+import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
 import type { TuiAgent } from '../../shared/tui-agent'
 import type { RuntimeTerminalWait } from '../../shared/runtime-terminal-contracts'
 import type {
@@ -160,7 +161,7 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       ...(requestedAgent ? { requestedAgent } : {}),
       ...(launchSource ? { launchSource } : {}),
       settings: this.store.getSettings(),
-      getLaunchRuntime: () => this.resolveRepoAgentLaunchRuntime(repo)
+      getLaunchRuntime: () => this.resolveStartupAgentLaunchRuntime(repo)
     })
   }
 
@@ -173,8 +174,9 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       agentArgs?: string | null
       extraAgentArgs?: string
       launchSource?: string
-      requestKind?: string
       onPromptCarry?: (carried: boolean) => void
+      /** The existing workspace it starts in; absent is a new workspace of `repo`. */
+      launchScope?: TerminalWorkspaceLaunchScope
     }
   ): ReturnType<typeof buildWorktreeStartupForAgent> {
     if (!this.store) {
@@ -188,10 +190,10 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       ...(launchInputs?.agentArgs !== undefined ? { agentArgs: launchInputs.agentArgs } : {}),
       ...(launchInputs?.extraAgentArgs ? { extraAgentArgs: launchInputs.extraAgentArgs } : {}),
       ...(launchInputs?.launchSource ? { launchSource: launchInputs.launchSource } : {}),
-      ...(launchInputs?.requestKind ? { requestKind: launchInputs.requestKind } : {}),
       ...(launchInputs?.onPromptCarry ? { onPromptCarry: launchInputs.onPromptCarry } : {}),
       settings: this.store.getSettings(),
-      getLaunchRuntime: () => this.resolveRepoAgentLaunchRuntime(repo),
+      getLaunchRuntime: () =>
+        this.resolveStartupAgentLaunchRuntime(repo, launchInputs?.launchScope),
       toSessionOptions: (preferences) => this.toAgentSessionOptions(preferences)
     })
   }

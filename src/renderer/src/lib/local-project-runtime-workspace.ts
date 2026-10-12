@@ -1,7 +1,10 @@
 import type { AppState } from '@/store/types'
 import { getIndexedWorktreeById } from '@/store/worktree-repo-index'
-import { LOCAL_EXECUTION_HOST_ID } from '../../../shared/execution-host'
-import { findLocalFolderWorkspaceRuntimeRepo } from '../../../shared/local-workspace-execution-runtime'
+import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../../shared/execution-host'
+import {
+  findFolderWorkspaceCandidateRepos,
+  resolveFolderWorkspaceHost
+} from '../../../shared/folder-workspace-execution-host'
 import type { Worktree } from '../../../shared/worktree/types'
 import { parseWorkspaceKey } from '../../../shared/workspace-scope'
 
@@ -30,9 +33,20 @@ export function getLocalProjectRuntimeWorkspace(
     projectGroups: state.projectGroups ?? [],
     repos: state.repos
   }
-  const repo = findLocalFolderWorkspaceRuntimeRepo(folderState, scope.folderWorkspaceId)
   const folder = folderState.folderWorkspaces.find((entry) => entry.id === scope.folderWorkspaceId)
-  return repo && folder
+  if (!folder || resolveFolderWorkspaceHost(folderState, folder.id).kind !== 'local') {
+    return null
+  }
+  const group = folderState.projectGroups.find((entry) => entry.id === folder.projectGroupId)
+  if (
+    (folder.executionHostId ?? group?.executionHostId ?? LOCAL_EXECUTION_HOST_ID) !==
+    LOCAL_EXECUTION_HOST_ID
+  ) {
+    return null
+  }
+  const candidates = findFolderWorkspaceCandidateRepos(folderState, folder.id)
+  const repo = candidates.length === 1 ? candidates[0] : undefined
+  return repo && getRepoExecutionHostId(repo) === LOCAL_EXECUTION_HOST_ID
     ? {
         id: targetWorktreeId,
         repoId: repo.id,

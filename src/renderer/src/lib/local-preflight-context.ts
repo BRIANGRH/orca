@@ -3,11 +3,11 @@ import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
 import { parseWslUncPath } from '../../../shared/wsl-paths'
 import {
   deriveGlobalWindowsRuntimeDefaultFromLegacySettings,
+  getWorkspaceRuntimePreference,
   resolveProjectExecutionRuntime,
   type ProjectExecutionRuntimeResolution
 } from '../../../shared/project-execution-runtime'
 import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../../shared/execution-host'
-import { resolveLocalWorkspaceExecutionRuntime } from '../../../shared/local-workspace-execution-runtime'
 import type { Repo } from '../../../shared/repo-types'
 import type { Worktree } from '../../../shared/worktree/types'
 import { parseWorkspaceKey } from '../../../shared/workspace-scope'
@@ -80,14 +80,22 @@ export function getLocalProjectExecutionRuntimeContext(
   if (!isLocalRuntimeRepo(repo) || !isLocalRuntimeWorktree(worktree)) {
     return undefined
   }
-  return resolveLocalWorkspaceExecutionRuntime({
+  const projectId = getLocalPreflightProjectId(state, worktreeId)
+  const project = getLocalRuntimeProject(state, projectId, repo.id)
+  const projectRuntimePreference = getWorkspaceRuntimePreference(
+    project?.localWindowsRuntimePreference,
+    worktree?.path ?? repo?.path
+  )
+
+  return resolveProjectExecutionRuntime({
     appPlatform,
-    projects: state.projects,
-    settings: state.settings,
-    repoId: repo.id,
-    projectId: getLocalPreflightProjectId(state, worktreeId),
-    workspacePath: worktree?.path ?? repo?.path,
-    ...wslContext
+    projectId,
+    projectRuntimePreference,
+    globalWindowsRuntimeDefault:
+      state.settings?.localWindowsRuntimeDefault ??
+      deriveGlobalWindowsRuntimeDefaultFromLegacySettings(state.settings).defaultRuntime,
+    wslAvailable: wslContext.wslAvailable,
+    availableWslDistros: wslContext.availableWslDistros
   })
 }
 
@@ -130,13 +138,22 @@ export function getLocalRepoProjectExecutionRuntimeContext(
   if (!isLocalRuntimeRepo(repo)) {
     return undefined
   }
-  return resolveLocalWorkspaceExecutionRuntime({
+  const project = getLocalRuntimeProject(state, repoId, repo.id)
+  const projectId = project?.id ?? repoId
+  const projectRuntimePreference = getWorkspaceRuntimePreference(
+    project?.localWindowsRuntimePreference,
+    repo?.path
+  )
+
+  return resolveProjectExecutionRuntime({
     appPlatform,
-    projects: state.projects,
-    settings: state.settings,
-    repoId: repo.id,
-    workspacePath: repo.path,
-    ...wslContext
+    projectId,
+    projectRuntimePreference,
+    globalWindowsRuntimeDefault:
+      state.settings?.localWindowsRuntimeDefault ??
+      deriveGlobalWindowsRuntimeDefaultFromLegacySettings(state.settings).defaultRuntime,
+    wslAvailable: wslContext.wslAvailable,
+    availableWslDistros: wslContext.availableWslDistros
   })
 }
 
@@ -293,6 +310,17 @@ function isLocalRuntimeRepo(
 
 function isLocalRuntimeWorktree(worktree?: Pick<Worktree, 'hostId'> | null): boolean {
   return !worktree?.hostId || worktree.hostId === LOCAL_EXECUTION_HOST_ID
+}
+
+function getLocalRuntimeProject(
+  state: LocalProjectRuntimeState,
+  projectId: string,
+  repoId: string
+) {
+  return state.projects?.find(
+    (entry) =>
+      entry.id === projectId || entry.id === repoId || entry.sourceRepoIds?.includes(repoId)
+  )
 }
 
 function getLocalPreflightProjectId(

@@ -138,7 +138,6 @@ describe('runtime pty spawn preflight: requested shell on a local Windows host',
         shellOverride: 'cmd.exe',
         launchRuntime: {
           platform: 'linux',
-          remote: false,
           pty: { shellOverride: 'wsl.exe', terminalWindowsWslDistro: 'Ubuntu' }
         }
       })

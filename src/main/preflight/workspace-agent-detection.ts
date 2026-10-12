@@ -6,8 +6,8 @@ import {
 } from '../../shared/execution-host'
 import { resolveFolderWorkspaceHost } from '../../shared/folder-workspace-execution-host'
 import type { Repo } from '../../shared/repo-types'
-import { findLocalFolderWorkspaceRuntimeRepo } from '../../shared/local-workspace-execution-runtime'
 import {
+  findLocalFolderWorkspaceRuntimeRepo,
   resolveLocalWorkspaceRuntime,
   type LaunchScopeRuntimeStore
 } from '../local-project-runtime-resolution'

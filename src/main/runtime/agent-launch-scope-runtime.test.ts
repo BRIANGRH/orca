@@ -21,7 +21,7 @@ const scope = (
   path: string,
   kind: { repo?: Repo; folder?: FolderWorkspace }
 ): TerminalWorkspaceLaunchScope => ({
-  id: 'w',
+  id: kind.repo ? 'r' : 'f',
   path,
   connectionId: null,
   repo: kind.repo ?? null,
@@ -29,6 +29,7 @@ const scope = (
 })
 function store(args: {
   repos?: Repo[]
+  /** Repo `r`'s project runtime. */
   project?: unknown
   global?: unknown
   folder?: FolderWorkspace
@@ -36,17 +37,13 @@ function store(args: {
 }) {
   const fake = {
     getProjects: () => [
-      {
-        id: 'p',
-        sourceRepoIds: ['r'],
-        localWindowsRuntimePreference: args.project
-      }
+      { id: 'p', sourceRepoIds: ['r'], localWindowsRuntimePreference: args.project }
     ],
     getSettings: () => ({
       terminalWindowsShell: args.shell ?? 'cmd.exe',
       localWindowsRuntimeDefault: args.global
     }),
-    getRepo: () => args.repos?.[0],
+    getRepo: (id: string) => (id === 'r' ? repo(WIN) : undefined),
     getRepos: () => args.repos ?? [],
     getFolderWorkspaces: () => (args.folder ? [args.folder] : []),
     getProjectGroups: () => [{ id: 'g', name: 'g', parentPath: null, connectionId: null }]
@@ -75,13 +72,7 @@ describe("the window's runtime rule, on the host", () => {
   it.each([
     ['repo, project WSL', store({ project: UBUNTU }), scope(WIN, { repo: repo(WIN) }), 'linux'],
     [
-      'repo, no saved runtime, \\\\wsl$ path',
-      store({}),
-      scope(SHARE, { repo: repo(SHARE) }),
-      'linux'
-    ],
-    [
-      'repo, global default WSL',
+      'repo whose project follows a WSL global default',
       store({ global: UBUNTU }),
       scope(WIN, { repo: repo(WIN) }),
       'linux'
@@ -101,8 +92,7 @@ describe("the window's runtime rule, on the host", () => {
       store({ global: UBUNTU, folder: folder('C:\\work') }),
       scope('C:\\work', { folder: folder('C:\\work') }),
       'win32'
-    ],
-    ['repo-less \\\\wsl$ folder', store({}), scope(SHARE, { folder: folder(SHARE) }), 'linux']
+    ]
   ])('%s', (_name, s, launchScope, platform) => {
     expect(agentLaunchPlatformForScope(s, launchScope)).toBe(platform)
   })
@@ -115,45 +105,48 @@ it("answers from main's WSL cache, which the window may not have read yet", () =
     resolveAgentLaunchRuntime(
       store({ project: UBUNTU }),
       scope(WIN, { repo: repo(WIN) }),
-      undefined,
-      'host-legacy'
+      undefined
     )
   ).toThrow('wsl-distro-missing')
+  // A `\\wsl$` path proves its distro, so a stale cache never refuses it.
+  expect(
+    resolveAgentLaunchRuntime(store({}), scope(SHARE, { repo: repo(SHARE) }), undefined).platform
+  ).toBe('linux')
   // A repo-less `\\wsl$` folder has no runtime to repair, as in the window: its path places it.
   expect(
-    resolveAgentLaunchRuntime(
-      store({}),
-      scope(SHARE, { folder: folder(SHARE) }),
-      undefined,
-      'host-legacy'
-    ).platform
+    resolveAgentLaunchRuntime(store({}), scope(SHARE, { folder: folder(SHARE) }), undefined)
+      .platform
   ).toBe('linux')
 })
 
 // Relied on by C2: the pane's pty:spawn takes the fact as is, for quoting and shell alike.
 it('quotes for the shell the PTY gets, not a setting the runtime replaced', () => {
   const windowsHost = store({ project: { kind: 'windows-host' }, shell: 'wsl.exe' })
-  const local = resolveAgentLaunchRuntime(
-    windowsHost,
-    scope(WIN, { repo: repo(WIN) }),
-    undefined,
-    'host-legacy'
-  )
+  const local = resolveAgentLaunchRuntime(windowsHost, scope(WIN, { repo: repo(WIN) }), undefined)
   expect(local.pty.shellOverride).toBe('powershell.exe')
   expect(agentLaunchQuotingShell(local)).toBe('powershell')
 })
 
-// TEMPORARY until C8, which decides how to model a global default nobody chose.
-it('keeps a WSL Terminal shell where no project chose a runtime, until C8', () => {
-  const s = store({ global: { kind: 'windows-host' }, shell: 'wsl.exe' })
-  const launchScope = scope(WIN, { repo: repo(WIN) })
-  const legacy = resolveAgentLaunchRuntime(s, launchScope, undefined, 'host-legacy')
-  expect([legacy.platform, legacy.pty.shellOverride, agentLaunchQuotingShell(legacy)]).toEqual([
-    'win32',
-    'wsl.exe',
-    'posix'
-  ])
-  expect(resolveAgentLaunchRuntime(s, launchScope, undefined, 'window').pty.shellOverride).toBe(
-    'powershell.exe'
-  )
-})
+// TEMPORARY, removed by the WSL-shell default decision (STA-10231). Only folders reach it: main
+// finds no project runtime for a folder, while every local repo has a project.
+it.each([['follows the global default'], ['is set to Windows host', { kind: 'windows-host' }]])(
+  "keeps a folder's WSL Terminal shell where its repo's project %s",
+  (_name, project?: unknown) => {
+    const legacy = resolveAgentLaunchRuntime(
+      store({
+        project,
+        global: { kind: 'windows-host' },
+        shell: 'wsl.exe',
+        repos: [repo(WIN)],
+        folder: folder('C:\\work')
+      }),
+      scope('C:\\work', { folder: folder('C:\\work') }),
+      undefined
+    )
+    expect([legacy.platform, legacy.pty.shellOverride, agentLaunchQuotingShell(legacy)]).toEqual([
+      'win32',
+      'wsl.exe',
+      'posix'
+    ])
+  }
+)

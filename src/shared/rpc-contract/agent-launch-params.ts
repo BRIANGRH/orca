@@ -1,11 +1,10 @@
 /**
  * The wire shape of `agent.launch`, mirroring `AgentLaunchIntent`.
  *
- * A caller states WHERE the agent lands and WHAT it should say; it does not pick a chat. Its one
- * mode input is `terminalOnly`, for a caller whose surface is a terminal tab, and there is no
- * startup-agent field on the create payload — the host decides, and
- * `withoutReservedAgentCreateFields` strips a stale one out of a payload a caller migrated over
- * from `worktree.create`.
+ * A caller states WHERE the agent lands and WHAT it should say; it never names a mode. There is
+ * deliberately no `structured` / `terminal` field and no startup-agent field on the create
+ * payload — the host decides, and `withoutReservedAgentCreateFields` strips a stale one out of a
+ * payload a caller migrated over from `worktree.create`.
  *
  * Shared rather than main-side because every field resolves to a shared schema: a remote client
  * that sends this method needs `RpcSendParams<'agent.launch'>` to exist, and a method missing from
@@ -93,15 +92,6 @@ export const AgentLaunchFields = z.object({
    *  structured launch that carries one rather than ignoring it. */
   cwd: z.string().min(1, 'Empty launch cwd').optional(),
   launchSource: LaunchSourceParam.optional(),
-  // These four are read by hosts advertising `agent.launch.terminal-inputs.v1`; older hosts drop them.
-  /** The terminal tab's title. Ignored by a structured launch and a reused terminal. */
-  title: z.string().optional(),
-  /** An automation's saved extras, merged over the resolved arguments; invalid extras refuse. */
-  extraAgentArgs: z.string().optional(),
-  /** `agent_started.request_kind`; open like `launchSource`, so an unknown word reads as `new`. */
-  requestKind: z.string().optional(),
-  /** Start a terminal agent whatever the chat default says: the caller's surface is a terminal. */
-  terminalOnly: z.boolean().optional(),
   /**
    * The pane a terminal launch should create, minted by a caller that places its own tabs.
    *
