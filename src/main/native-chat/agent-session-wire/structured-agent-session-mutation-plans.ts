@@ -283,6 +283,7 @@ export function cancelPlan(params: {
   /** The session's child records, which name the tasks a background Stop reaches. */
   childWork?: () => readonly AgentChildWorkView[] | undefined
   acknowledgeStops?: (evidence: AgentChildWorkEvidence[]) => void
+  stopUnlisted?: () => Promise<void>
 }): MutationPlan<AgentSessionCancelResult> {
   return {
     method: 'agentSession.cancel',
@@ -304,7 +305,8 @@ export function cancelPlan(params: {
         ...(params.taskId ? { taskId: params.taskId } : {}),
         ...(params.prompt ? { prompt: params.prompt } : {}),
         ...(params.childWork ? { childWork: params.childWork } : {}),
-        ...(params.acknowledgeStops ? { acknowledgeStops: params.acknowledgeStops } : {})
+        ...(params.acknowledgeStops ? { acknowledgeStops: params.acknowledgeStops } : {}),
+        ...(params.stopUnlisted ? { stopUnlisted: params.stopUnlisted } : {})
       }),
     // Interrupting twice would kill a turn the client never asked to stop, so a
     // replay reports the turn as already handled.

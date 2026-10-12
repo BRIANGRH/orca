@@ -149,9 +149,16 @@ describe('child work the host had no room to record', () => {
     return { owner }
   }
 
-  it('marks an idle parent incomplete when the store refuses its live background child', () => {
+  const ended = (id: string): AgentChildWorkEvidence => ({
+    type: 'ended',
+    observedAt: 250,
+    handle: { idKind: 'task_id', id },
+    outcome: 'succeeded'
+  })
+
+  /** Another session holds every child record the store has room for; idle parent beside it. */
+  function storeFull() {
     const { owner } = owners()
-    // Another session holds every child record the store has room for.
     owner.publish({ ...summary, sessionId: 'structured-busy' }, location)
     owner.publishChildWork(
       'structured-busy',
@@ -161,12 +168,64 @@ describe('child work the host had no room to record', () => {
       'claude'
     )
     owner.publish({ ...summary, status: 'idle' }, location)
+    return owner
+  }
+
+  it('marks an idle parent incomplete when the store refuses its live background child', () => {
+    const owner = storeFull()
     owner.publishChildWork(summary.sessionId, [agentLive('background-agent')], 'claude')
 
     expect(owner.readChildWork(summary.sessionId)).toEqual([])
     expect(owner.childWorkIncomplete(summary.sessionId)).toBe(true)
-    // Only the provider session's end, which ends every child it ran, makes the records whole.
+    // Refused again, still untracked.
     owner.publishChildWork(summary.sessionId, [agentLive('background-agent')], 'claude')
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(true)
+    owner.publishChildWork(
+      summary.sessionId,
+      [{ type: 'session-ended', observedAt: 300 }],
+      'claude'
+    )
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(false)
+  })
+
+  it('is whole again once the refused child is admitted on a later report', () => {
+    const owner = storeFull()
+    owner.publishChildWork(summary.sessionId, [agentLive('background-agent')], 'claude')
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(true)
+    // The other session goes, and with it the records that filled the store.
+    owner.forget('structured-busy')
+    owner.publishChildWork(summary.sessionId, [agentLive('background-agent')], 'claude')
+    expect(owner.readChildWork(summary.sessionId)).toHaveLength(1)
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(false)
+  })
+
+  it('is whole again once every refused child reports its own end', () => {
+    const owner = storeFull()
+    owner.publishChildWork(summary.sessionId, [agentLive('first'), agentLive('second')], 'claude')
+    owner.publishChildWork(summary.sessionId, [ended('first')], 'claude')
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(true)
+    owner.publishChildWork(summary.sessionId, [ended('second')], 'claude')
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(false)
+  })
+
+  it('marks a parent the store refused incomplete, since none of its children is recorded', () => {
+    const { owner } = owners()
+    for (let index = 0; index < AGENT_STATUS_STORE_LIMITS.parents; index++) {
+      owner.publish({ ...summary, sessionId: `structured-other-${index}` }, location)
+    }
+    owner.publish({ ...summary, status: 'idle' }, location)
+    owner.publishChildWork(summary.sessionId, [agentLive('background-agent')], 'claude')
+    expect(owner.readChildWork(summary.sessionId)).toEqual([])
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(true)
+    owner.publishChildWork(summary.sessionId, [ended('background-agent')], 'claude')
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(false)
+  })
+
+  it('past its bound, holds incomplete until the provider session ends', () => {
+    const owner = storeFull()
+    const many = Array.from({ length: 513 }, (_unused, index) => `refused-${index}`)
+    owner.publishChildWork(summary.sessionId, many.map(agentLive), 'claude')
+    owner.publishChildWork(summary.sessionId, many.map(ended), 'claude')
     expect(owner.childWorkIncomplete(summary.sessionId)).toBe(true)
     owner.publishChildWork(
       summary.sessionId,

@@ -35,6 +35,10 @@ export type StructuredAgentSessionStatusSink = {
 
 /** The store's limits refusing a record: the per-session one, and the store's own. */
 const ROOM_REFUSALS: ReadonlySet<string> = new Set(['ingestion-limit', 'store-rejected'])
+/** Refused children remembered per session; past it only the session's end clears the flag. */
+const MAX_REFUSED_CHILDREN = 512
+
+type RefusedChildren = { handles: Set<string>; overflowed: boolean }
 
 /** Retain the owner address because record removal may precede the final status callback. */
 export class StructuredAgentSessionStatusOwnership {
@@ -43,9 +47,10 @@ export class StructuredAgentSessionStatusOwnership {
   // forget a row that did land, but "we hold an address" is not evidence the row is there. Only a
   // publish that returned proves that, and only that proof may suppress the re-offer below.
   private readonly landed = new Set<string>()
-  /** Sessions with child work the store refused for room. Only the provider session's end, which
-   *  ends every child it ran, makes the records whole again. */
-  private readonly untracked = new Set<string>()
+  /** Per session, the children the store refused for room, by handle. Each leaves once a later
+   *  report of it is admitted or it reports its own end; the provider session's end, which ends
+   *  every child it ran, clears them all. */
+  private readonly refused = new Map<string, RefusedChildren>()
 
   constructor(private readonly sink: () => StructuredAgentSessionStatusSink | undefined) {}
 
@@ -101,15 +106,45 @@ export class StructuredAgentSessionStatusOwnership {
     }
     const outcome = this.sink()?.publishChildWork?.(subject, evidence, provider)
     if (evidence.some((edge) => edge.type === 'session-ended')) {
-      this.untracked.delete(sessionId)
-    } else if (outcome?.rejected.some(({ reason }) => ROOM_REFUSALS.has(reason))) {
-      this.untracked.add(sessionId)
+      this.refused.delete(sessionId)
+    } else if (typeof outcome === 'object') {
+      this.followRefusals(sessionId, evidence, outcome)
     }
   }
 
   /** Whether some of the session's running child work has no record. */
   childWorkIncomplete(sessionId: string): boolean {
-    return this.untracked.has(sessionId)
+    return this.refused.has(sessionId)
+  }
+
+  /** `null`: the sink holds no parent row, so it recorded none of these children. */
+  private followRefusals(
+    sessionId: string,
+    evidence: readonly AgentChildWorkEvidence[],
+    outcome: AgentChildWorkReconcileOutcome | null
+  ): void {
+    const refusedNow = new Set(
+      outcome?.rejected.filter(({ reason }) => ROOM_REFUSALS.has(reason)).map((r) => r.handleId)
+    )
+    const refused = this.refused.get(sessionId) ?? { handles: new Set(), overflowed: false }
+    for (const edge of evidence) {
+      if (edge.type === 'live' && (outcome === null || refusedNow.has(edge.child.handle.id))) {
+        if (refused.handles.size < MAX_REFUSED_CHILDREN) {
+          refused.handles.add(edge.child.handle.id)
+        } else {
+          refused.overflowed = true
+        }
+      } else if (edge.type === 'live') {
+        refused.handles.delete(edge.child.handle.id)
+      } else if (edge.type === 'ended' || edge.type === 'removed') {
+        refused.handles.delete(edge.handle.id)
+      }
+    }
+    if (refused.handles.size > 0 || refused.overflowed) {
+      this.refused.set(sessionId, refused)
+    } else {
+      this.refused.delete(sessionId)
+    }
   }
 
   /** Undefined until the parent row has landed: a sink holds no children for a parent it lacks. */
@@ -131,7 +166,7 @@ export class StructuredAgentSessionStatusOwnership {
       return
     }
     this.landed.delete(sessionId)
-    this.untracked.delete(sessionId)
+    this.refused.delete(sessionId)
     this.sink()?.forget(subject)
     this.subjects.delete(sessionId)
   }

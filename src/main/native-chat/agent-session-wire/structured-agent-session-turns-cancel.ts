@@ -1,11 +1,4 @@
-import {
-  agentChildWorkStopEvidence,
-  agentChildWorkStopTargets,
-  type AgentChildWorkStopAcknowledgement
-} from '../../../shared/agent-child-work-stop-targets'
-import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
-import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import { agentSessionFailureWords } from '../../../shared/agent-session-failure-words'
 import type {
   AgentJournalStatusItem,
@@ -37,6 +30,10 @@ import { structuredAgentSessionFailedStopMark } from './structured-agent-session
 import { sendStopCanTakeBack } from './structured-agent-session-unopened-send-withdrawal'
 import { settleTakenStop } from './structured-agent-session-taken-stop-settle'
 import type { AgentSessionTurnContext, TurnOutcome } from './structured-agent-session-turns'
+import {
+  stopStructuredAgentSessionBackgroundWork,
+  type StructuredAgentSessionBackgroundStopInput
+} from './structured-agent-session-background-stop'
 
 /** Whether the fold reads working. Every write has landed by its call's return, so a Stop reads it
  *  without waiting on the write queue. */
@@ -128,12 +125,11 @@ export async function performCancel(
   }
 }
 
-type PerformCancelInput = {
+type PerformCancelInput = StructuredAgentSessionBackgroundStopInput & {
   clientOperationId: string
   /** Absent: whatever the conversation has in flight; present: only while that turn is current. */
   turnId?: string
   scope?: 'background-tasks'
-  taskId?: string
   prompt?: { itemId: string; expectedRevision: number }
   /** Ends the provider child, for a running command the provider did not take the Stop on, or a
    *  turn whose interrupt failed. */
@@ -149,11 +145,6 @@ type PerformCancelInput = {
   /** Whether the host's withdrawal of queued messages for this Stop withdrew any; awaited only
    *  after the interrupt. */
   withdrewQueued?: Promise<boolean>
-  /** The session's child records: a background Stop reaches the tasks they offer a stop. */
-  childWork?: () => readonly AgentChildWorkView[] | undefined
-  /** Hands the host the stops the provider accepted, as evidence about the runs it sent them to.
-   *  Never throws: recording it is bookkeeping, and cannot fail the Stop. */
-  acknowledgeStops?: (evidence: AgentChildWorkEvidence[]) => void
   /** The latest Stop event is this press's own, or the in-force one it repeats: its settle binds. */
   opensSettle?: true
 }
@@ -203,26 +194,13 @@ async function cancelAndNote(
   let stoppedTurn: string | undefined
   try {
     const dispatchStatus = latestJournalDispatchObservation(ctx.journal, ctx.fence)
-    // Captured before the stop goes out: its acknowledgement may end only these runs.
-    const targets = input.scope ? agentChildWorkStopTargets(input.childWork?.(), input.taskId) : []
-    const acknowledged: AgentChildWorkStopAcknowledgement[] = []
     const background =
       input.scope && !stoppedBefore
-        ? await ctx.adapter
-            .stopBackgroundTasks?.({
-              sessionId: ctx.sessionId,
-              fence: ctx.fence,
-              taskIds: targets.map((target) => target.providerId),
-              acknowledge: (acknowledgement) => void acknowledged.push(acknowledgement)
-            })
-            // A batch that fails part way still ended each run it was answered for first.
-            .finally(() => {
-              if (acknowledged.length > 0) {
-                input.acknowledgeStops?.(
-                  agentChildWorkStopEvidence(targets, acknowledged, Date.now())
-                )
-              }
-            })
+        ? await stopStructuredAgentSessionBackgroundWork(
+            ctx,
+            input,
+            liveTurnId === null && !isMainAgentWorking(ctx)
+          )
         : undefined
     // A background Stop writes no row, so a task the agent shows still running after it goes back
     // to the client that pressed it.

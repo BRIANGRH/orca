@@ -1,6 +1,6 @@
-// A Claude background helper's saved row, from captured frames through the shipping adapter, host
-// and child records: its spawn returning and the parent's turn ending leave it working, and only
-// its own end frame ends it.
+// A Claude background helper through the shipping adapter, host and child records: its saved row
+// stays working past its spawn result and its turn's end until its own end frame; and a helper the
+// store had no room for keeps the strip incomplete until the strip's Stop ends the agent.
 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -8,6 +8,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { computeAgentSessionPayloadFingerprint } from '../../../shared/agent-session-mutation-envelope'
 import { readAgentJournalTurn } from '../../../shared/agent-session-turn-record'
+import { AGENT_STATUS_STORE_LIMITS } from '../../../shared/agent-status-store-contract'
+import { makeStructuredAgentStatusSubject } from '../../../shared/agent-status-subject'
 import { isSubagentBlock } from '../../../shared/native-chat-types'
 import { activeStructuredAgentSessionTurnId } from '../../../shared/structured-agent-session-live-turn'
 import { acpChildWorkStatusSink } from '../../acp/acp-structured-child-work.test-support'
@@ -42,6 +44,7 @@ let host: StructuredAgentSessionHost
 let adapter: ClaudeStructuredSessionAdapter
 let store: AgentSessionRecordStore
 let claude: ReturnType<typeof fakeClaude>
+let records: ReturnType<typeof acpChildWorkStatusSink>
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'orca-claude-subagent-row-'))
@@ -75,6 +78,7 @@ beforeEach(async () => {
     now: () => NOW
   })
   store = await openTestAgentSessionRecordStore(root)
+  records = acpChildWorkStatusSink()
   host = new StructuredAgentSessionHost({
     agents: claudeAndCodexAgents(adapter),
     store,
@@ -84,7 +88,7 @@ beforeEach(async () => {
     mintSpawnToken: () => 'spawn-a',
     logger: log.logger,
     // The host's child records live in a real hook server's store, as in production.
-    statusSink: acpChildWorkStatusSink().sink,
+    statusSink: records.sink,
     now: () => NOW
   })
   const params = hostTestAttachParams(null, {
@@ -111,21 +115,24 @@ function frame(connection: FakeConnection, message: Record<string, unknown>): vo
   connection.handlers.onMessage?.({ session_id: PROVIDER_SESSION_ID, ...message })
 }
 
+function envelope(method: 'agentSession.send' | 'agentSession.cancel', fields: Fields) {
+  return {
+    sessionId: SESSION,
+    clientOperationId: hostTestOperationId(),
+    expectedRuntimeFence: store.getRecord(SESSION)!.lease.runtimeFence,
+    payloadFingerprint: computeAgentSessionPayloadFingerprint({
+      method,
+      sessionId: SESSION,
+      fields
+    })
+  }
+}
+
+type Fields = Parameters<typeof computeAgentSessionPayloadFingerprint>[0]['fields']
+
 async function sendAndEcho(connection: FakeConnection, text: string): Promise<void> {
   const body = hostTestMessage(text)
-  const sent = await host.send(CALLER, {
-    envelope: {
-      sessionId: SESSION,
-      clientOperationId: hostTestOperationId(),
-      expectedRuntimeFence: store.getRecord(SESSION)!.lease.runtimeFence,
-      payloadFingerprint: computeAgentSessionPayloadFingerprint({
-        method: 'agentSession.send',
-        sessionId: SESSION,
-        fields: { body }
-      })
-    },
-    body
-  })
+  const sent = await host.send(CALLER, { envelope: envelope('agentSession.send', { body }), body })
   expect(sent.ok).toBe(true)
   await eventually(() =>
     expect(connection.sent.some((message) => JSON.stringify(message).includes(text))).toBe(true)
@@ -168,4 +175,63 @@ it("keeps a background helper's row working past its spawn result and its turn's
       expect.objectContaining({ id: 'agent-1', state: 'completed', tokens: 15_971 })
     ])
   )
+})
+
+it("ends the agent from the strip's Stop when the store had no room for its helper, never under a running turn", async () => {
+  // Another session holds every child record the store has room for.
+  const busy = makeStructuredAgentStatusSubject(
+    { executionHostId: 'local', wslDistro: null, workspaceId: 'busy', workspaceKind: 'folder' },
+    'busy-session'
+  )
+  records.sink.publish(
+    {
+      sessionId: 'busy-session',
+      workspaceId: 'busy',
+      agent: 'claude',
+      status: 'working',
+      latestPrompt: 'Busy',
+      updatedAt: 1
+    },
+    busy
+  )
+  records.sink.publishChildWork?.(
+    busy,
+    Array.from({ length: AGENT_STATUS_STORE_LIMITS.children }, (_unused, index) => ({
+      type: 'live' as const,
+      observedAt: 1,
+      child: {
+        handle: { idKind: 'task_id' as const, id: `busy-${index}` },
+        kind: 'agent' as const,
+        residency: 'background' as const,
+        state: 'working' as const,
+        stoppable: true
+      }
+    })),
+    'claude'
+  )
+  const connection = claude.connections[0]!
+  await sendAndEcho(connection, 'Run it in the background.')
+  for (const [index, captured] of RESUMED_BY_MESSAGE.filter(({ at }) => at <= 3_349).entries()) {
+    frame(connection, { uuid: `launch-${index}`, ...captured.frame })
+  }
+  const strip = () => host['backgroundTasks'].read(SESSION)
+  await eventually(() => expect(strip()).toMatchObject({ children: [], incomplete: true }))
+  const stopStrip = () => {
+    const fields = { turnId: 'background-tasks', scope: 'background-tasks' as const }
+    return host.cancel(CALLER, { envelope: envelope('agentSession.cancel', fields), ...fields })
+  }
+
+  // The turn that spawned it still runs: the strip's Stop leaves the agent and its turn alone.
+  await stopStrip()
+  expect(connection.closed).toBe(false)
+  expect(strip()).toMatchObject({ incomplete: true })
+
+  frame(connection, {
+    uuid: 'turn-end',
+    ...RESUMED_BY_MESSAGE.find(({ at }) => at === 4_765)!.frame
+  })
+  await host.flushStreamedEvents(SESSION)
+  await expect(stopStrip()).resolves.toMatchObject({ ok: true, value: { cancelled: true } })
+  expect(connection.closed).toBe(true)
+  await eventually(() => expect(strip()?.incomplete).toBeUndefined())
 })

@@ -280,6 +280,7 @@ export class StructuredAgentSessionHost {
       conversation: this.lifetime.conversation,
       readChildWork: this.clientDelivery.readChildWork,
       publishChildWork: this.clientDelivery.publishChildWork,
+      childWorkIncomplete: this.clientDelivery.childWorkIncomplete,
       serialize: (sessionId, task) => this.serialize(sessionId, task),
       openConversation: this.conversationDelivery.open,
       ensureAgent: (sessionId) =>
