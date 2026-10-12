@@ -233,9 +233,8 @@ async function parseSessionCandidates(args: {
   antigravityWorkspaceResolver?: AntigravityWorkspaceResolver
 }): Promise<AiVaultSession[]> {
   const sessions = new ScannedSessionCollection()
-  let index = 0
 
-  while (index < args.candidates.length) {
+  for (let index = 0; index < args.candidates.length;) {
     throwIfAiVaultScanCancelled(args.signal)
     if (
       canStopParsingSessions(sessions, args.limit, candidateFileTime(args.candidates[index]?.file))
@@ -247,6 +246,7 @@ async function parseSessionCandidates(args: {
     const needed = Math.max(args.limit - sessions.size, 1)
     const batchSize = Math.min(SESSION_PARSE_CONCURRENCY, needed, remaining)
     const batch = args.candidates.slice(index, index + batchSize)
+    const previousParseStats = { ...args.parseStats }
     const results = await Promise.all(
       batch.map((candidate) =>
         parseSessionCandidate(
@@ -260,9 +260,8 @@ async function parseSessionCandidates(args: {
       )
     )
 
-    // Checkpoint as the scan goes: saved only at its end, a scan that times out
-    // or is cancelled loses every file it already finished.
-    scheduleSessionParseCachePersist(args.parseStats)
+    // Cache-hit batches must not rearm saves for work completed earlier in the scan.
+    scheduleSessionParseCachePersist(args.parseStats, previousParseStats)
 
     for (const result of results) {
       if (result.issue) {

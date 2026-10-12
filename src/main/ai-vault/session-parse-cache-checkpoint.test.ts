@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import * as fsPromises from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,7 +19,10 @@ import type * as ParseCacheModule from './session-scanner-parse-cache'
 import { isolatedScanRoots } from './session-scanner-test-fixtures'
 
 const hooks = vi.hoisted(() => {
-  const state: { beforeParse: (() => Promise<void>) | null } = { beforeParse: null }
+  const state: {
+    beforeParse: (() => Promise<void>) | null
+    stats: ParseCacheModule.SessionParseStats | null
+  } = { beforeParse: null, stats: null }
   return state
 })
 
@@ -31,6 +34,7 @@ vi.mock('./session-scanner-parse-cache', async (importOriginal) => {
     parseAgentSessionFileCached: async (
       ...args: Parameters<typeof actual.parseAgentSessionFileCached>
     ) => {
+      hooks.stats = args[2] ?? null
       await hooks.beforeParse?.()
       return actual.parseAgentSessionFileCached(...args)
     }
@@ -44,6 +48,7 @@ beforeEach(() => {
   resetSessionParseCacheForTests()
   resetSessionParseCachePersistenceForTests()
   hooks.beforeParse = null
+  hooks.stats = null
 })
 
 afterEach(async () => {
@@ -53,8 +58,9 @@ afterEach(async () => {
   tempRoots = []
 })
 
-async function writeClaudeHistory(projectDir: string, count: number): Promise<void> {
+async function writeClaudeHistory(projectDir: string, count: number): Promise<string[]> {
   await mkdir(projectDir, { recursive: true })
+  const paths: string[] = []
   for (let index = 0; index < count; index++) {
     const sessionId = `aaaaaaaa-bbbb-4ccc-8ddd-${String(index).padStart(12, '0')}`
     const record = {
@@ -64,7 +70,21 @@ async function writeClaudeHistory(projectDir: string, count: number): Promise<vo
       cwd: '/repo/app',
       message: { role: 'user', content: `question ${index}` }
     }
-    await writeFile(join(projectDir, `${sessionId}.jsonl`), `${JSON.stringify(record)}\n`)
+    const path = join(projectDir, `${sessionId}.jsonl`)
+    await writeFile(path, `${JSON.stringify(record)}\n`)
+    const modified = new Date(1740000000000 + index * 60_000)
+    await utimes(path, modified, modified)
+    paths.push(path)
+  }
+  return paths
+}
+
+function paceScanBatches(delayMs: number): void {
+  let started = 0
+  hooks.beforeParse = async () => {
+    if (++started % 8 === 1) {
+      await vi.advanceTimersByTimeAsync(delayMs)
+    }
   }
 }
 
@@ -86,15 +106,19 @@ describe('session parse cache checkpoints', () => {
     hooks.beforeParse = () => (++started > 8 ? held : Promise.resolve())
 
     const scan = scanAiVaultSessions(roots)
-    await vi.waitFor(() => expect(existsSync(cacheFile)).toBe(true), {
-      timeout: 10_000,
-      interval: 50
-    })
-    release()
+    try {
+      await vi.waitFor(() => expect(existsSync(cacheFile)).toBe(true), {
+        timeout: 10_000,
+        interval: 50
+      })
+      expect(JSON.parse(await readFile(cacheFile, 'utf8')).entries).toHaveLength(8)
+    } finally {
+      release()
+    }
     expect((await scan).sessions).toHaveLength(20)
   })
 
-  it('a long run of parse batches saves every max-wait window, not only after the last one', async () => {
+  it('caps continuous save requests and starts a fresh debounce after flush', async () => {
     const root = await mkdtemp(join(tmpdir(), 'orca-parse-cache-checkpoint-'))
     tempRoots.push(root)
     initSessionParseCachePersistence({
@@ -115,5 +139,63 @@ describe('session parse cache checkpoints', () => {
 
     await flushSessionParseCachePersistForTests()
     expect(fsPromises.rename).toHaveBeenCalledTimes(2)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    scheduleSessionParseCachePersist(stats)
+    await vi.advanceTimersByTimeAsync(1_499)
+    expect(fsPromises.rename).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    await flushSessionParseCachePersistForTests()
+    expect(fsPromises.rename).toHaveBeenCalledTimes(3)
+    resetSessionParseCachePersistenceForTests()
+    scheduleSessionParseCachePersist(stats)
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(fsPromises.rename).toHaveBeenCalledTimes(3)
+  })
+
+  it.each([1_000, 2_000])(
+    'saves once after a changed batch and an unchanged tail paced at %i ms',
+    async (delayMs) => {
+      const root = await mkdtemp(join(tmpdir(), 'orca-parse-cache-checkpoint-'))
+      tempRoots.push(root)
+      const roots = isolatedScanRoots(root)
+      const paths = await writeClaudeHistory(join(roots.claudeProjectsDir, 'project'), 160)
+      await scanAiVaultSessions(roots)
+      await appendFile(paths[159], '\n')
+      const cacheFile = join(root, 'session-parse-cache.json')
+      initSessionParseCachePersistence({ filePath: cacheFile, appVersion: APP_VERSION })
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+      vi.mocked(fsPromises.rename).mockClear()
+      vi.mocked(fsPromises.writeFile).mockClear()
+      paceScanBatches(delayMs)
+
+      expect((await scanAiVaultSessions(roots)).sessions).toHaveLength(160)
+      await flushSessionParseCachePersistForTests()
+      expect(fsPromises.writeFile).toHaveBeenCalledTimes(1)
+      expect(fsPromises.rename).toHaveBeenCalledTimes(1)
+      expect(JSON.parse(await readFile(cacheFile, 'utf8')).entries).toHaveLength(160)
+      expect(hooks.stats?.reused).toBe(159)
+      expect(hooks.stats?.incremental).toBe(1)
+    }
+  )
+
+  it('checkpoints recurring changed batches during a real scan and flushes its final batch', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-parse-cache-checkpoint-'))
+    tempRoots.push(root)
+    const roots = isolatedScanRoots(root)
+    await writeClaudeHistory(join(roots.claudeProjectsDir, 'project'), 328)
+    const cacheFile = join(root, 'session-parse-cache.json')
+    initSessionParseCachePersistence({ filePath: cacheFile, appVersion: APP_VERSION })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    vi.mocked(fsPromises.rename).mockClear()
+    paceScanBatches(1_000)
+
+    expect((await scanAiVaultSessions(roots)).sessions).toHaveLength(328)
+    vi.useRealTimers()
+    await vi.waitFor(() => expect(fsPromises.rename).toHaveBeenCalledTimes(2))
+    await flushSessionParseCachePersistForTests()
+    expect(fsPromises.rename).toHaveBeenCalledTimes(3)
+    expect(JSON.parse(await readFile(cacheFile, 'utf8')).entries).toHaveLength(328)
+    expect(hooks.stats?.fullParses).toBe(328)
+    expect(hooks.stats?.reused).toBe(0)
   })
 })
