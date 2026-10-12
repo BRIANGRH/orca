@@ -4,7 +4,9 @@
 // answers `{}` and notifies nothing (measured, 0.159.0). Into a running turn it acts as a steer, so
 // it goes in only while none runs, checked again right before the write.
 
+import { open } from 'node:fs/promises'
 import { extname } from 'node:path'
+import { AGENT_SESSION_ATTACHMENT_MAX_BYTES } from '../../shared/agent-session-attachments'
 import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
 import { IMAGE_FILE_MIME_TYPES } from '../../shared/image-file-extensions'
@@ -22,17 +24,22 @@ const CODEX_STOPPED_MESSAGE_PREPARE_TIMEOUT_MS = 2_000
 const CODEX_STOPPED_MESSAGE_APPEND_TIMEOUT_MS = 2_000
 // What the Responses API takes as an inline image.
 const INLINE_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+// A send hands Codex any attachment Orca admits, by path; an inject inlines the bytes, which skip
+// Codex's own resize, so one inject also carries no more than one such attachment's worth.
+export const CODEX_STOPPED_MESSAGE_IMAGE_MAX_BYTES = AGENT_SESSION_ATTACHMENT_MAX_BYTES
 
-/** A local image inline; null for one that no longer reads, and for a remote URL, which Codex
- *  refuses in injected items before recording any. */
+/** A local image inline within what the inject has left; null for one that no longer reads or
+ *  does not fit, and for a remote URL, which Codex refuses in injected items before recording any. */
 async function inlineImage(
-  block: Extract<NativeChatBlock, { type: 'image-ref' }>
+  block: Extract<NativeChatBlock, { type: 'image-ref' }>,
+  budget: { bytes: number }
 ): Promise<Record<string, unknown> | null> {
   const mimeType = block.path ? IMAGE_FILE_MIME_TYPES[extname(block.path).toLowerCase()] : undefined
   if (block.url || !block.path || !mimeType || !INLINE_IMAGE_MIME_TYPES.has(mimeType)) {
     return null
   }
-  const bytes = await readClaudeImage(block.path)
+  const bytes = await readClaudeImage(block.path, open, budget.bytes)
+  budget.bytes -= bytes.byteLength
   return {
     type: 'input_image',
     image_url: `data:${mimeType};base64,${bytes.toString('base64')}`
@@ -41,13 +48,16 @@ async function inlineImage(
 
 /** The message's words and images as Codex response content, in the order sent, less any image
  *  left out. */
-async function messageContent(body: AgentJournalMessageItem): Promise<Record<string, unknown>[]> {
+async function messageContent(
+  body: AgentJournalMessageItem,
+  budget: { bytes: number }
+): Promise<Record<string, unknown>[]> {
   const content: Record<string, unknown>[] = []
   for (const block of body.blocks as NativeChatBlock[]) {
     if (block.type === 'text' && block.text.length > 0) {
       content.push({ type: 'input_text', text: block.text })
     } else if (block.type === 'image-ref') {
-      const image = await inlineImage(block).catch(() => null)
+      const image = await inlineImage(block, budget).catch(() => null)
       if (image) {
         content.push(image)
       }
@@ -65,8 +75,9 @@ export async function codexStoppedMessageItems(
   messages: readonly OwedStoppedMessage[]
 ): Promise<Record<string, unknown>[]> {
   const items: Record<string, unknown>[] = []
+  const budget = { bytes: CODEX_STOPPED_MESSAGE_IMAGE_MAX_BYTES }
   for (const { body } of messages) {
-    const content = await messageContent(body)
+    const content = await messageContent(body, budget)
     if (content.length > 0) {
       items.push(
         userMessage(content),

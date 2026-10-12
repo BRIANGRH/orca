@@ -157,6 +157,60 @@ describe('appending stopped messages to Codex', () => {
     ])
   })
 
+  it("carries a readable image past Claude's 5 MiB limit, alone or beside words", async () => {
+    folder = await mkdtemp(join(tmpdir(), 'codex-stopped-'))
+    const png = join(folder, 'large.png')
+    const bytes = Buffer.alloc(6 * 1024 * 1024, 7)
+    await writeFile(png, bytes)
+    const image = {
+      type: 'input_image',
+      image_url: `data:image/png;base64,${bytes.toString('base64')}`
+    }
+    const { request, host } = session()
+    expect(
+      await inject(host, [
+        stopped('only', [{ type: 'image-ref', path: png }]),
+        stopped('words', [
+          { type: 'image-ref', path: png },
+          { type: 'text', text: 'look' }
+        ])
+      ])
+    ).toEqual({ outcome: 'accepted' })
+
+    expect(request.mock.calls[0]?.[1]?.items).toEqual([
+      { type: 'message', role: 'user', content: [image] },
+      marker,
+      { type: 'message', role: 'user', content: [image, { type: 'input_text', text: 'look' }] },
+      marker
+    ])
+  })
+
+  it("leaves out an image past what one inject carries, Orca's attachment limit, and keeps its words", async () => {
+    folder = await mkdtemp(join(tmpdir(), 'codex-stopped-'))
+    const first = join(folder, 'first.png')
+    const second = join(folder, 'second.png')
+    await writeFile(first, Buffer.alloc(30 * 1024 * 1024, 1))
+    await writeFile(second, Buffer.alloc(25 * 1024 * 1024, 2))
+    const { request, host } = session()
+    expect(
+      await inject(host, [
+        stopped('a', [{ type: 'image-ref', path: first }]),
+        stopped('b', [
+          { type: 'image-ref', path: second },
+          { type: 'text', text: 'and this one' }
+        ])
+      ])
+    ).toEqual({ outcome: 'accepted' })
+
+    const items = request.mock.calls[0]?.[1]?.items
+    expect(Array.isArray(items) ? items.length : 0).toBe(4)
+    expect(Array.isArray(items) ? items[2] : null).toEqual({
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text: 'and this one' }]
+    })
+  })
+
   it('leaves out a remote image, which Codex refuses before recording anything, and keeps the words', async () => {
     const { request, host } = session()
     expect(

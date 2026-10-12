@@ -67,19 +67,24 @@ type ImageBudget = {
   localBytes: number
 }
 
-export async function readClaudeImage(path: string, openImpl: typeof open = open): Promise<Buffer> {
+/** A local image's bytes, refused past `maxBytes` (Claude's own limit unless another agent's). */
+export async function readClaudeImage(
+  path: string,
+  openImpl: typeof open = open,
+  maxBytes = MAX_IMAGE_BYTES
+): Promise<Buffer> {
   const file = await openImpl(path, 'r')
   try {
     const tooLarge = (): Error =>
-      attachmentError(`Claude image must be no larger than ${MAX_IMAGE_BYTES} bytes`, {
+      attachmentError(`Claude image must be no larger than ${maxBytes} bytes`, {
         reason: 'tooLarge',
-        limit: MAX_IMAGE_BYTES
+        limit: maxBytes
       })
     const info = await file.stat()
     if (!info.isFile()) {
       throw attachmentError('Claude image must be a file', { reason: 'notAFile' })
     }
-    if (info.size > MAX_IMAGE_BYTES) {
+    if (info.size > maxBytes) {
       throw tooLarge()
     }
     const buffer = Buffer.allocUnsafe(info.size + 1)
@@ -94,7 +99,7 @@ export async function readClaudeImage(path: string, openImpl: typeof open = open
     // A file can grow after the initial stat and after the final read returns
     // zero. Prove the descriptor's size matches what was copied before sending.
     const finalInfo = await file.stat()
-    if (bytesRead > MAX_IMAGE_BYTES) {
+    if (bytesRead > maxBytes) {
       throw tooLarge()
     }
     if (finalInfo.size !== bytesRead) {
