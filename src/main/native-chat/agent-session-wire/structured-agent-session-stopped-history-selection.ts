@@ -9,115 +9,67 @@ import type {
 import { agentJournalSubmissionKey } from '../../../shared/agent-session-journal-item-key'
 import {
   agentSessionCanCarryStoppedHistory,
-  agentSessionStoppedHistoryOwed
+  agentSessionStoppedHistoryOwed,
+  type OwedStoppedMessage
 } from '../../../shared/agent-session-stopped-history'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
+import type { AgentSessionPreparedDispatch } from './structured-agent-session-prepared-dispatch'
 import type { StructuredAgentSessionLogger } from './structured-agent-session-logger'
-import { stoppedMessageWithoutImages } from './structured-agent-session-stopped-history-frame'
-
-export type StoppedHistorySelection = {
-  ids: string[]
-  bodies: AgentJournalMessageItem[]
-}
-
-export const NO_STOPPED_HISTORY: StoppedHistorySelection = { ids: [], bodies: [] }
-
-/** Logs a send going without the stopped history it was to carry, then tells the host, which stops
- *  listing that history as carried before the write. */
-export function stoppedHistoryLeftOut(
-  logger: StructuredAgentSessionLogger | undefined,
-  input: { sessionId?: string; historyLeftOut?: () => Promise<void> }
-): (error: unknown) => Promise<void> {
-  return async (error) => {
-    logger?.warn('stopped history left out of a send', {
-      scope: 'stopped-history',
-      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-      error
-    })
-    await input.historyLeftOut?.()
-  }
-}
-
-/** The adapter is sending without the history this send's pending row lists: rewrite the row
- *  without it, so those messages stay owed. A failed write is logged and the send still goes. */
-export async function uncarryStoppedHistory(
-  ctx: {
-    sessionId: string
-    fence: number
-    journal: Pick<AgentSessionJournal, 'submission' | 'resolveDispatch'>
-    logger: StructuredAgentSessionLogger
-  },
-  clientMessageId: string,
-  turnScope: AgentJournalTurnScope
-): Promise<void> {
-  try {
-    if (ctx.journal.submission(clientMessageId)?.dispatchState === 'pending') {
-      await ctx.journal.resolveDispatch({
-        clientMessageId,
-        state: 'pending',
-        fence: ctx.fence,
-        turnScope
-      })
-    }
-  } catch (error) {
-    ctx.logger.warn('un-listing stopped history left out of a send failed', {
-      scope: 'stopped-history',
-      sessionId: ctx.sessionId,
-      error
-    })
-  }
-}
 
 /** None for a steer into a running turn, which may never record it, or for anything but a
- *  person's ordinary send. Oldest first, each stopped message rides with its images if the whole
- *  still fits, else without them, else waits for a later send without holding back the rest:
- *  history never refuses a send. */
-export async function selectStoppedHistory(
+ *  person's ordinary send; otherwise the stopped messages owed to the agent, oldest first. */
+export function owedStoppedHistory(
   ctx: {
-    sessionId: string
     journal: Pick<AgentSessionJournal, 'submissions' | 'stoppedHistoryCarried' | 'itemBody'> & {
       context: Pick<AgentSessionJournal['context'], 'floor'>
     }
-    adapter: Pick<StructuredAgentSessionAdapter, 'historyFits'>
-    logger: StructuredAgentSessionLogger
   },
   submission: AgentJournalSubmission,
   body: AgentJournalMessageItem,
   turnScope: AgentJournalTurnScope
-): Promise<StoppedHistorySelection> {
+): OwedStoppedMessage[] {
   if (turnScope.kind !== 'thread' || !agentSessionCanCarryStoppedHistory(submission, body)) {
-    return NO_STOPPED_HISTORY
+    return []
   }
-  const owed = agentSessionStoppedHistoryOwed({
+  return agentSessionStoppedHistoryOwed({
     submissions: ctx.journal.submissions(),
     carried: ctx.journal.stoppedHistoryCarried(),
     clearSequence: ctx.journal.context.floor()?.sequence ?? 0,
     body: (id) => ctx.journal.itemBody(agentJournalSubmissionKey(id))
   })
-  const selected: StoppedHistorySelection = { ids: [], bodies: [] }
+}
+
+/** The send prepared once with the owed history that fits, or null to send it alone as before:
+ *  none fits, the send alone fails preparation (its own refusal follows), or preparing failed,
+ *  which is logged. History never refuses a send. */
+export async function prepareStoppedHistory(
+  ctx: {
+    sessionId: string
+    fence: number
+    adapter: Pick<StructuredAgentSessionAdapter, 'prepareDispatch'>
+    logger: StructuredAgentSessionLogger
+  },
+  body: AgentJournalMessageItem,
+  owed: readonly OwedStoppedMessage[]
+): Promise<AgentSessionPreparedDispatch | null> {
+  if (owed.length === 0 || !ctx.adapter.prepareDispatch) {
+    return null
+  }
   try {
-    for (const entry of owed) {
-      const textOnly = stoppedMessageWithoutImages(entry.body)
-      for (const candidate of textOnly === entry.body ? [entry.body] : [entry.body, textOnly]) {
-        const history = [...selected.bodies, candidate]
-        if (
-          (await ctx.adapter.historyFits?.({ sessionId: ctx.sessionId, body, history })) ??
-          true
-        ) {
-          selected.ids.push(entry.submission.clientMessageId)
-          selected.bodies.push(candidate)
-          break
-        }
-      }
-    }
+    const prepared = await ctx.adapter.prepareDispatch({
+      sessionId: ctx.sessionId,
+      fence: ctx.fence,
+      body,
+      owed
+    })
+    return prepared && prepared.carries.length > 0 ? prepared : null
   } catch (error) {
-    ctx.logger.warn('checking stopped history failed', {
+    ctx.logger.warn('preparing stopped history failed; the send goes alone', {
       scope: 'stopped-history',
       sessionId: ctx.sessionId,
       error
     })
-    return NO_STOPPED_HISTORY
+    return null
   }
-  return selected
 }

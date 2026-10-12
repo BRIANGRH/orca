@@ -12,7 +12,10 @@ import type { AgentJournalMessageItem } from '../../../shared/agent-session-jour
 import { projectStructuredAgentSessionMessages } from '../../../shared/structured-agent-session-message-projection'
 import { isStructuredAgentSessionMainAgentWorking } from '../../../shared/structured-agent-session-main-agent-working'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
-import type { QueuedRigProviderOptions } from './structured-agent-session-queued-message-rig-provider.test-fixture'
+import {
+  RigPreparedDispatch,
+  type QueuedRigProviderOptions
+} from './structured-agent-session-queued-message-rig-provider.test-fixture'
 import {
   createQueuedMessageTestRig,
   eventually,
@@ -47,11 +50,12 @@ function text(body: AgentJournalMessageItem): string {
   return body.blocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
 }
 
-/** Each dispatch as `carrier <- [history]`. */
+/** Each dispatch as `carrier <- [history]`, the history as the prepared send carries it. */
 function dispatched(): string[] {
   return rig.dispatch.mock.calls.map(([input]) => {
-    const history = (input.history ?? []).map(text)
-    return history.length > 0 ? `${text(input.body)} <- [${history.join(', ')}]` : text(input.body)
+    const prepared = input.prepared instanceof RigPreparedDispatch ? input.prepared : null
+    expect(input.prepared === undefined || prepared !== null).toBe(true)
+    return prepared ? `${text(input.body)} <- [${prepared.history.join(', ')}]` : text(input.body)
   })
 }
 
@@ -325,7 +329,15 @@ describe('stopped messages ride with the next send', () => {
 
   it('history that would not fit goes later: the send goes alone and they stay owed', async () => {
     let fits = false
-    await start({ historyFits: async () => fits })
+    await start({
+      prepareDispatch: async ({ owed }) =>
+        fits
+          ? new RigPreparedDispatch(
+              owed.map((entry) => entry.submission.clientMessageId),
+              owed.map((entry) => text(entry.body))
+            )
+          : null
+    })
     const [first] = await stopWhileStarting('first')
     const alone = await nextSend('alone')
     expect(journal().stoppedHistoryCarried().has(alone)).toBe(false)
@@ -337,26 +349,77 @@ describe('stopped messages ride with the next send', () => {
     expect(journal().stoppedHistoryCarried().get(next)).toEqual([first])
   })
 
-  it('an adapter that leaves the history out after it fit un-lists it first: still owed', async () => {
-    await start()
-    const [first] = await stopWhileStarting('first')
-    let carriedAtWrite: readonly string[] | undefined
-    rig.dispatch.mockImplementationOnce(async (input) => {
-      expect(journal().stoppedHistoryCarried().get(input.clientMessageId)).toEqual([first])
-      // As Claude, ACP and Pi do when their second build of the history fails.
-      await input.historyLeftOut?.()
-      carriedAtWrite = journal().stoppedHistoryCarried().get(input.clientMessageId)
-      return { state: 'admitted' }
+  it('the row lists exactly what the prepared send carries, and the rest stays owed', async () => {
+    // Room for the oldest only, as an agent near its limit prepares it.
+    await start({
+      prepareDispatch: async ({ owed }) =>
+        new RigPreparedDispatch([owed[0]!.submission.clientMessageId], [text(owed[0]!.body)])
     })
-    const alone = await nextSend('alone')
-    await eventually(() => expect(journal().stoppedHistoryCarried().has(alone)).toBe(false))
-    expect(carriedAtWrite).toBeUndefined()
-    expect(await rig.submission(alone)).toMatchObject({ dispatchState: 'pending' })
-    await rig.settleAccepted(alone, 'alone')
+    const [first, second] = await stopWhileStarting('first', 'second')
+    const carrier = await nextSend('carrier')
+    const prepared = rig.dispatch.mock.calls[0]![0].prepared
+
+    expect(journal().stoppedHistoryCarried().get(carrier)).toEqual(prepared?.carries)
+    expect(prepared?.carries).toEqual([first])
+    await rig.settleAccepted(carrier, 'carrier')
     const next = await nextSend('next')
 
-    expect(dispatched()).toEqual(['alone <- [first]', 'next <- [first]'])
+    expect(dispatched()).toEqual(['carrier <- [first]', 'next <- [second]'])
+    expect(journal().stoppedHistoryCarried().get(next)).toEqual([second])
+  })
+
+  it('a preparation that throws sends the message alone, lists nothing, and leaves them owed', async () => {
+    let fails = true
+    await start({
+      prepareDispatch: async ({ owed }) => {
+        if (fails) {
+          throw new Error('image read failed')
+        }
+        return new RigPreparedDispatch(
+          owed.map((entry) => entry.submission.clientMessageId),
+          owed.map((entry) => text(entry.body))
+        )
+      }
+    })
+    const [first] = await stopWhileStarting('first')
+    const alone = await nextSend('alone')
+    expect(journal().stoppedHistoryCarried().has(alone)).toBe(false)
+    await rig.settleAccepted(alone, 'alone')
+    fails = false
+    const next = await nextSend('next')
+
+    expect(dispatched()).toEqual(['alone', 'next <- [first]'])
     expect(journal().stoppedHistoryCarried().get(next)).toEqual([first])
+  })
+
+  it('a carrier Pi refused at its sign-in check leaves them owed; one refused without that proof covers them', async () => {
+    for (const neverReached of [true, false]) {
+      await start()
+      await stopWhileStarting('first')
+      const carrier = await nextSend('carrier')
+      await settle(carrier, {
+        kind: 'rejected',
+        fact: 'notSignedIn',
+        ...(neverReached ? { neverReached } : {})
+      })
+      // A child that said it is signed out is replaced before the next send.
+      const { result } = rig.send('next')
+      expect(await result).toMatchObject({ ok: true })
+      await eventually(() =>
+        expect(rig.host.collaboratorsForTests().sessions.get(SESSION)?.child?.phase).toBe(
+          'starting'
+        )
+      )
+      await rig.proveStart()
+      await eventually(() => expect(rig.dispatch).toHaveBeenCalledTimes(2))
+
+      expect(dispatched()).toEqual([
+        'carrier <- [first]',
+        neverReached ? 'next <- [first]' : 'next'
+      ])
+      await rig.dispose()
+    }
+    await start()
   })
 
   it('carrying them changes no work outcome: the chat is idle and each still reads Stopped manually once', async () => {

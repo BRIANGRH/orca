@@ -169,6 +169,17 @@ describe('which stopped messages the agent is owed', () => {
     }
   })
 
+  it('any carrier refused with proof it never reached the agent leaves what it carried owed', () => {
+    // Pi's sign-in check runs before it records a prompt; ACP's encoder refuses before any byte.
+    for (const kind of ['notSignedIn', 'writeFailed', 'providerRejected'] as const) {
+      expect(
+        owed([sent('a', 2, STOPPED), sent('c', 9, rejected(kind, { neverReachedAgent: true }))], {
+          carried: { c: ['a'] }
+        })
+      ).toEqual(['a'])
+    }
+  })
+
   it('a carrier a Stop withdrew unwritten flattens with what it carried, in send order', () => {
     expect(
       owed([sent('a', 2, STOPPED), sent('b', 3, STOPPED), sent('c', 9, STOPPED)], {

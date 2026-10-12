@@ -58,7 +58,8 @@ export {
   extractPreviewContentText,
   normalizePreviewText,
   normalizeTitleText,
-  sliceAtCodeUnitLimit
+  sliceAtCodeUnitLimit,
+  withoutStoppedHistoryPrompt
 } from './session-scanner-text-normalization'
 export {
   extractFullFirstUserPromptText,

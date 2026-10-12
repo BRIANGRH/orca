@@ -7,7 +7,10 @@ import {
   parseCodexSessionFile
 } from './session-scanner-codex-parser'
 import type { TranscriptMessage } from './session-transcript-consumers'
-import { stoppedMessageContext } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
+import {
+  stoppedHistoryElement,
+  stoppedHistoryFrame
+} from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 let tempRoots: string[] = []
 
@@ -231,10 +234,18 @@ describe('parseCodexSessionFile', () => {
     tempRoots.push(root)
     const sessionPath = join(root, 'sessions', '2026', '07', '21', 'rollout-stopped.jsonl')
     await mkdir(dirname(sessionPath), { recursive: true })
-    const stopped = stoppedMessageContext({
-      kind: 'message',
-      role: 'user',
-      blocks: [{ type: 'text', text: 'delete the build folder' }]
+    const stopped = stoppedHistoryFrame({
+      elements: [
+        stoppedHistoryElement({
+          number: 1,
+          text: 'delete the build folder',
+          images: { first: 1, count: 1 },
+          omittedImages: 0
+        })
+      ],
+      notIncluded: 0,
+      shortened: 0,
+      sendImages: { first: 2, count: 0 }
     })
     await writeFile(
       sessionPath,
@@ -255,6 +266,12 @@ describe('parseCodexSessionFile', () => {
               { type: 'input_text', text: 'What did I send?' }
             ]
           }
+        },
+        {
+          timestamp: '2026-07-21T10:00:02.000Z',
+          type: 'event_msg',
+          // Codex's own record of the send joins its text items.
+          payload: { type: 'user_message', message: `${stopped}What did I send?` }
         }
       ])
     )
@@ -271,6 +288,7 @@ describe('parseCodexSessionFile', () => {
     )
 
     expect(session?.title).toBe('What did I send?')
+    expect(session?.lastUserPrompt).toBe('What did I send?')
   })
 
   it('does not double-count usage when token count formats switch', async () => {

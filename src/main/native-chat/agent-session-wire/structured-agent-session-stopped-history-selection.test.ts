@@ -1,6 +1,5 @@
-// The handover's choice of stopped history: bounded by the latest /clear, never on a steer, oldest
-// first with each message's images left out only when that message needs it, and never a reason a
-// send waits or fails.
+// The handover's choice of stopped history: bounded by the latest /clear, never on a steer, prepared
+// once by the adapter, and never a reason a send waits or fails.
 
 import { describe, expect, it, vi } from 'vitest'
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
@@ -11,19 +10,14 @@ import {
   type AgentJournalMessageItem,
   type AgentJournalSubmission
 } from '../../../shared/agent-session-journal-types'
-import { selectStoppedHistory } from './structured-agent-session-stopped-history-selection'
+import {
+  owedStoppedHistory,
+  prepareStoppedHistory
+} from './structured-agent-session-stopped-history-selection'
+import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
 
 function message(text: string): AgentJournalMessageItem {
   return { kind: 'message', role: 'user', blocks: [{ type: 'text', text }] }
-}
-
-const WITH_IMAGE: AgentJournalMessageItem = {
-  kind: 'message',
-  role: 'user',
-  blocks: [
-    { type: 'image-ref', path: '/tmp/shot.png' },
-    { type: 'text', text: 'new' }
-  ]
 }
 
 function stopped(id: string, sequence: number): AgentJournalSubmission {
@@ -52,21 +46,9 @@ const CARRIER: AgentJournalSubmission = {
   rejection: undefined
 }
 
-function context(options: {
-  clearSequence?: number
-  historyFits?: (input: { history: readonly AgentJournalMessageItem[] }) => Promise<boolean>
-  bodies?: Record<string, AgentJournalMessageItem>
-  /** The stopped messages, oldest first; sequences 2, 9, then 12 on. */
-  stoppedIds?: readonly string[]
-}): Parameters<typeof selectStoppedHistory>[0] {
-  const submissions = [
-    ...(options.stoppedIds ?? ['old', 'new']).map((id, index) =>
-      stopped(id, index === 0 ? 2 : index === 1 ? 9 : 10 + index)
-    ),
-    CARRIER
-  ]
+function journal(options: { clearSequence?: number }): Parameters<typeof owedStoppedHistory>[0] {
+  const submissions = [stopped('old', 2), stopped('new', 9), CARRIER]
   return {
-    sessionId: 'session-1',
     journal: {
       submissions: () => submissions,
       stoppedHistoryCarried: () => new Map(),
@@ -74,100 +56,95 @@ function context(options: {
         floor: () =>
           options.clearSequence ? { epoch: 'epoch-1', sequence: options.clearSequence } : null
       },
-      itemBody: (itemId) => {
-        const id = submissions.find(
-          (entry) => agentJournalSubmissionKey(entry.clientMessageId) === itemId
-        )!.clientMessageId
-        return options.bodies?.[id] ?? message(id)
-      }
-    },
-    adapter: options.historyFits ? { historyFits: options.historyFits } : {},
+      itemBody: (itemId) =>
+        message(
+          submissions.find((entry) => agentJournalSubmissionKey(entry.clientMessageId) === itemId)!
+            .clientMessageId
+        )
+    }
+  }
+}
+
+function owedIds(...args: Parameters<typeof owedStoppedHistory>): string[] {
+  return owedStoppedHistory(...args).map((entry) => entry.submission.clientMessageId)
+}
+
+function preparing(prepareDispatch?: StructuredAgentSessionAdapter['prepareDispatch']) {
+  return {
+    sessionId: 'session-1',
+    fence: 1,
+    adapter: prepareDispatch ? { prepareDispatch } : {},
     logger: { warn: vi.fn(), error: vi.fn() }
   }
 }
 
+const OWED = owedStoppedHistory(journal({}), CARRIER, message('next'), AGENT_JOURNAL_THREAD_SCOPE)
+
 describe('choosing the stopped history a handover carries', () => {
-  it('carries only what was sent after the latest /clear', async () => {
-    const chosen = await selectStoppedHistory(
-      context({ clearSequence: 5 }),
-      CARRIER,
-      message('next'),
-      AGENT_JOURNAL_THREAD_SCOPE
-    )
-    expect(chosen.ids).toEqual(['new'])
-  })
-
-  it('carries nothing on a steer into a running turn, which may never record it', async () => {
-    const chosen = await selectStoppedHistory(context({}), CARRIER, message('next'), {
-      kind: 'turn',
-      turnItemId: 'turn-1'
-    })
-    expect(chosen.ids).toEqual([])
-  })
-
-  it('a failed fit check sends the message alone and leaves the history owed', async () => {
-    const chosen = await selectStoppedHistory(
-      context({
-        historyFits: async () => {
-          throw new Error('stat failed')
-        }
-      }),
-      CARRIER,
-      message('next'),
-      AGENT_JOURNAL_THREAD_SCOPE
-    )
-    expect(chosen).toEqual({ ids: [], bodies: [] })
-  })
-
-  it('leaves images out only for the message that needed it', async () => {
-    const atMostOneImage = async (input: { history: readonly AgentJournalMessageItem[] }) =>
-      input.history.flatMap((item) => item.blocks).filter((block) => block.type === 'image-ref')
-        .length <= 1
-    const chosen = await selectStoppedHistory(
-      context({
-        historyFits: atMostOneImage,
-        stoppedIds: ['first', 'second'],
-        bodies: { first: WITH_IMAGE, second: WITH_IMAGE }
-      }),
-      CARRIER,
-      message('next'),
-      AGENT_JOURNAL_THREAD_SCOPE
-    )
-    expect(chosen.ids).toEqual(['first', 'second'])
-    expect(chosen.bodies[0]).toBe(WITH_IMAGE)
-    expect(chosen.bodies[1]?.blocks).toEqual([
-      { type: 'text', text: 'It had 1 image(s), not attached.' },
-      { type: 'text', text: 'new' }
+  it('owes only what was sent after the latest /clear, oldest first', () => {
+    expect(owedIds(journal({}), CARRIER, message('next'), AGENT_JOURNAL_THREAD_SCOPE)).toEqual([
+      'old',
+      'new'
     ])
+    expect(
+      owedIds(journal({ clearSequence: 5 }), CARRIER, message('next'), AGENT_JOURNAL_THREAD_SCOPE)
+    ).toEqual(['new'])
   })
 
-  it('skips a message too large to ride this time and still carries the later ones', async () => {
-    const shortText = async (input: { history: readonly AgentJournalMessageItem[] }) =>
-      input.history
-        .flatMap((item) => item.blocks)
-        .reduce((total, block) => total + (block.type === 'text' ? block.text.length : 0), 0) <= 50
-    const chosen = await selectStoppedHistory(
-      context({
-        historyFits: shortText,
-        stoppedIds: ['old', 'huge', 'new'],
-        bodies: { huge: message('x'.repeat(100)) }
-      }),
-      CARRIER,
-      message('next'),
-      AGENT_JOURNAL_THREAD_SCOPE
-    )
-    expect(chosen.ids).toEqual(['old', 'new'])
+  it('carries nothing on a steer into a running turn, which may never record it', () => {
+    expect(
+      owedIds(journal({}), CARRIER, message('next'), { kind: 'turn', turnItemId: 'turn-1' })
+    ).toEqual([])
   })
 
-  it('sends alone when nothing fits, asking twice only for a message with images', async () => {
-    const never = vi.fn(async () => false)
-    const alone = await selectStoppedHistory(
-      context({ historyFits: never, bodies: { new: WITH_IMAGE } }),
-      CARRIER,
-      message('next'),
-      AGENT_JOURNAL_THREAD_SCOPE
+  it('a slash command carries nothing', () => {
+    expect(owedIds(journal({}), CARRIER, message('/review'), AGENT_JOURNAL_THREAD_SCOPE)).toEqual(
+      []
     )
-    expect(alone).toEqual({ ids: [], bodies: [] })
-    expect(never).toHaveBeenCalledTimes(3)
+  })
+
+  it('asks the adapter once, with every owed message, and takes its prepared send as is', async () => {
+    const prepared = { carries: ['old'] }
+    const prepare = vi.fn(async () => prepared)
+    expect(await prepareStoppedHistory(preparing(prepare), message('next'), OWED)).toBe(prepared)
+    expect(prepare).toHaveBeenCalledTimes(1)
+    expect(prepare).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      fence: 1,
+      body: message('next'),
+      owed: OWED
+    })
+  })
+
+  it('prepares nothing when nothing is owed, so a plain send goes as it always did', async () => {
+    const prepare = vi.fn(async () => ({ carries: ['old'] }))
+    expect(await prepareStoppedHistory(preparing(prepare), message('next'), [])).toBeNull()
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
+  it('sends alone when none fits or the agent cannot carry history', async () => {
+    expect(
+      await prepareStoppedHistory(
+        preparing(async () => null),
+        message('next'),
+        OWED
+      )
+    ).toBeNull()
+    expect(
+      await prepareStoppedHistory(
+        preparing(async () => ({ carries: [] })),
+        message('next'),
+        OWED
+      )
+    ).toBeNull()
+    expect(await prepareStoppedHistory(preparing(), message('next'), OWED)).toBeNull()
+  })
+
+  it('a failed preparation sends the message alone, logged, and leaves the history owed', async () => {
+    const ctx = preparing(async () => {
+      throw new Error('stat failed')
+    })
+    expect(await prepareStoppedHistory(ctx, message('next'), OWED)).toBeNull()
+    expect(ctx.logger.warn).toHaveBeenCalledTimes(1)
   })
 })

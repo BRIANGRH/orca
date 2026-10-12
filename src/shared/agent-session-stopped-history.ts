@@ -67,10 +67,13 @@ function refusedBeforeWrite(carrier: AgentJournalSubmission): boolean {
   if (carrier.dispatchState !== 'rejected' || carrier.answeredInTurn) {
     return false
   }
+  // Proven unwritten where it was refused: a Stop's withdrawal, a write Orca's encoder refused, or
+  // a sign-in Pi checks before recording the prompt.
+  if (readAgentSessionFailureFact(carrier.rejection)?.neverReachedAgent === true) {
+    return true
+  }
   const { kind } = classifyDispatchRejection(carrier)
-  return kind === 'cancelled'
-    ? withdrawnUnwritten(carrier)
-    : kind !== undefined && REFUSED_BEFORE_WRITE.has(kind)
+  return kind !== undefined && REFUSED_BEFORE_WRITE.has(kind)
 }
 
 /** The stopped messages owed to the agent, in the order they were sent. */

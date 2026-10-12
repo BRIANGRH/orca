@@ -14,7 +14,9 @@ import {
 } from '../../shared/agent-session-failure-words'
 import { TUI_AGENT_DISPLAY_NAMES } from '../../shared/tui-agent-display-names'
 import { claudeRecord } from './claude-structured-item-translation'
-import { withStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
+import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
+import type { AgentSessionPreparedDispatch } from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
+import { fitStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
 
 /** Orca refused the message's content, as opposed to failing to read an attachment. */
 export class ClaudeDispatchContentError extends Error {
@@ -167,7 +169,8 @@ async function imageContent(
  * the model as prose instead of being expanded.
  */
 export async function claudeDispatchMessageContent(
-  body: AgentJournalMessageItem
+  body: AgentJournalMessageItem,
+  imageBudget: ImageBudget = { count: 0, localBytes: 0 }
 ): Promise<unknown[]> {
   if (body.role !== 'user') {
     // No Orca client sends one, so the fault is Orca's.
@@ -178,7 +181,6 @@ export async function claudeDispatchMessageContent(
   }
   const images: unknown[] = []
   const texts: string[] = []
-  const imageBudget: ImageBudget = { count: 0, localBytes: 0 }
   for (const block of body.blocks as NativeChatBlock[]) {
     if (block.type === 'text' && block.text.length > 0) {
       texts.push(block.text)
@@ -198,35 +200,51 @@ export async function claudeDispatchMessageContent(
   return content
 }
 
-/** Whether stopped history fits beside `body` in one Claude user frame. */
-export async function claudeStoppedHistoryFits(
-  body: AgentJournalMessageItem,
-  history: readonly AgentJournalMessageItem[]
-): Promise<boolean> {
-  try {
-    await claudeDispatchMessageContent(withStoppedHistory(body, history))
-    return true
-  } catch {
-    return false
-  }
+/** A Claude send prepared with its stopped history: one user frame, written as is. */
+export class ClaudePreparedDispatch implements AgentSessionPreparedDispatch {
+  constructor(
+    readonly carries: readonly string[],
+    readonly content: readonly unknown[]
+  ) {}
 }
 
-/** The send's content with its stopped history in the same frame, its own words last so they stay
- *  the prompt. Alone, reported before the write, if the history stopped fitting since
- *  `claudeStoppedHistoryFits`: history never refuses a send. */
-export function claudeDispatchContentWithHistory(
+/** The send with the owed stopped history that fits Claude's image limits, in one text block that
+ *  ends with the send's own words, so they stay the prompt. Null when none fits or the send alone
+ *  fails, whose own refusal dispatch then gives. */
+export async function prepareClaudeDispatch(
   body: AgentJournalMessageItem,
-  history: readonly AgentJournalMessageItem[],
-  reportLeftOut: (error: unknown) => Promise<void>
-): Promise<unknown[]> {
-  // The same promise when nothing rides, so a plain send writes as soon as it did before.
-  if (history.length === 0) {
-    return claudeDispatchMessageContent(body)
+  owed: readonly OwedStoppedMessage[]
+): Promise<ClaudePreparedDispatch | null> {
+  const budget: ImageBudget = { count: 0, localBytes: 0 }
+  const content = await claudeDispatchMessageContent(body, budget).catch(() => null)
+  if (!content) {
+    return null
   }
-  return claudeDispatchMessageContent(withStoppedHistory(body, history)).catch(async (error) => {
-    await reportLeftOut(error)
-    return claudeDispatchMessageContent(body)
+  const words = claudeDispatchPrompt(content)
+  const sendImages = words === null ? content : content.slice(0, -1)
+  const fit = await fitStoppedHistory({
+    owed,
+    room: {
+      images: MAX_IMAGE_COUNT - budget.count,
+      bytes: MAX_TOTAL_IMAGE_BYTES - budget.localBytes
+    },
+    sendImages: sendImages.length,
+    textCost: () => ({}),
+    image: async (block) => {
+      const one: ImageBudget = { count: 0, localBytes: 0 }
+      const image = await imageContent(block, one)
+      return { content: image, cost: { images: 1, bytes: one.localBytes } }
+    }
   })
+  if (!fit) {
+    return null
+  }
+  const text = words === null ? fit.frame : `${fit.frame}\n${words}`
+  return new ClaudePreparedDispatch(fit.carries, [
+    ...fit.images,
+    ...sendImages,
+    { type: 'text', text }
+  ])
 }
 
 /** The prompt Claude recovers from a dispatch, or null when the turn carries no prompt. */

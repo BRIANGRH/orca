@@ -86,6 +86,9 @@ export class PiRpcTurns {
   get holdsDispatch(): boolean {
     return this.delivery.holdsDispatch
   }
+  get heldBytesFree(): number {
+    return this.delivery.heldBytesFree
+  }
   get working(): boolean {
     return this.active !== undefined
   }

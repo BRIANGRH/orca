@@ -7,6 +7,7 @@ import { activeProviderContext } from '../../../shared/agent-session-provider-co
 import { codexProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
+import type { AgentSessionPreparedDispatch } from './structured-agent-session-prepared-dispatch'
 import type { StructuredAgentSessionEventSink } from './structured-agent-session-event-sink'
 import {
   HOST_TEST_NOW as NOW,
@@ -25,9 +26,27 @@ export type QueuedRigProviderOptions = {
   stopEndsSession?: true
   /** Its child never answers its start, so it runs nothing it is handed. */
   startUnanswered?: true
-  /** Its own check of whether stopped history fits beside a send. */
-  historyFits?: NonNullable<StructuredAgentSessionAdapter['historyFits']>
+  /** Its own preparation of a send with stopped history; by default every owed message fits. */
+  prepareDispatch?: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']>
 }
+
+/** The rig's prepared send: the words of each stopped message it carries, as the agent gets them. */
+export class RigPreparedDispatch implements AgentSessionPreparedDispatch {
+  constructor(
+    readonly carries: readonly string[],
+    readonly history: readonly string[]
+  ) {}
+}
+
+const prepareAll: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']> = async ({
+  owed
+}) =>
+  new RigPreparedDispatch(
+    owed.map((entry) => entry.submission.clientMessageId),
+    owed.map((entry) =>
+      entry.body.blocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
+    )
+  )
 
 export function createQueuedRigProvider(
   store: Pick<AgentSessionRecordStore, 'getRecord'>,
@@ -104,7 +123,7 @@ export function createQueuedRigProvider(
       ? { rewind: options.rewind, rewindSupport: () => ({ supported: true as const }) }
       : {}),
     ...(options.recoverRewind ? { recoverRewind: options.recoverRewind } : {}),
-    ...(options.historyFits ? { historyFits: options.historyFits } : {})
+    prepareDispatch: options.prepareDispatch ?? prepareAll
   }
 
   /** What the provider's translator writes when a /compact's turn ends, as a success. */

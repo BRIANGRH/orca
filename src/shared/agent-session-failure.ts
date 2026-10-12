@@ -158,8 +158,9 @@ export type AgentSessionFailureFact = {
   retry?: AgentSessionProviderRetry
   /** A safe option name from Orca's saved Arguments parser, never an error message. */
   argumentProblem?: AgentSessionArgumentProblem
-  /** On `cancelled`: written only where Orca proves the agent never received the message, which
-   *  makes it owed as stopped history; absent means unknown. Host-only; clients read the kind. */
+  /** Written only where Orca proves the agent never received the message: a Stop's withdrawal is
+   *  then owed as stopped history, and a refused carrier owes its history again. Absent means
+   *  unknown. Host-only; clients read the kind. */
   neverReachedAgent?: true
 }
 

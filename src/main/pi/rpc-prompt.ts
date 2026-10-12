@@ -11,7 +11,12 @@ import {
   ClaudeDispatchContentError,
   readClaudeImage
 } from '../claude/claude-structured-dispatch-content'
-import { withStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
+import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
+import {
+  preparedByAdapter,
+  type AgentSessionPreparedDispatch
+} from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
+import { fitStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const MAX_IMAGE_COUNT = 20
@@ -174,33 +179,70 @@ export async function preparePiRpcPrompt(
   return prompt
 }
 
-/** Whether stopped history fits beside `body` in one Pi prompt. */
-export async function piStoppedHistoryFits(
-  body: AgentJournalMessageItem,
-  history: readonly AgentJournalMessageItem[]
-): Promise<boolean> {
-  try {
-    await preparePiRpcPrompt(withStoppedHistory(body, history))
-    return true
-  } catch {
-    return false
-  }
+/** A Pi prompt prepared with its stopped history, written as is. */
+export class PiPreparedDispatch implements AgentSessionPreparedDispatch {
+  constructor(
+    readonly carries: readonly string[],
+    readonly prompt: PiRpcPrompt
+  ) {}
 }
 
-/** The prompt with its stopped history as a framed text prefix and leading images. Alone, reported
- *  before the write, if the history stopped fitting since `piStoppedHistoryFits`: history never
- *  refuses a send. */
-export async function preparePiRpcPromptWithHistory(
+/** The prompt dispatch writes: the prepared one as is, else the send's own. */
+export async function piRpcDispatchPrompt(
   body: AgentJournalMessageItem,
-  history: readonly AgentJournalMessageItem[],
-  reportLeftOut: (error: unknown) => Promise<void>
+  prepared: AgentSessionPreparedDispatch | undefined
 ): Promise<PiRpcPrompt> {
-  if (history.length > 0) {
-    try {
-      return await preparePiRpcPrompt(withStoppedHistory(body, history))
-    } catch (error) {
-      await reportLeftOut(error)
-    }
+  return preparedByAdapter(prepared, PiPreparedDispatch)?.prompt ?? preparePiRpcPrompt(body)
+}
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8')
+}
+
+/** The prompt led by the owed stopped history that fits Pi's image limits, its one RPC line and
+ *  what its prompt queue can still hold (`heldBytesFree`): the frame then the send's own words as
+ *  one text, the history's images ahead of the send's. Null when none fits or the send alone fails,
+ *  whose refusal dispatch gives. */
+export async function preparePiRpcDispatch(
+  body: AgentJournalMessageItem,
+  owed: readonly OwedStoppedMessage[],
+  heldBytesFree: number,
+  reads: ImageReads = { readLocal: readClaudeImage }
+): Promise<PiPreparedDispatch | null> {
+  const own = await preparePiRpcPrompt(body, undefined, reads).catch(() => null)
+  if (!own) {
+    return null
   }
-  return preparePiRpcPrompt(body)
+  const ownBytes = own.images.reduce(
+    (sum, image) => sum + Buffer.byteLength(image.data, 'base64'),
+    0
+  )
+  // The JSON-escaped newline joining the frame to the send's words, when it has any.
+  const join = own.message.length > 0 ? 2 : 0
+  const fit = await fitStoppedHistory({
+    owed,
+    room: {
+      line: Math.min(MAX_PROMPT_WIRE_BYTES, heldBytesFree) - jsonBytes(own) - join,
+      images: MAX_IMAGE_COUNT - own.images.length,
+      bytes: MAX_TOTAL_IMAGE_BYTES - ownBytes
+    },
+    sendImages: own.images.length,
+    textCost: (text) => ({ line: jsonBytes(text) - 2 }),
+    image: async (block) => {
+      const { bytes, mimeType } = await readImage(block, reads)
+      const image = { type: 'image' as const, data: bytes.toString('base64'), mimeType }
+      return {
+        content: image,
+        cost: { line: jsonBytes(image) + 1, images: 1, bytes: bytes.byteLength }
+      }
+    }
+  })
+  if (!fit) {
+    return null
+  }
+  return new PiPreparedDispatch(fit.carries, {
+    ...own,
+    message: own.message.length > 0 ? `${fit.frame}\n${own.message}` : fit.frame,
+    images: [...fit.images, ...own.images]
+  })
 }

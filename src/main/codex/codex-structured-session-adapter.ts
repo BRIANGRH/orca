@@ -10,9 +10,9 @@ import type {
 } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import type { CodexJournalTranslationAdmission } from './codex-structured-journal-translation'
 import {
-  codexStoppedHistoryFits,
   dispatchCodexTurn,
-  isCodexTurnOptionKey
+  isCodexTurnOptionKey,
+  prepareCodexDispatch
 } from './codex-structured-turn-start'
 import { agentSessionFailureFact, providerDiagnosticOf } from '../../shared/agent-session-failure'
 import { supportsCodexStructuredLocation } from './codex-structured-location-support'
@@ -225,8 +225,8 @@ export class CodexStructuredSessionAdapter implements StructuredAgentSessionAdap
     }
   }
 
-  historyFits: NonNullable<StructuredAgentSessionAdapter['historyFits']> = async (input) =>
-    codexStoppedHistoryFits(input.body, input.history)
+  prepareDispatch: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']> = (input) =>
+    prepareCodexDispatch(input.body, input.owed)
 
   cancelTurn: StructuredAgentSessionAdapter['cancelTurn'] = (request) =>
     cancelCodexStructuredTurn({

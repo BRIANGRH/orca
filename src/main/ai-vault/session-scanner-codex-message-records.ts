@@ -5,7 +5,12 @@ import {
 import { normalizePromptField } from '../../shared/agent-status-field-normalization'
 import { addPreviewContent } from './session-scanner-accumulator'
 import type { SessionAccumulator } from './session-scanner-types'
-import { asRecord, extractContentText, extractPreviewContentText } from './session-scanner-values'
+import {
+  asRecord,
+  extractContentText,
+  extractPreviewContentText,
+  withoutStoppedHistoryPrompt
+} from './session-scanner-values'
 
 export function consumeCodexResponseMessage(
   accumulator: SessionAccumulator,
@@ -66,7 +71,7 @@ export function consumeCodexLegacyEventMessage(
   accumulator.messageCount++
   const setTitle = isUser && !accumulator.title
   if (isUser) {
-    const prompt = normalizePromptField(payload.message)
+    const prompt = normalizePromptField(withoutStoppedHistoryPrompt(payload.message))
     if (prompt) {
       accumulator.lastUserPrompt = prompt
     }

@@ -92,11 +92,16 @@ describe('ACP prompt content', () => {
     expect(ACP_PROMPT_IMAGE_MAX_BYTES * (4 / 3)).toBeLessThan(16 * 1024 * 1024)
   })
 
-  it('leaves a text-only message to the agent, however long', async () => {
-    const text = 'x'.repeat(9 * 1024 * 1024)
+  it('sends a text-only message as long as its one line allows, and refuses a longer one unwritten', async () => {
+    const seven = 'x'.repeat(7 * 1024 * 1024)
     await expect(
-      acpPromptBlocks(message({ type: 'text', text }, { type: 'text', text }), true)
+      acpPromptBlocks(message({ type: 'text', text: seven }, { type: 'text', text: seven }), true)
     ).resolves.toHaveLength(2)
+    // The writer refuses a line past its limit, so the message could never reach the agent.
+    const nine = 'x'.repeat(9 * 1024 * 1024)
+    expect(
+      await refusal(message({ type: 'text', text: nine }, { type: 'text', text: nine }))
+    ).toEqual({ kind: 'writeFailed' })
   })
 
   it("bounds one message's images together", async () => {

@@ -105,11 +105,13 @@ export class AcpTimelineTranslator {
     return acpAuthenticationRequired(this.dialect, error)
   }
 
+  /** Orca never wrote the prompt: forgets it. False once its turn opened. */
+  promptUnwritten = (clientMessageId: string): boolean => this.prompts.refuse(clientMessageId)
+
   /** The agent refused the prompt before its turn began: forgets it and answers the agent's reason.
    *  Null once the turn opened, when the refusal ends that turn instead (`promptFailed`). */
-  promptRefused(clientMessageId: string, error: AcpAgentError): string | null {
-    return this.prompts.refuse(clientMessageId) ? acpPromptErrorDetail(this.dialect, error) : null
-  }
+  promptRefused = (clientMessageId: string, error: AcpAgentError): string | null =>
+    this.promptUnwritten(clientMessageId) ? acpPromptErrorDetail(this.dialect, error) : null
 
   private finishPrompt(
     clientMessageId: string,
