@@ -227,6 +227,8 @@ export const SQLITE_RUNTIME_INCLUDE = [
   'src/main/runtime/rpc/methods/structured-agent-session-options-workspace-scope.test.ts',
   'src/main/runtime/rpc/methods/structured-agent-session-restart-unregistered-agent.test.ts',
   'src/main/runtime/rpc/methods/structured-agent-session-unsubscribe.test.ts',
+  'src/main/runtime/rpc/methods/structured-chat-restoration-preparation.test.ts',
+  'src/main/runtime/rpc/methods/structured-chat-startup-entry.test.ts',
   'src/main/runtime/rpc/methods/structured-chat-tab-table.test.ts',
   'src/main/runtime/runtime-managed-worktree-metadata-sweep.test.ts',
   'src/main/runtime/runtime-orchestration-sender-names.test.ts',
@@ -265,5 +267,7 @@ export const SQLITE_RUNTIME_INCLUDE = [
   'tests/e2e/cross-version-wire/submission-positions-downgrade.unit.test.ts',
   'tests/e2e/folder-upgrade-identity-persistence.unit.test.ts',
   'tests/e2e/structured-agent-session-read-owner.unit.test.ts',
-  'tests/e2e/structured-chat-owner-status-activation.unit.test.ts'
+  'tests/e2e/structured-chat-owner-status-activation.unit.test.ts',
+  'tests/e2e/structured-session-reopened-tab-close.unit.test.ts',
+  'tests/e2e/structured-session-tab-close-stale-frame.unit.test.ts'
 ]

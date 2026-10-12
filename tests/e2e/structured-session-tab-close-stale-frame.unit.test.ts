@@ -7,12 +7,23 @@
  * against the real window store and session-tabs mirror; only the process boundary is stubbed.
  */
 
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type * as RuntimeRpcClient from '../../src/renderer/src/runtime/runtime-rpc-client'
 import type { RuntimeClientTarget } from '../../src/renderer/src/runtime/runtime-client-target'
 import type { RuntimeMobileSessionTabsResult } from '../../src/shared/runtime-types'
 import { OrcaRuntimeService } from '../../src/main/runtime/orca-runtime'
 import { setStructuredAgentSessionHost } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-registry'
+import {
+  openTestAgentSessionRecordStore,
+  seedTestAgentSessionRecordStore
+} from '../../src/main/runtime/agent-session-record-store-test-harness'
+import { foundAgentSessionRecord } from '../../src/main/runtime/agent-session-record-founding'
+import { closeTestJournalHostDatabase } from '../../src/main/native-chat/agent-session-journal/journal-host-database-test-support'
+import { createStructuredAgentSessionLogger } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-logger'
+import { structuredAgentSessionTabId } from '../../src/shared/structured-agent-session-projection'
 import { useAppStore } from '../../src/renderer/src/store'
 import { applyStructuredSessionTabSnapshots } from '../../src/renderer/src/runtime/local-structured-session-tabs-sync/snapshot-apply'
 import { resetLocalStructuredSessionVersionForTests } from '../../src/renderer/src/runtime/local-structured-session-tabs-sync'
@@ -29,7 +40,8 @@ import {
 } from '../../src/renderer/src/runtime/web-session-close-intent'
 
 const WORKTREE = 'repo-1::/tmp/wt-stale-frame'
-const SESSIONS = ['chat-a', 'chat-b', 'chat-c'] as const
+const SESSIONS = ['chat-alpha', 'chat-bravo', 'chat-charlie'] as const
+let directory: string
 const tabIdOf = (sessionId: string): string => `structured-agent-session-${sessionId}`
 
 type CloseRequest = { requestId: string; tabId: string; worktreeId: string; expiresAt?: number }
@@ -80,6 +92,30 @@ vi.mock('../../src/renderer/src/runtime/structured-agent-session-close', () => (
 }))
 
 async function setup(options: { hostFailsClose?: boolean } = {}) {
+  await seedTestAgentSessionRecordStore(directory, {
+    records: SESSIONS.map((sessionId) =>
+      foundAgentSessionRecord(
+        {
+          sessionId,
+          location: {
+            executionHostId: 'local',
+            wslDistro: null,
+            workspaceId: WORKTREE,
+            workspaceKind: 'git-worktree'
+          },
+          provider: 'claude',
+          accountHome: { variable: 'CLAUDE_CONFIG_DIR', path: directory }
+        },
+        { claimKeyId: 'key-1', now: 1_800_000_000_000 }
+      )
+    ),
+    sessionTabs: SESSIONS.map((sessionId) => ({
+      tabId: structuredAgentSessionTabId(sessionId),
+      sessionId
+    }))
+  })
+  const store = await openTestAgentSessionRecordStore(directory)
+  expect(store.listVisibleSessionIds()).toEqual(SESSIONS)
   let closeRequest: ((request: CloseRequest) => void) | undefined
   const pendingResponses = new Map<string, (error?: string) => void>()
   const runtime = new OrcaRuntimeService()
@@ -114,7 +150,7 @@ async function setup(options: { hostFailsClose?: boolean } = {}) {
         })
     } as never
   )
-  // No durable store, PTYs or workspace session on disk: the host tab list below is the whole state.
+  // The saved tab index owns visibility; PTYs and the workspace profile are absent.
   Object.assign(runtime, {
     hasPersistedStructuredAgentSessionStore: () => true,
     getKnownWorkspaceSessionWorktreeIds: () => new Set(),
@@ -123,22 +159,24 @@ async function setup(options: { hostFailsClose?: boolean } = {}) {
     ensureStructuredAgentSessionHost: async () => undefined
   })
   const hostSessionCloses: string[] = []
-  const hostTabs = new Set<string>(SESSIONS)
   setStructuredAgentSessionHost(
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: restore and tab close call only these host members.
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: restore and close use these host members and the real record store.
     {
+      deps: { store, logger: createStructuredAgentSessionLogger() },
+      getPersistedVisibleSessionTabIndex: () => store.getVisibleSessionTabIndex(),
       reconcileRestartLeases: async () => undefined,
       restoreReadableSessions: async () => undefined,
       close: async (sessionId: string) => {
         hostSessionCloses.push(sessionId)
       },
-      setSessionTabVisibility: async (sessionId: string, visible: boolean) => {
-        if (!visible) {
-          hostTabs.delete(sessionId)
-        }
-      },
+      setSessionTabVisibility: (sessionId: string, visible: boolean) =>
+        store.setSessionTabVisibility(sessionId, visible),
       listSessionTabs: () =>
-        [...hostTabs].map((sessionId) => ({ sessionId, workspaceId: WORKTREE, agent: 'claude' }))
+        store.listVisibleSessionIds().map((sessionId) => ({
+          sessionId,
+          workspaceId: WORKTREE,
+          agent: 'claude' as const
+        }))
     } as never
   )
   await runtime.restoreStructuredAgentSessionTabs()
@@ -150,12 +188,16 @@ async function setup(options: { hostFailsClose?: boolean } = {}) {
 
   const strip = (): string[] =>
     (useAppStore.getState().groupsByWorktree[WORKTREE] ?? []).flatMap((group) => group.tabOrder)
-  return { runtime, strip, hostSessionCloses }
+  return { runtime, strip, hostSessionCloses, store }
 }
 
 const initialStoreState = useAppStore.getState()
 
-afterEach(() => {
+beforeEach(async () => {
+  directory = await mkdtemp(join(tmpdir(), 'orca-stale-frame-close-'))
+})
+
+afterEach(async () => {
   setStructuredAgentSessionHost(null)
   bridge.runtime = null
   bridge.closeHeld = null
@@ -165,11 +207,13 @@ afterEach(() => {
   resetWebSessionTabsSnapshotFreshnessForTests()
   resetWebSessionCloseIntentForTests()
   vi.unstubAllGlobals()
+  closeTestJournalHostDatabase(directory)
+  await rm(directory, { recursive: true, force: true })
 })
 
 describe('a host frame published while a chat tab close is in flight', () => {
   it('does not bring the closed chat back at the end of the strip', async () => {
-    const { runtime, strip, hostSessionCloses } = await setup()
+    const { runtime, strip, hostSessionCloses, store } = await setup()
     expect(strip()).toEqual(SESSIONS.map(tabIdOf))
     let handleClose!: () => void
     bridge.closeHeld = new Promise((resolve) => {
@@ -178,37 +222,40 @@ describe('a host frame published while a chat tab close is in flight', () => {
     // A close left in flight would be joined by the next test's close of the same chat.
     onTestFinished(() => handleClose())
 
-    useAppStore.getState().closeUnifiedTab(tabIdOf('chat-b'))
-    expect(strip()).toEqual([tabIdOf('chat-a'), tabIdOf('chat-c')])
+    useAppStore.getState().closeUnifiedTab(tabIdOf('chat-bravo'))
+    expect(strip()).toEqual([tabIdOf('chat-alpha'), tabIdOf('chat-charlie')])
 
-    // The host has not handled the close yet, so its next frame still lists chat-b.
+    // The host has not handled the close yet, so its next frame still lists chat-bravo.
     runtime.touchMobileSessionTabsForWorktree(WORKTREE, { immediate: true })
-    expect(strip()).toEqual([tabIdOf('chat-a'), tabIdOf('chat-c')])
+    expect(strip()).toEqual([tabIdOf('chat-alpha'), tabIdOf('chat-charlie')])
 
     handleClose()
-    await vi.waitFor(() => expect(hostSessionCloses).toEqual(['chat-b']))
+    await vi.waitFor(() => expect(hostSessionCloses).toEqual(['chat-bravo']))
+    expect(store.listVisibleSessionIds()).toEqual(['chat-alpha', 'chat-charlie'])
+    expect(store.getRecord('chat-bravo')).not.toBeNull()
     // The host published its removal before it stopped the chat, and that frame lifted the hide.
     expect(
       isWebSessionCloseIntentPending(
         { environmentId: LOCAL_STRUCTURED_SESSION_OWNER },
         WORKTREE,
-        'agent-session:chat-b',
+        'agent-session:chat-bravo',
         Date.now()
       )
     ).toBe(false)
     runtime.touchMobileSessionTabsForWorktree(WORKTREE, { immediate: true })
-    expect(strip()).toEqual([tabIdOf('chat-a'), tabIdOf('chat-c')])
+    expect(strip()).toEqual([tabIdOf('chat-alpha'), tabIdOf('chat-charlie')])
   })
 
   it('shows the chat again when the host could not close it', async () => {
-    const { strip } = await setup({ hostFailsClose: true })
+    const { strip, store } = await setup({ hostFailsClose: true })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    useAppStore.getState().closeUnifiedTab(tabIdOf('chat-b'))
-    expect(strip()).toEqual([tabIdOf('chat-a'), tabIdOf('chat-c')])
+    useAppStore.getState().closeUnifiedTab(tabIdOf('chat-bravo'))
+    expect(strip()).toEqual([tabIdOf('chat-alpha'), tabIdOf('chat-charlie')])
 
     // The host still has the chat, so once the close fails the window re-reads and shows it.
-    await vi.waitFor(() => expect(strip()).toContain(tabIdOf('chat-b')))
+    await vi.waitFor(() => expect(strip()).toContain(tabIdOf('chat-bravo')))
     expect(strip()).toHaveLength(3)
+    expect(store.listVisibleSessionIds()).toEqual(SESSIONS)
     warn.mockRestore()
   })
 
@@ -251,7 +298,7 @@ describe('a host frame published while a chat tab close is in flight', () => {
     applyServerFrame(frame(1))
     const chatB = useAppStore
       .getState()
-      .unifiedTabsByWorktree[WORKTREE]?.find((tab) => tab.entityId === 'chat-b')
+      .unifiedTabsByWorktree[WORKTREE]?.find((tab) => tab.entityId === 'chat-bravo')
     expect(chatB?.executionHostId).toBe(`runtime:${SERVER}`)
     const before = strip()
     expect(before).toHaveLength(3)
@@ -265,7 +312,7 @@ describe('a host frame published while a chat tab close is in flight', () => {
     const after = before.filter((id) => id !== chatB!.id)
     expect(strip()).toEqual(after)
 
-    // The server has not handled the close yet, so its next frame still lists chat-b.
+    // The server has not handled the close yet, so its next frame still lists chat-bravo.
     applyServerFrame(frame(2))
     expect(strip()).toEqual(after)
   })

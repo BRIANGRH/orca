@@ -63,8 +63,10 @@ describe('runtime close attribution topology', () => {
       .fn()
       .mockResolvedValueOnce({ closed: true, refused: true, refusalReason: 'stale-terminal' })
       .mockResolvedValue({ closed: true })
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this browser-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'runtime-owner-1',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       closeMobileSessionTab,
       listMobileSessionTabs: vi.fn(async (worktree: string) =>
         visibleSessionTab(worktree, worktree.endsWith('a') ? 'tab-a' : 'tab-b')
@@ -137,8 +139,10 @@ describe('runtime close attribution topology', () => {
 
   it('keeps concurrent cross-worktree request and target identities distinct', async () => {
     const closeMobileSessionTab = vi.fn().mockResolvedValue({ closed: true })
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this browser-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'runtime-owner-2',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       listMobileSessionTabs: vi.fn(async (worktree: string) =>
         visibleSessionTab(worktree, worktree.endsWith('a') ? 'tab-a' : 'tab-b')
       ),

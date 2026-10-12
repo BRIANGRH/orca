@@ -127,8 +127,10 @@ describe('session tab RPC methods', () => {
   })
 
   it('refuses a reasonless close without invoking destructive runtime logic', async () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this terminal-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'test-runtime',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       refuseUnattributedMobileSessionTabClose: vi.fn().mockResolvedValue({
         closed: true,
         refused: true,
@@ -151,8 +153,10 @@ describe('session tab RPC methods', () => {
   })
 
   it('passes explicit user intent to host adjudication', async () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this terminal-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'test-runtime',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       refuseUnattributedMobileSessionTabClose: vi.fn(),
       closeMobileSessionTab: vi.fn().mockResolvedValue({ closed: true })
     } as unknown as OrcaRuntimeService
@@ -174,8 +178,10 @@ describe('session tab RPC methods', () => {
   })
 
   it('preserves explicit user closes from current runtime clients', async () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this terminal-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'test-runtime',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       listMobileSessionTabs: vi.fn().mockResolvedValue(visibleSnapshot()),
       refuseUnattributedMobileSessionTabClose: vi.fn(),
       closeMobileSessionTab: vi.fn().mockResolvedValue({ closed: true })
@@ -202,8 +208,10 @@ describe('session tab RPC methods', () => {
   })
 
   it('preserves reasonless explicit closes from authenticated legacy mobile clients', async () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this terminal-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'test-runtime',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       listMobileSessionTabs: vi.fn().mockResolvedValue(visibleSnapshot()),
       refuseUnattributedMobileSessionTabClose: vi.fn(),
       closeMobileSessionTab: vi.fn().mockResolvedValue({ closed: true })
@@ -225,8 +233,10 @@ describe('session tab RPC methods', () => {
   })
 
   it('preserves reasonless closes from authenticated legacy runtime clients', async () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this terminal-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'test-runtime',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       listMobileSessionTabs: vi.fn().mockResolvedValue(visibleSnapshot()),
       refuseUnattributedMobileSessionTabClose: vi.fn(),
       closeMobileSessionTab: vi.fn().mockResolvedValue({ closed: true })
@@ -249,8 +259,10 @@ describe('session tab RPC methods', () => {
   })
 
   it('refuses reasonless closes from runtime clients that negotiated explicit intent', async () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this terminal-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'test-runtime',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       listMobileSessionTabs: vi.fn().mockResolvedValue(visibleSnapshot()),
       refuseUnattributedMobileSessionTabClose: vi.fn().mockResolvedValue({
         closed: true,

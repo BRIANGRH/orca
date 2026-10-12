@@ -66,8 +66,10 @@ describe('session tab browser placement mutations', () => {
   })
 
   it('refuses an old-client close for a projected-out browser page', async () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this browser-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'test-runtime',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       listMobileSessionTabs: vi.fn().mockResolvedValue(mixedPlacementSnapshot()),
       closeMobileSessionTab: vi.fn()
     } as unknown as OrcaRuntimeService
@@ -84,8 +86,10 @@ describe('session tab browser placement mutations', () => {
   })
 
   it('keeps capable mutation callers on the unprojected path', async () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this browser-close fixture supplies every runtime member the handler invokes.
     const runtime = {
       getRuntimeId: () => 'test-runtime',
+      resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
       listMobileSessionTabs: vi.fn().mockResolvedValue(mixedPlacementSnapshot()),
       closeMobileSessionTab: vi.fn().mockResolvedValue({ closed: true })
     } as unknown as OrcaRuntimeService

@@ -130,8 +130,10 @@ describe('runtime close attribution', () => {
   ] as const)(
     'records the device identity for %s without the bearer credential',
     async (method, params, spanName) => {
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this browser-close fixture supplies every runtime member the handler invokes.
       const runtime = {
         getRuntimeId: () => 'test-runtime',
+        resolveStructuredAgentSessionTabCloseSessionId: vi.fn(() => null),
         listMobileSessionTabs: vi.fn(async () => visibleSessionTab('wt-1', 'tab-1')),
         closeMobileSessionTab: vi.fn().mockResolvedValue({ closed: true })
       } as unknown as OrcaRuntimeService

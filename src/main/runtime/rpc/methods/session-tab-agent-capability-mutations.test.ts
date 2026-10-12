@@ -131,6 +131,7 @@ describe('session tab structured capability mutations', () => {
       // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Dispatcher uses only the methods supplied by this test double.
       const runtime = {
         getRuntimeId: () => 'test-runtime',
+        ...chatCloseMethods(snapshot),
         getClientSettings: vi.fn(() => ({ experimentalNativeChat: true })),
         listMobileSessionTabs: vi.fn().mockResolvedValue(snapshot),
         closeMobileSessionTab
@@ -181,6 +182,7 @@ function createFixture(
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Dispatcher uses only the methods supplied by this test double.
   const runtime = {
     getRuntimeId: () => 'test-runtime',
+    ...chatCloseMethods(snapshot),
     listMobileSessionTabs: vi.fn().mockResolvedValue(snapshot),
     getClientSettings: () => ({
       // Why: defaults on, so a fixture that says nothing about the setting exercises capability
@@ -242,4 +244,15 @@ function agentSnapshot() {
     ],
     tabs: [codexTab, claudeTab]
   } as unknown as RuntimeMobileSessionTabsResult
+}
+
+function chatCloseMethods(snapshot: RuntimeMobileSessionTabsResult) {
+  return {
+    resolveStructuredAgentSessionTabCloseSessionId: vi.fn((tabId: string) => {
+      const tab = snapshot.tabs.find((entry) => entry.id === tabId)
+      return tab?.type === 'agent-session' ? tab.sessionId : null
+    }),
+    ensureStructuredAgentSessionHostForClose: vi.fn().mockResolvedValue(undefined),
+    listMobileSessionTabsForChatClose: vi.fn().mockResolvedValue(snapshot)
+  }
 }
