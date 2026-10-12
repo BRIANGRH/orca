@@ -30,19 +30,25 @@ export async function stopStructuredAgentSessionBackgroundWork(
   // Captured before the stop goes out: its acknowledgement may end only these runs.
   const targets = agentChildWorkStopTargets(input.childWork?.(), input.taskId)
   const acknowledged: AgentChildWorkStopAcknowledgement[] = []
-  const background = await ctx.adapter
-    .stopBackgroundTasks?.({
-      sessionId: ctx.sessionId,
-      fence: ctx.fence,
-      taskIds: targets.map((target) => target.providerId),
-      acknowledge: (acknowledgement) => void acknowledged.push(acknowledgement)
-    })
-    // A batch that fails part way still ended each run it was answered for first.
-    .finally(() => {
-      if (acknowledged.length > 0) {
-        input.acknowledgeStops?.(agentChildWorkStopEvidence(targets, acknowledged, Date.now()))
-      }
-    })
+  // Nothing listed has a stop to send; an agent without a stop route would refuse even none.
+  const background =
+    targets.length === 0
+      ? undefined
+      : await ctx.adapter
+          .stopBackgroundTasks?.({
+            sessionId: ctx.sessionId,
+            fence: ctx.fence,
+            taskIds: targets.map((target) => target.providerId),
+            acknowledge: (acknowledgement) => void acknowledged.push(acknowledgement)
+          })
+          // A batch that fails part way still ended each run it was answered for first.
+          .finally(() => {
+            if (acknowledged.length > 0) {
+              input.acknowledgeStops?.(
+                agentChildWorkStopEvidence(targets, acknowledged, Date.now())
+              )
+            }
+          })
   if (background?.stillRunning) {
     return background
   }
