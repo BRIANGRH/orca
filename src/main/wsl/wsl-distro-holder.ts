@@ -146,66 +146,70 @@ export function createWslDistroHolder(dependencies: WslDistroHolderDependencies)
     return { state, record: read.record }
   }
 
-  async function waitForDistroRunning(distro: string, child: WslDistroHolderChild): Promise<void> {
-    const observed: { exit: { code: number | null; signal: NodeJS.Signals | null } | null } = {
-      exit: null
-    }
-    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
-      observed.exit = { code, signal }
-    }
-    child.once('exit', onExit)
-    try {
-      const deadline = now() + bootTimeoutMs
-      const key = wslDistroHolderKey(distro)
-      for (;;) {
-        const exit = observed.exit
-        if (exit) {
-          throw new Error(
-            `WSL holder for ${distro} exited before the distro started (code ${exit.code}, signal ${exit.signal})`
-          )
-        }
-        const running = await listRunningDistros()
-        if (running.some((candidate) => wslDistroHolderKey(candidate) === key)) {
-          return
-        }
-        if (now() >= deadline) {
-          throw new Error(`WSL distro ${distro} did not start within ${bootTimeoutMs} ms`)
-        }
-        await sleep(BOOT_POLL_INTERVAL_MS)
+  type HolderExit = { code: number | null; signal: NodeJS.Signals | null }
+
+  async function waitForDistroRunning(
+    distro: string,
+    observedExit: () => HolderExit | null
+  ): Promise<void> {
+    const deadline = now() + bootTimeoutMs
+    const key = wslDistroHolderKey(distro)
+    for (;;) {
+      const exit = observedExit()
+      if (exit) {
+        throw new Error(
+          `WSL holder for ${distro} exited before the distro started (code ${exit.code}, signal ${exit.signal})`
+        )
       }
-    } finally {
-      child.off('exit', onExit)
+      const running = await listRunningDistros()
+      if (running.some((candidate) => wslDistroHolderKey(candidate) === key)) {
+        return
+      }
+      if (now() >= deadline) {
+        throw new Error(`WSL distro ${distro} did not start within ${bootTimeoutMs} ms`)
+      }
+      await sleep(BOOT_POLL_INTERVAL_MS)
     }
   }
 
   async function spawnAndRecord(distro: string): Promise<WslDistroHolderRecord> {
     const child = spawnHolder(distro)
-    await new Promise<void>((resolve, reject) => {
-      child.once('spawn', resolve)
-      child.once('error', reject)
-    })
-    // The holder must never keep this process alive; it is the other way around.
-    child.unref()
-    const pid = child.pid
-    if (pid === undefined) {
-      throw new Error(`WSL holder for ${distro} started without a pid`)
+    // Listen from the start: a bad distro name makes wsl.exe exit before the record is written.
+    const observed: { exit: HolderExit | null } = { exit: null }
+    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+      observed.exit = { code, signal }
     }
-    const evidence = await queryProcess(pid)
-    const record: WslDistroHolderRecord = {
-      version: 1,
-      distro,
-      pid,
-      creationTimeMs: evidence.status === 'present' ? evidence.startedAtMs : null,
-      startedAtMs: now()
-    }
-    await writeWslDistroHolderRecord(userDataPath, record)
+    child.once('exit', onExit)
     try {
-      await waitForDistroRunning(distro, child)
-    } catch (error) {
-      await stopRecordedHolder(record)
-      throw error
+      await new Promise<void>((resolve, reject) => {
+        child.once('spawn', resolve)
+        child.once('error', reject)
+      })
+      // The holder must never keep this process alive; it is the other way around.
+      child.unref()
+      const pid = child.pid
+      if (pid === undefined) {
+        throw new Error(`WSL holder for ${distro} started without a pid`)
+      }
+      const evidence = await queryProcess(pid)
+      const record: WslDistroHolderRecord = {
+        version: 1,
+        distro,
+        pid,
+        creationTimeMs: evidence.status === 'present' ? evidence.startedAtMs : null,
+        startedAtMs: now()
+      }
+      await writeWslDistroHolderRecord(userDataPath, record)
+      try {
+        await waitForDistroRunning(distro, () => observed.exit)
+      } catch (error) {
+        await stopRecordedHolder(record)
+        throw error
+      }
+      return record
+    } finally {
+      child.off('exit', onExit)
     }
-    return record
   }
 
   async function stopRecordedHolder(record: WslDistroHolderRecord): Promise<WslDistroHolderState> {

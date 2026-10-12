@@ -222,18 +222,19 @@ describe('createWslDistroHolder', () => {
     expect(host.killed).toEqual([])
   })
 
-  it('fails and cleans up when the holder exits before the distro runs', async () => {
+  it('fails and cleans up when the holder exits before its record is written', async () => {
     const holder = makeHolder({
       listRunningDistros: async () => [],
       spawnHolder: (distro) => {
         const child = host.spawn(distro)
-        setTimeout(() => {
+        // Right after 'spawn', before the process-table lookup resolves (a bad distro name).
+        queueMicrotask(() => {
           host.processes.delete(child.pid ?? 0)
           child.emit('exit', 1, null)
-        }, 0)
+        })
         return child
       },
-      sleep: () => new Promise((resolve) => setTimeout(resolve, 5))
+      bootTimeoutMs: 1_000_000
     })
     await expect(holder.ensureHeld('Missing')).rejects.toThrow(/exited before the distro started/)
     expect(await recordFiles()).toEqual([])
