@@ -7,7 +7,10 @@
 // tried again by the next change, so nothing here holds an obligation of its own. What a lost
 // write leaves saying `working` the journal's reopen pass settles as unverifiable.
 
-import type { AgentJournalTurnScope } from '../../../shared/agent-session-journal-types'
+import {
+  AGENT_JOURNAL_THREAD_SCOPE,
+  type AgentJournalTurnScope
+} from '../../../shared/agent-session-journal-types'
 import type { AgentChildWorkRowView } from '../../../shared/agent-status-child-work-view'
 import type {
   NativeChatSubagentBlock,
@@ -35,7 +38,8 @@ export type StructuredAgentSessionSubagentRowsDeps = {
 export class StructuredAgentSessionSubagentRows {
   /** Rows waiting for the session's writer, newest per subagent. */
   private readonly queued = new Map<string, Map<string, Row>>()
-  private readonly writing = new Set<string>()
+  /** The batch each session's writer has in flight: written, but not yet readable by key. */
+  private readonly writing = new Map<string, Map<string, Row>>()
 
   constructor(private readonly deps: StructuredAgentSessionSubagentRowsDeps) {}
 
@@ -48,17 +52,24 @@ export class StructuredAgentSessionSubagentRows {
     }
     const queued = this.queued.get(sessionId) ?? new Map<string, Row>()
     const providerIds = new Map(children.map((child) => [child.id, child.providerId]))
+    // A full journal pass, so read once, and only for a first row: a revision keeps the scope
+    // its first write froze.
+    let live: AgentJournalTurnScope | undefined
     for (const child of children) {
       const id = child.providerId
       if (child.kind !== 'agent' || id === undefined) {
         continue
       }
-      const saved = queued.get(id)?.block ?? journaledSubagent(journal, id)
+      const pending = queued.get(id) ?? this.writing.get(sessionId)?.get(id)
+      const saved = pending?.block ?? journaledSubagent(journal, id)
+      const turnScope =
+        pending?.turnScope ??
+        (saved ? AGENT_JOURNAL_THREAD_SCOPE : (live ??= journal.liveTurnScope()))
       const parentId =
         child.parentChildWorkId === undefined ? undefined : providerIds.get(child.parentChildWorkId)
-      const block = subagentRowBlock(child, id, parentId, saved, journal.liveTurnScope())
+      const block = subagentRowBlock(child, id, parentId, saved, turnScope)
       if (!saved || rowText(saved) !== rowText(block)) {
-        queued.set(id, { block, turnScope: journal.liveTurnScope() })
+        queued.set(id, { block, turnScope })
       }
     }
     if (queued.size > 0) {
@@ -71,7 +82,6 @@ export class StructuredAgentSessionSubagentRows {
     if (this.writing.has(sessionId)) {
       return
     }
-    this.writing.add(sessionId)
     try {
       for (let rows = this.take(sessionId); rows; rows = this.take(sessionId)) {
         const journal = this.deps.journal(sessionId)
@@ -79,6 +89,7 @@ export class StructuredAgentSessionSubagentRows {
         if (!journal) {
           return
         }
+        this.writing.set(sessionId, rows)
         // The journal serializes its writes; these land in the order they were queued.
         await Promise.all(
           [...rows].map(([id, row]) =>

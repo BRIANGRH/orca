@@ -148,12 +148,9 @@ async function stopAcpBackgroundTask(
 export async function stopAcpChildren(
   session: AcpStructuredSession,
   fence: number,
-  taskIds: readonly string[]
-): Promise<{
-  cancelled: boolean
-  stillRunning?: true
-  acknowledged: AgentChildWorkStopAcknowledgement[]
-}> {
+  taskIds: readonly string[],
+  acknowledge: (acknowledgement: AgentChildWorkStopAcknowledgement) => void = () => {}
+): Promise<{ cancelled: boolean; stillRunning?: true }> {
   const subagentStop = session.childStops?.subagents ? session.spec.dialect.subagentStop : undefined
   const taskStop = session.childStops?.backgroundTasks
     ? session.spec.dialect.backgroundTaskStop
@@ -165,7 +162,6 @@ export async function stopAcpChildren(
   }
   let cancelled = false
   let stillRunning = false
-  const acknowledged: AgentChildWorkStopAcknowledgement[] = []
   for (const id of taskIds) {
     const taskId = acpBackgroundTaskStopId(id)
     const result: ChildStopResult =
@@ -177,8 +173,8 @@ export async function stopAcpChildren(
     cancelled ||= result.cancelled
     stillRunning ||= result.stillRunning === true
     if (result.acknowledged) {
-      acknowledged.push(result.acknowledged)
+      acknowledge(result.acknowledged)
     }
   }
-  return { cancelled, ...(stillRunning ? { stillRunning: true as const } : {}), acknowledged }
+  return { cancelled, ...(stillRunning ? { stillRunning: true as const } : {}) }
 }

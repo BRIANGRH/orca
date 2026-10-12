@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentSessionJournalIdentity } from '../../../shared/agent-session-journal-types'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
+import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
 import { createTrackedJournalOpener } from '../agent-session-journal/journal-host-database-test-support'
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
 import { performCancel, type AgentSessionTurnContext } from './structured-agent-session-turns'
@@ -222,7 +223,8 @@ describe('performCancel', () => {
     expect(stopBackgroundTasks).toHaveBeenCalledWith({
       sessionId: 'session-1',
       fence: 1,
-      taskIds: ['task-1']
+      taskIds: ['task-1'],
+      acknowledge: expect.any(Function)
     })
     expect(cancelTurn).not.toHaveBeenCalled()
     expect(journal.snapshot().items).toEqual([])
@@ -262,7 +264,8 @@ describe('performCancel', () => {
     expect(stopBackgroundTasks).toHaveBeenCalledWith({
       sessionId: 'session-1',
       fence: 1,
-      taskIds: ['task-2']
+      taskIds: ['task-2'],
+      acknowledge: expect.any(Function)
     })
     expect(cancelTurn).not.toHaveBeenCalled()
     expect(journal.snapshot().items).toEqual([])
@@ -270,7 +273,8 @@ describe('performCancel', () => {
 
   async function backgroundStopWith(
     stopBackgroundTasks: StructuredAgentSessionAdapter['stopBackgroundTasks'],
-    operation: string
+    operation: string,
+    acknowledgeStops?: (evidence: AgentChildWorkEvidence[]) => void
   ) {
     root = await mkdtemp(join(tmpdir(), 'orca-background-task-failed-cancel-'))
     const journal = await journals.open({ identity: IDENTITY, stateDirectory: root })
@@ -293,7 +297,8 @@ describe('performCancel', () => {
       turnId: 'background-tasks',
       scope: 'background-tasks',
       taskId: 'task-1',
-      childWork: () => [liveTask('task-1')]
+      childWork: () => [liveTask('task-1')],
+      ...(acknowledgeStops ? { acknowledgeStops } : {})
     })
     expect(cancelTurn).not.toHaveBeenCalled()
     expect(journal.snapshot().items).toEqual([])
@@ -326,6 +331,26 @@ describe('performCancel', () => {
       refusal: { code: 'agent_session_operation_unknown' }
     })
     expect(result.ok ? undefined : result.refusal.details).toBeUndefined()
+  })
+
+  it('ends a run the agent accepted the stop of, even when a later stop in the batch fails', async () => {
+    const acknowledgeStops = vi.fn()
+    const result = await backgroundStopWith(
+      async ({ acknowledge }) => {
+        acknowledge?.({ taskId: 'task-1' })
+        throw new Error('claude control request timed out')
+      },
+      'cancel-background-task-partial',
+      acknowledgeStops
+    )
+
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: { code: 'agent_session_operation_unknown' }
+    })
+    expect(acknowledgeStops).toHaveBeenCalledWith([
+      expect.objectContaining({ type: 'stop-acknowledged', childWorkId: 'child-task-1' })
+    ])
   })
 })
 

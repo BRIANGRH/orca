@@ -21,7 +21,9 @@ export type StructuredSessionBackgroundTasksView = {
   /** The host's child records, when it publishes them; the rows then read these. */
   children?: AgentChildWorkView[]
   supportsStop: boolean
-  supportsStopAll: boolean
+  /** The strip's untargeted Stop: offered when no row has a Stop of its own, or some work no row
+   *  lists, and the host has an untargeted stop at all. */
+  offersStopAll: boolean
   /** Some running work is not listed: the strip stays, and says details are unavailable. */
   incomplete: boolean
 }
@@ -65,7 +67,9 @@ export function structuredSessionBackgroundTasksView(
     Boolean(backgroundTasks?.children?.length || backgroundTasks?.tasks?.length)
   const incomplete = monitoring && backgroundTasks.incomplete === true
   const show = monitoring && (incomplete || (!onlyFinished && !onlyForeground))
-  const liveWork = incomplete || (children ? agentChildWorkLiveness(children) !== null : show)
+  // Commands and rewind follow the listed records, as the host's own admission does.
+  const liveWork = children ? agentChildWorkLiveness(children) !== null : show
+  const supportsStop = backgroundTasks?.supportsTaskStop === true
   return {
     show,
     isMonitoring: turnId === null && liveWork,
@@ -73,10 +77,10 @@ export function structuredSessionBackgroundTasksView(
     // Running work only, from any host: an older host's finished rows are not shown either.
     settledTasks: NO_TASKS,
     ...(children ? { children } : {}),
-    supportsStop: backgroundTasks?.supportsTaskStop === true,
+    supportsStop,
     // Absent means the host predates the field and does accept an untargeted
     // stop; only a host that says `false` has none to offer.
-    supportsStopAll: backgroundTasks?.supportsStopAll !== false,
+    offersStopAll: (!supportsStop || incomplete) && backgroundTasks?.supportsStopAll !== false,
     incomplete
   }
 }

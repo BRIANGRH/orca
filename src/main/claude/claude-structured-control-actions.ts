@@ -62,16 +62,17 @@ export async function cancelClaudeTurn(
   }
 }
 
-/** Stops each task the host named, and names each the CLI accepted the stop of: the host ends that
- *  run provisionally, since the CLI answers success for a task it no longer knows without sending
- *  that task any frame. */
+/** Stops each task the host named, and names each the CLI accepted the stop of as it does: the host
+ *  ends that run provisionally, since the CLI answers success for a task it no longer knows without
+ *  sending that task any frame. */
 export async function stopClaudeBackgroundTasks(
   session: ClaudeSession,
   timeoutMs: number | undefined,
   isCurrent: ClaudeTurnCancellationGuard,
-  taskIds: readonly string[]
-): Promise<{ cancelled: boolean; acknowledged: AgentChildWorkStopAcknowledgement[] }> {
-  const acknowledged: AgentChildWorkStopAcknowledgement[] = []
+  taskIds: readonly string[],
+  acknowledge: (acknowledgement: AgentChildWorkStopAcknowledgement) => void = () => {}
+): Promise<{ cancelled: boolean }> {
+  let cancelled = false
   // A failed request for one task still leaves the others to stop; it is reported after them. A
   // timeout ends the loop: a CLI that is not answering would make each id wait out its own
   // deadline while the session's other actions queue behind this one.
@@ -82,7 +83,8 @@ export async function stopClaudeBackgroundTasks(
     }
     try {
       await session.connection.stopTask(taskId, { timeoutMs })
-      acknowledged.push({ taskId })
+      cancelled = true
+      acknowledge({ taskId })
     } catch (error) {
       if (error instanceof ClaudeControlRequestTimeoutError) {
         throw error
@@ -95,11 +97,10 @@ export async function stopClaudeBackgroundTasks(
   if (failure) {
     throw failure.error
   }
-  return { cancelled: acknowledged.length > 0, acknowledged }
+  return { cancelled }
 }
 
-/** Stops the tasks while `session` is still the one the host asked about, then publishes its child
- *  work so the host's records follow every acknowledged stop. */
+/** Stops the tasks while `session` is still the one the host asked about. */
 export async function stopCurrentClaudeBackgroundTasks(input: {
   sessions: ReadonlyMap<string, ClaudeSession>
   session: ClaudeSession
@@ -107,21 +108,21 @@ export async function stopCurrentClaudeBackgroundTasks(input: {
   fence: number
   taskIds: readonly string[]
   timeoutMs: number | undefined
-  publishChildWork: (session: ClaudeSession) => void
-}): Promise<{ cancelled: boolean; acknowledged: AgentChildWorkStopAcknowledgement[] }> {
+  acknowledge?: (acknowledgement: AgentChildWorkStopAcknowledgement) => void
+}): Promise<{ cancelled: boolean }> {
   const { sessions, session, sessionId, fence } = input
   const acquisitionGeneration = session.acquisitionGeneration
   const isCurrent = () =>
     sessions.get(sessionId) === session &&
     session.fence === fence &&
     session.acquisitionGeneration === acquisitionGeneration
-  try {
-    return await stopClaudeBackgroundTasks(session, input.timeoutMs, isCurrent, input.taskIds)
-  } finally {
-    if (isCurrent()) {
-      input.publishChildWork(session)
-    }
-  }
+  return stopClaudeBackgroundTasks(
+    session,
+    input.timeoutMs,
+    isCurrent,
+    input.taskIds,
+    input.acknowledge
+  )
 }
 
 export async function answerClaudePrompt(

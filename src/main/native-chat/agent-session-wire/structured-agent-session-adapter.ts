@@ -365,17 +365,15 @@ export type StructuredAgentSessionAdapter = StructuredAgentSessionAdapterStop & 
   }): Promise<{ ok: true } | { ok: false; rejected: string }>
   /** Stops exactly the tasks `taskIds` names, which the host resolves from its child records.
    *  `stillRunning` is the provider's own answer that one survived its stop; a throw leaves the
-   *  effect unknown. `acknowledged` names each task the provider accepted the stop of, which the
-   *  host alone turns into that run's provisional ending. */
+   *  effect unknown. `acknowledge` names each task the provider accepted the stop of as its answer
+   *  lands, so a later failure in the batch keeps it; the host alone turns it into that run's
+   *  provisional ending. */
   stopBackgroundTasks?(input: {
     sessionId: string
     fence: number
     taskIds: readonly string[]
-  }): Promise<{
-    cancelled: boolean
-    stillRunning?: true
-    acknowledged?: readonly AgentChildWorkStopAcknowledgement[]
-  }>
+    acknowledge?: (acknowledgement: AgentChildWorkStopAcknowledgement) => void
+  }): Promise<{ cancelled: boolean; stillRunning?: true }>
   /** The stops this provider honours for a live session's background work; undefined when the
    *  adapter holds no live session for it. */
   backgroundTaskStops?(sessionId: string): AgentSessionBackgroundTaskStops | undefined

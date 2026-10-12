@@ -5,7 +5,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   agentChildWorkStopEvidence,
-  agentChildWorkStopTargets
+  agentChildWorkStopTargets,
+  type AgentChildWorkStopAcknowledgement
 } from '../../shared/agent-child-work-stop-targets'
 import type { AgentSessionRecord } from '../../shared/agent-session-record'
 import { conversationCommandBlocked } from '../native-chat/agent-session-wire/structured-conversation-command-admission'
@@ -52,14 +53,16 @@ async function droppedFromRoster() {
   /** A Stop as the host sends it: targets captured first, what the CLI accepted settled after. */
   const stop = async (taskId?: string) => {
     const targets = agentChildWorkStopTargets(records(), taskId)
+    const acknowledged: AgentChildWorkStopAcknowledgement[] = []
     const outcome = await run.adapter.stopBackgroundTasks({
       sessionId: 'session-1',
       fence: 7,
-      taskIds: targets.map((target) => target.providerId)
+      taskIds: targets.map((target) => target.providerId),
+      acknowledge: (acknowledgement) => void acknowledged.push(acknowledgement)
     })
     host.ingestStructuredChildWork(
       parent,
-      agentChildWorkStopEvidence(targets, outcome.acknowledged, 6_500),
+      agentChildWorkStopEvidence(targets, acknowledged, 6_500),
       'claude'
     )
     return outcome

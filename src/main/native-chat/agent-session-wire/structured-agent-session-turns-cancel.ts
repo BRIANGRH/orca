@@ -1,6 +1,7 @@
 import {
   agentChildWorkStopEvidence,
-  agentChildWorkStopTargets
+  agentChildWorkStopTargets,
+  type AgentChildWorkStopAcknowledgement
 } from '../../../shared/agent-child-work-stop-targets'
 import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
@@ -204,17 +205,25 @@ async function cancelAndNote(
     const dispatchStatus = latestJournalDispatchObservation(ctx.journal, ctx.fence)
     // Captured before the stop goes out: its acknowledgement may end only these runs.
     const targets = input.scope ? agentChildWorkStopTargets(input.childWork?.(), input.taskId) : []
+    const acknowledged: AgentChildWorkStopAcknowledgement[] = []
     const background =
       input.scope && !stoppedBefore
-        ? await ctx.adapter.stopBackgroundTasks?.({
-            sessionId: ctx.sessionId,
-            fence: ctx.fence,
-            taskIds: targets.map((target) => target.providerId)
-          })
+        ? await ctx.adapter
+            .stopBackgroundTasks?.({
+              sessionId: ctx.sessionId,
+              fence: ctx.fence,
+              taskIds: targets.map((target) => target.providerId),
+              acknowledge: (acknowledgement) => void acknowledged.push(acknowledgement)
+            })
+            // A batch that fails part way still ended each run it was answered for first.
+            .finally(() => {
+              if (acknowledged.length > 0) {
+                input.acknowledgeStops?.(
+                  agentChildWorkStopEvidence(targets, acknowledged, Date.now())
+                )
+              }
+            })
         : undefined
-    input.acknowledgeStops?.(
-      agentChildWorkStopEvidence(targets, background?.acknowledged, Date.now())
-    )
     // A background Stop writes no row, so a task the agent shows still running after it goes back
     // to the client that pressed it.
     if (background?.stillRunning) {

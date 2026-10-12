@@ -168,4 +168,41 @@ describe("each subagent's saved row", () => {
     await r.report([child({ totalTokens: 20 })])
     expect(r.saved().map(({ block }) => block.tokens)).toEqual([20])
   })
+
+  it('reads the live turn once per change, and never for subagents already saved', async () => {
+    const r = await rig()
+    await r.openTurn('turn-1')
+    const scan = vi.spyOn(r.journal, 'liveTurnScope')
+    const three = ['agent-1', 'agent-2', 'agent-3']
+    await r.report(three.map((id) => child({ id: `record-${id}`, providerId: id })))
+    expect(scan).toHaveBeenCalledTimes(1)
+
+    scan.mockClear()
+    await r.report(
+      three.map((id) => child({ id: `record-${id}`, providerId: id, totalTokens: 40 }))
+    )
+    expect(scan).not.toHaveBeenCalled()
+    expect(r.saved().map(({ block }) => block.tokens)).toEqual([40, 40, 40])
+  })
+
+  it('keeps the spawn turn of a first row still being written when a turn opens', async () => {
+    const r = await rig()
+    await r.openTurn('turn-1')
+    const append = r.journal.appendItem.bind(r.journal)
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    vi.spyOn(r.journal, 'appendItem').mockImplementationOnce(async (...args) => {
+      await held
+      return append(...args)
+    })
+    await r.report([child()])
+    await r.openTurn('turn-2')
+    await r.report([child({ totalTokens: 40 })])
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const [row] = r.saved()
+    expect(row?.block.tokens).toBe(40)
+    expect(row?.item.turnScope).toMatchObject({ kind: 'turn', turnItemId: row?.block.groupId })
+  })
 })

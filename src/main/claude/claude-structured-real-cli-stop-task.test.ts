@@ -134,15 +134,18 @@ describe.skipIf(!realClaudeAvailable)('Claude structured real CLI targeted stop'
         // Give the subagent time to reach its sleep, so the stop lands on a live run.
         await new Promise((resolve) => setTimeout(resolve, 5_000))
 
+        const acknowledged: unknown[] = []
         const outcome = await adapter.stopBackgroundTasks({
           sessionId: SESSION_ID,
           fence: 1,
-          taskIds: [taskId]
+          taskIds: [taskId],
+          acknowledge: (acknowledgement) => void acknowledged.push(acknowledgement)
         })
-        expect(outcome).toMatchObject({ cancelled: true, acknowledged: [{ taskId }] })
+        expect(outcome).toMatchObject({ cancelled: true })
+        expect(acknowledged).toEqual([{ taskId }])
 
-        // The agent's own ending, if the CLI sends one, says the run stopped.
-        await until(
+        // The CLI sends the run its own ending, and it says the run stopped.
+        const ended = await until(
           () =>
             taskFrames(events, taskId).some(
               (frame) =>
@@ -154,6 +157,7 @@ describe.skipIf(!realClaudeAvailable)('Claude structured real CLI targeted stop'
             ),
           30_000
         )
+        expect(ended).toBe(true)
         const frames = taskFrames(events, taskId).map((frame) => ({
           subtype: frame.subtype,
           status:
@@ -164,6 +168,7 @@ describe.skipIf(!realClaudeAvailable)('Claude structured real CLI targeted stop'
         }))
         console.info('[real-cli stop_task] task frames', JSON.stringify(frames))
         const endings = frames.filter((frame) => frame.status !== undefined)
+        expect(endings.length).toBeGreaterThan(0)
         expect(
           endings.every((frame) =>
             ['stopped', 'killed', 'cancelled'].includes(String(frame.status))

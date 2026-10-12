@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { AgentSessionBackgroundTaskState } from './agent-session-wire'
 import type { AgentChildWorkView } from './agent-status-child-work-view'
 import {
   structuredSessionBackgroundTasksView,
@@ -91,14 +92,26 @@ describe('structuredSessionBackgroundTasksView', () => {
     }
   })
 
-  // Absence of a row never reads as idle when the host says some work went unrecorded.
-  it('keeps the strip and its Stop, monitoring, when the host could not record some work', () => {
+  // Absence of a row never reads as idle when the host says some work went unrecorded; commands
+  // and rewind still follow the records, as the host's own admission does.
+  it('keeps the strip and its Stop when the host could not record some work', () => {
     expect(
       structuredSessionBackgroundTasksView(
         { state: 'monitoring', children: [], supportsTaskStop: true, incomplete: true },
         null
       )
-    ).toMatchObject({ show: true, isMonitoring: true, incomplete: true, supportsStopAll: true })
+    ).toMatchObject({ show: true, isMonitoring: false, incomplete: true, offersStopAll: true })
+  })
+
+  it('offers the untargeted Stop only where no row stop reaches the work, and the host has one', () => {
+    const offers = (state: Partial<AgentSessionBackgroundTaskState>) =>
+      structuredSessionBackgroundTasksView({ state: 'monitoring', ...state }, null).offersStopAll
+    expect(offers({ supportsTaskStop: true })).toBe(false)
+    expect(offers({ supportsTaskStop: false })).toBe(true)
+    expect(offers({ supportsTaskStop: true, incomplete: true })).toBe(true)
+    expect(offers({ supportsTaskStop: false, supportsStopAll: false, incomplete: true })).toBe(
+      false
+    )
   })
 
   it('reads live work beneath an idle session as monitoring, and a running turn as its own', () => {
@@ -131,7 +144,7 @@ describe('structuredSessionBackgroundTasksView', () => {
       tasks,
       settledTasks: [],
       supportsStop: false,
-      supportsStopAll: true,
+      offersStopAll: true,
       incomplete: false
     })
     expect(structuredSessionBackgroundTasksView(null, null)).toMatchObject({
