@@ -1,25 +1,27 @@
-import { useCallback } from 'react'
-import type { AgentSessionModelCatalogResult } from '../../../../shared/agent-session-wire'
+import { useCallback, type RefObject } from 'react'
 import type { StructuredAgentSessionOptionState } from '../../../../shared/structured-agent-session-options'
 import { structuredAgentSessionListedPicks } from '../../../../shared/structured-agent-session-option-view'
+import { getStructuredAgentSessionLaunchSelection } from '@/lib/structured-agent-session-launch-options'
 import type { StructuredAgentSessionLaunchView } from './use-native-chat-provisional-launch'
 
-/** Before a send, picks what the picker shows for a model the host's list lacks; else undefined. */
+/** Before a send, picks what the picker shows for a model the verified list lacks. Decided from
+ *  the chat's state when the send goes, so one behind a send that already moved it picks nothing. */
 export function useListedModelSend(
-  optionState: StructuredAgentSessionOptionState,
+  optionStateRef: RefObject<StructuredAgentSessionOptionState>,
   launch: StructuredAgentSessionLaunchView | undefined,
-  listed: AgentSessionModelCatalogResult | null,
+  sessionId: string,
   setStructuredOption: (id: string, value: string) => Promise<boolean>
-): (() => Promise<void>) | undefined {
-  const held = launch?.heldOptions ?? {}
-  const picks = structuredAgentSessionListedPicks(optionState, launch?.seedOptions, held, listed)
-  const model = picks?.model
-  const effort = picks?.effort
-  const prepare = useCallback(async () => {
+): () => Promise<void> {
+  return useCallback(async () => {
+    const selection = getStructuredAgentSessionLaunchSelection(sessionId)
+    const picks = structuredAgentSessionListedPicks(
+      optionStateRef.current,
+      selection?.seed ?? launch?.seedOptions,
+      selection?.held ?? launch?.heldOptions ?? {}
+    )
     // Model first, so the effort lands under it.
-    if (model && (await setStructuredOption('model', model)) && effort) {
-      await setStructuredOption('effort', effort)
+    if (picks?.model && (await setStructuredOption('model', picks.model)) && picks.effort) {
+      await setStructuredOption('effort', picks.effort)
     }
-  }, [effort, model, setStructuredOption])
-  return model ? prepare : undefined
+  }, [launch, optionStateRef, sessionId, setStructuredOption])
 }

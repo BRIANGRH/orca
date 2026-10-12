@@ -232,10 +232,10 @@ export function useStructuredAgentSessionOptions(args: {
   )
   const optionSnapshot = useMemo(() => {
     const snapshot = structuredAgentSessionOptionSnapshot(
-      structuredAgentSessionOptionView(optionState, launchSeedOptions, held, hostCatalog.listed)
+      structuredAgentSessionOptionView(optionState, launchSeedOptions, held)
     )
     return acceptsPicks ? snapshot : lockedStructuredAgentSessionOptionSnapshot(snapshot)
-  }, [acceptsPicks, held, hostCatalog.listed, launchSeedOptions, optionState])
+  }, [acceptsPicks, held, launchSeedOptions, optionState])
   const setStructuredOption = useCallback(
     async (id: string, value: string | boolean): Promise<boolean> => {
       const view = structuredAgentSessionOptionView(optionStateRef.current, launchSeedOptions, held)
@@ -313,7 +313,7 @@ export function useStructuredAgentSessionOptions(args: {
     optionSnapshot,
     optionSurface,
     setStructuredOption,
-    prepareSend: useListedModelSend(optionState, launch, hostCatalog.listed, setStructuredOption),
+    prepareSend: useListedModelSend(optionStateRef, launch, sessionId, setStructuredOption),
     unavailable: hostCatalog.unavailable
   }
 }

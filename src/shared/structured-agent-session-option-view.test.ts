@@ -8,20 +8,29 @@ import {
   structuredAgentSessionOptionSnapshot
 } from './structured-agent-session-options'
 import {
+  nearestAgentEffort,
   structuredAgentSessionListedPicks,
   structuredAgentSessionOptionView
 } from './structured-agent-session-option-view'
 
 const levels = (...values: string[]) => values.map((value) => ({ value, label: value }))
+const OPUS = { id: 'opus[1m]', label: 'Opus', isDefault: false, efforts: levels('low', 'xhigh') }
+const SONNET = { id: 'sonnet', label: 'Sonnet', isDefault: false, efforts: levels('low', 'high') }
 // Claude's session-less listing marks no default row.
-const LISTED: AgentSessionModelCatalogResult = {
-  origin: 'probe',
-  fetchedAt: 1,
-  models: [
-    { id: 'opus[1m]', label: 'Opus', isDefault: false, efforts: levels('low', 'high', 'xhigh') },
-    { id: 'sonnet', label: 'Sonnet', isDefault: false, efforts: levels('low', 'high') }
-  ]
-}
+const LISTED: AgentSessionModelCatalogResult = { origin: 'probe', fetchedAt: 1, models: [OPUS] }
+const remembered = { model: 'claude-gone', effort: 'max' }
+
+const fresh = () => createStructuredAgentSessionOptionState('claude', CLAUDE_SESSION_OPTION_CATALOG)
+const withHostList = (state = fresh(), catalog: AgentSessionModelCatalogResult = LISTED) =>
+  applyStructuredAgentSessionModelCatalog(state, CLAUDE_SESSION_OPTION_CATALOG, catalog, {
+    newLaunch: true
+  })
+// A stopped chat's own answer lists the host's rows plus its own model, named by its id.
+const stopped = (model: string, rows = [OPUS]) =>
+  applyStructuredAgentSessionOptions(fresh(), CLAUDE_SESSION_OPTION_CATALOG, {
+    models: [...rows, { id: model, label: model, isDefault: false, efforts: [] }],
+    current: { model, effort: 'high' }
+  })
 
 function shown(...args: Parameters<typeof structuredAgentSessionOptionView>) {
   const snapshot = structuredAgentSessionOptionSnapshot(structuredAgentSessionOptionView(...args))
@@ -32,48 +41,58 @@ function shown(...args: Parameters<typeof structuredAgentSessionOptionView>) {
   return { model: value('model'), effort: value('effort') }
 }
 
-const cold = createStructuredAgentSessionOptionState('claude', CLAUDE_SESSION_OPTION_CATALOG)
-const newChat = applyStructuredAgentSessionModelCatalog(
-  cold,
-  CLAUDE_SESSION_OPTION_CATALOG,
-  LISTED,
-  { newLaunch: true }
-)
-const remembered = { model: 'claude-gone', effort: 'max' }
-
-describe('a Claude model the host list no longer offers', () => {
+describe('a Claude model the verified list no longer offers', () => {
   it('shows a new chat on the first listed row, effort moved to the nearest level', () => {
-    expect(shown(newChat, remembered, {}, LISTED)).toEqual({ model: 'opus[1m]', effort: 'xhigh' })
-    expect(structuredAgentSessionListedPicks(newChat, remembered, {}, LISTED)).toEqual({
+    const state = withHostList()
+    expect(shown(state, remembered, {})).toEqual({ model: 'opus[1m]', effort: 'xhigh' })
+    expect(structuredAgentSessionListedPicks(state, remembered, {})).toEqual({
       model: 'opus[1m]',
       effort: 'xhigh'
     })
     // Derived only: the record never takes it.
-    expect(newChat.record.model).toBeUndefined()
+    expect(state.record.model).toBeUndefined()
   })
 
-  it('shows a stopped chat on the listed default too', () => {
-    const fresh = createStructuredAgentSessionOptionState('claude', CLAUDE_SESSION_OPTION_CATALOG)
-    const stopped = applyStructuredAgentSessionOptions(fresh, CLAUDE_SESSION_OPTION_CATALOG, {
-      models: [
-        ...LISTED.models,
-        { id: 'claude-gone', label: 'claude-gone', isDefault: false, efforts: [] }
-      ],
-      current: { model: 'claude-gone', effort: 'high' }
+  it('shows a stopped chat on it too, its own unlisted row aside', () => {
+    expect(shown(withHostList(stopped('claude-gone')), undefined, {})).toEqual({
+      model: 'opus[1m]',
+      effort: 'xhigh'
     })
-    expect(shown(stopped, undefined, {}, LISTED)).toEqual({ model: 'opus[1m]', effort: 'high' })
   })
 
-  it('keeps a listed model, a held pick, and any model while no list has loaded', () => {
-    expect(structuredAgentSessionListedPicks(newChat, { model: 'sonnet' }, {}, LISTED)).toBeNull()
+  it('keeps a model the list the picker shows offers, even one the host list lacks', () => {
+    const live = withHostList(stopped('sonnet', [OPUS, SONNET]))
+    expect(structuredAgentSessionListedPicks(live, undefined, {})).toBeNull()
+    const held = { model: 'opus[1m]' }
+    expect(structuredAgentSessionListedPicks(withHostList(), remembered, held)).toBeNull()
+  })
+
+  it.each<[string, AgentSessionModelCatalogResult]>([
+    ['still listing', { ...LISTED, listingInProgress: true }],
+    ['behind a failed sign-in', { ...LISTED, unavailable: { reason: 'notSignedIn' } }]
+  ])('keeps the model while the list is %s', (_name, catalog) => {
+    const state = withHostList(fresh(), catalog)
+    expect(structuredAgentSessionListedPicks(state, remembered, {})).toBeNull()
     expect(
-      structuredAgentSessionListedPicks(newChat, remembered, { model: 'sonnet' }, LISTED)
+      structuredAgentSessionListedPicks(
+        withHostList(stopped('claude-gone'), catalog),
+        undefined,
+        {}
+      )
     ).toBeNull()
-    expect(structuredAgentSessionListedPicks(newChat, remembered, {}, null)).toBeNull()
-    expect(
-      structuredAgentSessionListedPicks(newChat, remembered, {}, { origin: 'unknown' })
-    ).toBeNull()
-    // With no list, main's quiet placeholder names nothing.
-    expect(shown(newChat, remembered, {}, null).model).toBeUndefined()
+  })
+
+  it('keeps the model before any host answer', () => {
+    expect(structuredAgentSessionListedPicks(fresh(), remembered, {})).toBeNull()
+    expect(structuredAgentSessionListedPicks(stopped('claude-gone'), undefined, {})).toBeNull()
+  })
+})
+
+describe('nearestAgentEffort', () => {
+  it('keeps an offered level, takes the higher on a tie, and names none it cannot rank', () => {
+    expect(nearestAgentEffort('high', ['low', 'high'])).toBe('high')
+    expect(nearestAgentEffort('medium', ['low', 'high'])).toBe('high')
+    expect(nearestAgentEffort('max', ['low', 'xhigh'])).toBe('xhigh')
+    expect(nearestAgentEffort('turbo', ['low', 'high'])).toBeUndefined()
   })
 })

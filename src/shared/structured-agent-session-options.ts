@@ -51,6 +51,8 @@ export type StructuredAgentSessionOptionState = {
    *  built-in list before the host answered (shown as the quiet placeholder); `builtin` is the
    *  same list once the host said it has none, usable but naming nothing the host may replace. */
   catalogSource: 'seed' | 'builtin' | 'host' | 'live' | null
+  /** The host's latest answer is a finished listing: not running, not failed, not absent. */
+  listVerified?: boolean
   record: NativeChatSessionOptionRecord
   /** The permission mode the host or launch last stated; null shows no picker. */
   permissionMode: string | null
@@ -77,7 +79,15 @@ export function createStructuredAgentSessionOptionState(
 export function settleStructuredAgentSessionBuiltinCatalog(
   state: StructuredAgentSessionOptionState
 ): StructuredAgentSessionOptionState {
-  return state.catalogSource === 'seed' ? { ...state, catalogSource: 'builtin' } : state
+  const settled = withListVerified(state, false)
+  return settled.catalogSource === 'seed' ? { ...settled, catalogSource: 'builtin' } : settled
+}
+
+function withListVerified(
+  state: StructuredAgentSessionOptionState,
+  listVerified: boolean
+): StructuredAgentSessionOptionState {
+  return (state.listVerified ?? false) === listVerified ? state : { ...state, listVerified }
 }
 
 /**
@@ -92,8 +102,10 @@ export function applyStructuredAgentSessionModelCatalog(
   catalog: AgentSessionModelCatalogResult,
   options: { newLaunch: boolean }
 ): StructuredAgentSessionOptionState {
+  const listVerified =
+    catalog.origin !== 'unknown' && !catalog.listingInProgress && !catalog.unavailable
   if (state.catalogSource === 'live') {
-    return state
+    return withListVerified(state, listVerified)
   }
   const models =
     catalog.origin === 'unknown'
@@ -118,7 +130,8 @@ export function applyStructuredAgentSessionModelCatalog(
       models,
       ...(namesDefault ? { defaultModelIsCliDefault: true } : {})
     },
-    catalogSource: 'host'
+    catalogSource: 'host',
+    listVerified
   }
 }
 
