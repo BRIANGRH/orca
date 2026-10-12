@@ -441,6 +441,54 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
     }
   )
 
+  it.skipIf(process.platform === 'win32')(
+    'holds a miss for at most one shell timeout when the login shell hangs, keeping the snapshot',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'orca-structured-shell-hang-'))
+      const [counter, shell] = ['count', 'shell.sh'].map((name) => join(dir, name))
+      // Run 1 answers; every later run hangs, as a profile stuck on a prompt does.
+      await writeFile(
+        shell,
+        [
+          '#!/bin/sh',
+          `echo run >> '${counter}'; n=$(wc -l < '${counter}')`,
+          'if [ $n -gt 1 ]; then exec sleep 30; fi',
+          "printf '\\000__ORCA_LOGIN_SHELL_ENV_START__\\000PATH=/profile/A\\000\\000__ORCA_LOGIN_SHELL_ENV_END__\\000'",
+          ''
+        ].join('\n')
+      )
+      await chmod(shell, 0o755)
+      const originalShell = process.env.SHELL
+      process.env.SHELL = shell
+      try {
+        const resolvers = createStructuredAgentEnvironmentResolvers({
+          resolveShellEnvironmentPolicy: () => INHERIT_ALL
+        })
+        expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/profile/A')
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+        let released = false
+        void resolvers.refreshAfterMissingProgram(Date.now()).then(() => {
+          released = true
+        })
+        await vi.advanceTimersByTimeAsync(4_999)
+        expect(released).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        expect(released).toBe(true)
+        expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/profile/A')
+      } finally {
+        vi.useRealTimers()
+        if (originalShell === undefined) {
+          delete process.env.SHELL
+        } else {
+          process.env.SHELL = originalShell
+        }
+        await rm(dir, { recursive: true, force: true })
+      }
+    },
+    // Real shell spawns; a loaded runner can take seconds for the first one.
+    20_000
+  )
+
   it('rereads settings on every acquisition while the shell env is read once', async () => {
     let overlay = 'A'
     const resolveEnvironment = vi.fn(async () => ({ PATH: '/shell/A' }))
