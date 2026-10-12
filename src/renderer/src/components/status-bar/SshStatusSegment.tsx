@@ -16,7 +16,7 @@ import {
   isRuntimeOwnedSshTargetId,
   toRuntimeExecutionHostId
 } from '../../../../shared/execution-host'
-import { isUserManagedRuntimeEnvironment } from '../../../../shared/runtime-environments'
+import { isListedRemoteServer } from '../../../../shared/runtime-environments'
 import { RuntimeHostStatusRow } from './RuntimeHostStatusRow'
 import { connectedHostCountLabel, connectingHostsLabel } from './ssh-status-segment-copy'
 import { SshTargetStatusRow } from './SshTargetStatusRow'
@@ -64,20 +64,18 @@ export function SshStatusSegment({
         status: state?.status ?? ('disconnected' satisfies SshConnectionStatus)
       }
     })
-  const runtimeHosts = runtimeEnvironments
-    .filter(isUserManagedRuntimeEnvironment)
-    .map((environment) => {
-      const statusEntry = runtimeStatusByEnvironmentId.get(environment.id)
-      const override = hostLabelOverrides.get(toRuntimeExecutionHostId(environment.id))
-      return {
-        id: environment.id,
-        label: override || environment.name || environment.id,
-        snapshot: statusEntry?.snapshot,
-        status: statusEntry?.status ?? null,
-        active: settings?.activeRuntimeEnvironmentId === environment.id,
-        remoteControl: statusEntry?.remoteControl ?? statusEntry?.status?.remoteControl ?? null
-      }
-    })
+  const runtimeHosts = runtimeEnvironments.filter(isListedRemoteServer).map((environment) => {
+    const statusEntry = runtimeStatusByEnvironmentId.get(environment.id)
+    const override = hostLabelOverrides.get(toRuntimeExecutionHostId(environment.id))
+    return {
+      id: environment.id,
+      label: override || environment.name || environment.id,
+      snapshot: statusEntry?.snapshot,
+      status: statusEntry?.status ?? null,
+      active: settings?.activeRuntimeEnvironmentId === environment.id,
+      remoteControl: statusEntry?.remoteControl ?? statusEntry?.status?.remoteControl ?? null
+    }
+  })
   const runtimeHostRows = runtimeHosts.map((host) => ({
     ...host,
     state: runtimeHostConnectionStateForEntry(runtimeStatusByEnvironmentId.get(host.id))

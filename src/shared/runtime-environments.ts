@@ -232,6 +232,23 @@ export function isUserManagedRuntimeEnvironment(
   return !isEphemeralVmRuntimeEnvironment(environment)
 }
 
+/** A WSL distro added as a host; keyed by its deployment record's kind, never by its name. */
+export function isWslHostRuntimeEnvironment(
+  environment: Pick<PublicKnownRuntimeEnvironment, 'orcadDeployment'>
+): boolean {
+  return environment.orcadDeployment?.kind === 'wsl'
+}
+
+/**
+ * A server the generic remote-server surfaces list (Settings, status bar, server updates):
+ * neither a recipe VM nor a WSL host, which each have their own place.
+ */
+export function isListedRemoteServer(
+  environment: Pick<PublicKnownRuntimeEnvironment, 'source' | 'orcadDeployment'>
+): boolean {
+  return isUserManagedRuntimeEnvironment(environment) && !isWslHostRuntimeEnvironment(environment)
+}
+
 type PreferredEndpointSource = Pick<
   KnownRuntimeEnvironment,
   'name' | 'endpoints' | 'preferredEndpointId' | 'pairedDeviceId'

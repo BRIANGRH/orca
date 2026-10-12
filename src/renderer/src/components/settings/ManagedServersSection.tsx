@@ -209,7 +209,7 @@ export function ManagedServersSection({
         </div>
       ) : null}
 
-      <WslHostsSection environments={environments} onChanged={onChanged} />
+      <WslHostsSection onChanged={onChanged} />
 
       {paired.length > 0 ? (
         <div className="space-y-1">

@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import type { PublicKnownRuntimeEnvironment } from '../../../../shared/runtime-environments'
+import {
+  isWslHostRuntimeEnvironment,
+  type PublicKnownRuntimeEnvironment
+} from '../../../../shared/runtime-environments'
 import { toRuntimeExecutionHostId } from '../../../../shared/execution-host'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
@@ -23,12 +26,12 @@ import { Button } from '../ui/button'
 
 /** Settings → Orca servers: the WSL distros added as hosts (Windows, experimental). */
 export function WslHostsSection({
-  environments,
   onChanged
 }: {
-  environments: readonly PublicKnownRuntimeEnvironment[]
   onChanged: () => void
 }): React.JSX.Element | null {
+  // Why the store: the remote-server catalog leaves WSL hosts out, so this reads them itself.
+  const environments = useAppStore((s) => s.runtimeEnvironments)
   const enabled = useWslHostsEnabled()
   const serverFilesMissing = useWslHostServerFilesMissing()
   // Why one line for both: a host that cannot run says why, wherever it is listed.
@@ -41,7 +44,7 @@ export function WslHostsSection({
   const [dialogMode, setDialogMode] = useState<AddRemoteHostMode | null>(null)
   const [connectingId, setConnectingId] = useState<string | null>(null)
   const [removing, setRemoving] = useState<PublicKnownRuntimeEnvironment | null>(null)
-  const hosts = environments.filter((environment) => environment.orcadDeployment?.kind === 'wsl')
+  const hosts = environments.filter(isWslHostRuntimeEnvironment)
   // Why hosts while off: their projects must not seem to vanish; the rows say why they are idle.
   if (!wslHostsAvailable() || (!enabled && hosts.length === 0)) {
     return null

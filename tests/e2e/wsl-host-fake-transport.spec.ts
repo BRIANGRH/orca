@@ -252,6 +252,8 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
       state?.openSettingsPage()
       state?.openSettingsTarget({ pane: 'servers', repoId: null })
     })
+    // A WSL host is listed only as a WSL host, never among the generic remote servers.
+    await expect(page.getByText('No saved servers.')).toBeVisible()
     const section = page.locator('[data-settings-section="wsl-hosts"]')
     await section.scrollIntoViewIfNeeded()
     await expect(section).toContainText('WSL hosts are turned off in Settings → Experimental')
