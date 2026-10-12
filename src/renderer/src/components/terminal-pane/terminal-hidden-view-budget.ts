@@ -44,19 +44,15 @@ export type HiddenTerminalView = {
   parkable: boolean
   /** Kept mounted for another reason even if parked, so it always holds its memory. */
   held?: boolean
-  /** False when no park could restore it: held outside the budget and only counted. */
-  restorable: boolean
 }
 
 /** A view's size for its current hidden episode. */
 export type HiddenViewSize = { hiddenSinceMs: number; bytes: number }
 
 /**
- * One worktree's hidden loaded views. Unrestorable ones are reported but kept
- * outside the budget (no park can release them); views the hot-retain clock
- * already parks are left out. Size is the largest measured in the current
- * hidden episode and is remembered after the view parks, so neither parking
- * nor a remount mid-restore makes a view look small and flip it back in.
+ * One worktree's hidden restorable views, excluding clock-selected parks.
+ * Size is the largest measured in the current hidden episode and is remembered
+ * after parking, so neither parking nor a remount mid-restore flips it back in.
  */
 export function buildHiddenTerminalViews(
   input: HiddenViewBudgetInput,
@@ -74,7 +70,8 @@ export function buildHiddenTerminalViews(
       tab.isVisible ||
       tab.hasActivityTerminalPortal ||
       tab.hiddenSinceMs === null ||
-      input.clockParkedTabIds.has(tab.id)
+      input.clockParkedTabIds.has(tab.id) ||
+      !isParkRestorableTerminalPty(tab.ptyId, input.worktreeId, input.restorePolicy)
     ) {
       continue
     }
@@ -93,8 +90,7 @@ export function buildHiddenTerminalViews(
       ...(tab.lastActivatedSeq !== undefined ? { activationSeq: tab.lastActivatedSeq } : {}),
       bytes: sizeByTabId.get(tab.id)?.bytes ?? Number.POSITIVE_INFINITY,
       parkable: input.parkableTabIds.has(tab.id),
-      held: input.isHeldMounted?.(tab) === true,
-      restorable: isParkRestorableTerminalPty(tab.ptyId, input.worktreeId, input.restorePolicy)
+      held: input.isHeldMounted?.(tab) === true
     })
   }
   return views
@@ -123,9 +119,6 @@ export function selectHiddenTerminalViewsOverBudget(
   const overBudget = new Set<string>()
   let retainedBytes = 0
   for (const view of [...views].sort(compareHiddenViewRecencyDesc)) {
-    if (!view.restorable) {
-      continue
-    }
     if (!view.held && pressureReleaseAtMs !== null && view.hiddenSinceMs <= pressureReleaseAtMs) {
       if (view.parkable) {
         overBudget.add(view.tabId)

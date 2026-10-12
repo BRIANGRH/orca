@@ -6,6 +6,7 @@ import {
   getHiddenTerminalViewCensus,
   reportHiddenTerminalViews,
   resetHiddenTerminalViewBudgetForTest,
+  releaseHiddenTerminalViewsForMemoryPressure,
   selectHiddenTerminalViewsOverBudget,
   subscribeHiddenTerminalViewBudget,
   type HiddenTerminalView
@@ -16,7 +17,7 @@ import { selectColdParkedTerminalTabs } from './terminal-hidden-view-parking'
 const MB = 1024 * 1024
 
 function view(tabId: string, hiddenSinceMs: number, bytes: number, parkable = true) {
-  return { tabId, hiddenSinceMs, bytes, parkable, restorable: true } satisfies HiddenTerminalView
+  return { tabId, hiddenSinceMs, bytes, parkable } satisfies HiddenTerminalView
 }
 
 describe('selectHiddenTerminalViewsOverBudget', () => {
@@ -70,14 +71,6 @@ describe('selectHiddenTerminalViewsOverBudget', () => {
       100 * MB
     )
     expect(over).toEqual(new Set(['unknown']))
-  })
-
-  it('keeps unrestorable views outside the budget', () => {
-    const over = selectHiddenTerminalViewsOverBudget(
-      [{ ...view('fail-open', 3, 90 * MB, false), restorable: false }, view('older', 2, 90 * MB)],
-      100 * MB
-    )
-    expect(over).toEqual(new Set())
   })
 
   it('parks every view hidden before a memory-pressure release, even ones that fit', () => {
@@ -170,7 +163,7 @@ describe('buildHiddenTerminalViews', () => {
     }
   }
 
-  it('reports hidden tabs, flags unrestorable ones, and skips visible, portaled and clock-parked ones', () => {
+  it('reports restorable hidden tabs and skips visible, portaled and clock-parked ones', () => {
     const views = buildHiddenTerminalViews(
       {
         worktreeId: 'wt-1',
@@ -194,16 +187,7 @@ describe('buildHiddenTerminalViews', () => {
         activationSeq: 4,
         bytes: Number.POSITIVE_INFINITY,
         parkable: true,
-        held: false,
-        restorable: true
-      },
-      {
-        tabId: 'remote',
-        hiddenSinceMs: 10,
-        bytes: Number.POSITIVE_INFINITY,
-        parkable: false,
-        held: false,
-        restorable: false
+        held: false
       }
     ])
   })
@@ -247,6 +231,75 @@ describe('buildHiddenTerminalViews', () => {
     // A closed tab drops its remembered size.
     buildHiddenTerminalViews({ ...input, terminalTabs: [] }, lastKnown)
     expect(lastKnown.size).toBe(0)
+  })
+
+  it.each([
+    { name: 'local fallback', ptyId: 'local-pty', restorePolicy: {} },
+    { name: 'disabled SSH parking', ptyId: 'ssh:ssh-1@@pty-1', restorePolicy: {} },
+    { name: 'older paired host', ptyId: 'remote:env-1@@terminal-1', restorePolicy: {} }
+  ])(
+    'does no policy measurement for $name while the census counts its mount',
+    ({ ptyId, restorePolicy }) => {
+      const measure = vi.fn(() => 10 * MB)
+      registerMountedTerminalTabView('unrestorable', {
+        getRetainedBytes: measure,
+        getHiddenState: () => ({ restorable: false })
+      })
+      const sizes = new Map<string, { hiddenSinceMs: number; bytes: number }>()
+      const input = {
+        worktreeId: 'wt-1',
+        terminalTabs: [tab('unrestorable', { ptyId })],
+        parkableTabIds: new Set<string>(),
+        clockParkedTabIds: new Set<string>(),
+        restorePolicy
+      }
+      for (let pass = 0; pass < 3; pass += 1) {
+        const views = buildHiddenTerminalViews(input, sizes)
+        reportHiddenTerminalViews('owner', views)
+        expect(measure).not.toHaveBeenCalled()
+        expect(sizes.size).toBe(0)
+        expect(views).toEqual([])
+      }
+      expect(getHiddenTerminalViewCensus()).toMatchObject({
+        unrestorableViews: 1,
+        unrestorableKB: 10 * 1024
+      })
+      expect(measure).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it.each([
+    { name: 'local', ptyId: 'wt-1@@eligible', restorePolicy: {} },
+    { name: 'SSH', ptyId: 'ssh:ssh-1@@pty-1', restorePolicy: { sshParkingEnabled: true } },
+    {
+      name: 'paired',
+      ptyId: 'remote:env-1@@terminal-1',
+      restorePolicy: { pairedRuntimeParkingEnvironmentIds: new Set(['env-1']) }
+    }
+  ])('preserves eligible $name history and pressure decisions', ({ ptyId, restorePolicy }) => {
+    let bytes = 7 * MB
+    registerMountedTerminalTabView('eligible', {
+      getRetainedBytes: () => bytes,
+      getHiddenState: () => ({ restorable: true })
+    })
+    const sizes = new Map<string, { hiddenSinceMs: number; bytes: number }>()
+    const input = (hiddenSinceMs: number) => ({
+      worktreeId: 'wt-1',
+      terminalTabs: [tab('eligible', { ptyId, hiddenSinceMs })],
+      parkableTabIds: new Set(['eligible']),
+      clockParkedTabIds: new Set<string>(),
+      restorePolicy
+    })
+    expect(buildHiddenTerminalViews(input(10), sizes)[0].bytes).toBe(7 * MB)
+    bytes = MB
+    const sameEpisode = buildHiddenTerminalViews(input(10), sizes)
+    expect(sameEpisode[0].bytes).toBe(7 * MB)
+    expect(reportHiddenTerminalViews('owner', sameEpisode)).toEqual(new Set())
+    releaseHiddenTerminalViewsForMemoryPressure(10)
+    expect(reportHiddenTerminalViews('owner', sameEpisode)).toEqual(new Set(['eligible']))
+    const laterEpisode = buildHiddenTerminalViews(input(20), sizes)
+    expect(laterEpisode[0].bytes).toBe(MB)
+    expect(reportHiddenTerminalViews('owner', laterEpisode)).toEqual(new Set())
   })
 })
 
@@ -337,11 +390,7 @@ describe('memory pressure and the hidden-view census', () => {
     }
     reportHiddenTerminalViews(
       'wt-a',
-      [
-        view('kept', 3, 60 * MB),
-        view('over', 2, 60 * MB),
-        { ...view('fail-open', 4, 200 * MB, false), restorable: false }
-      ],
+      [view('kept', 3, 60 * MB), view('over', 2, 60 * MB)],
       100 * MB
     )
     expect(getHiddenTerminalViewCensus()).toEqual({
