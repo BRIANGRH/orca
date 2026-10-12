@@ -11,7 +11,10 @@ export function detectCommandsInInstallDirs(
     return new Set()
   }
   try {
-    const resolvedCommands = resolveCliCommands(commands, pathEnv === undefined ? {} : { pathEnv })
+    const resolvedCommands =
+      pathEnv === undefined
+        ? resolveCliCommands(commands)
+        : resolveCliCommands(commands, { pathEnv })
     return new Set(
       commands.filter((command) => path.isAbsolute(resolvedCommands.get(command) ?? command))
     )
