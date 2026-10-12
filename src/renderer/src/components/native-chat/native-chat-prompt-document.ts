@@ -47,13 +47,22 @@ export function fileReferenceContent(path: string): JSONContent {
   }
 }
 
+export type PromptTextMap = { readonly text: string; readonly positions: readonly number[] }
+
+// Why: documents are immutable and caret reads repeat on an unchanged draft; weak keys die with the doc.
+const promptTextMaps = new WeakMap<ProseMirrorNode, PromptTextMap>()
+
 /** Each boundary maps a plain-text caret to a document position, including atomic skills. */
-export function promptTextMap(doc: ProseMirrorNode): { text: string; positions: number[] } {
-  let text = ''
+export function promptTextMap(doc: ProseMirrorNode): PromptTextMap {
+  const cached = promptTextMaps.get(doc)
+  if (cached) {
+    return cached
+  }
+  const parts: string[] = []
   const positions = [1]
   doc.forEach((block, blockOffset, index) => {
     if (index > 0) {
-      text += '\n'
+      parts.push('\n')
       positions.push(blockOffset + 1)
     }
     block.forEach((node, offset) => {
@@ -63,19 +72,31 @@ export function promptTextMap(doc: ProseMirrorNode): { text: string; positions: 
         : node.type.name === 'hardBreak'
           ? '\n'
           : String(node.attrs.token ?? '')
+      parts.push(value)
       for (let i = 0; i < value.length; i++) {
-        text += value[i]
         positions.push(
           node.isText ? start + i + 1 : i === value.length - 1 ? start + node.nodeSize : start
         )
       }
     })
   })
-  return { text, positions }
+  const map = { text: parts.join(''), positions }
+  promptTextMaps.set(doc, map)
+  return map
 }
 
 export function promptTextOffset(doc: ProseMirrorNode, position: number): number {
   const { positions } = promptTextMap(doc)
-  const index = positions.findIndex((candidate) => candidate >= position)
-  return index === -1 ? positions.length - 1 : index
+  // Positions never decrease, so the first one at or past `position` is a lower bound.
+  let low = 0
+  let high = positions.length
+  while (low < high) {
+    const mid = (low + high) >>> 1
+    if (positions[mid] < position) {
+      low = mid + 1
+    } else {
+      high = mid
+    }
+  }
+  return low === positions.length ? positions.length - 1 : low
 }
