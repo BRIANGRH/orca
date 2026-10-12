@@ -97,7 +97,8 @@ export async function runSettledAgentSessionMutation<TValue>(input: {
   }
 }
 
-function observedReceipt(
+/** Tracks whether a receipt committed, so a Stop can commit it alone before it acts. */
+export function observedReceipt(
   store: Pick<AgentSessionRecordStore, 'commitOperationReceipt'>,
   receipt: JournalOperationReceipt
 ): AgentSessionOperationReceipt {
