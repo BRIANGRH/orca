@@ -16,7 +16,9 @@ const XML_INSTRUCTIONS_PREFIX = '<INSTRUCTIONS>'
 const HIDDEN_TEXT_BLOCKS = [
   { name: 'system-reminder', closeTag: '</system-reminder>' },
   { name: 'codex_internal_context', closeTag: '</codex_internal_context>' },
-  { name: 'goal_context', closeTag: '</goal_context>' }
+  { name: 'goal_context', closeTag: '</goal_context>' },
+  // Codex's own user-role record of a Stop.
+  { name: 'turn_aborted', closeTag: '</turn_aborted>' }
 ] as const
 
 type TextBuilder = {

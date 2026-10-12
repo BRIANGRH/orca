@@ -6,6 +6,7 @@ import {
   createCodexSessionResumeState,
   parseCodexSessionFile
 } from './session-scanner-codex-parser'
+import { withFullFirstUserPromptCapture } from './session-scanner-first-user-prompt-capture'
 import type { TranscriptMessage } from './session-transcript-consumers'
 
 let tempRoots: string[] = []
@@ -105,6 +106,87 @@ describe('parseCodexSessionFile', () => {
         { role: 'user', text: 'Visible paginated prompt' },
         { role: 'assistant', text: 'Visible paginated response' }
       ]
+    })
+  })
+
+  describe("Codex's own record of a Stop", () => {
+    const MARKER =
+      '<turn_aborted>\nThe user interrupted the previous turn on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed.\n</turn_aborted>'
+    const userMessage = (content: unknown[]) => ({
+      timestamp: '2026-10-12T10:00:01.000Z',
+      type: 'response_item',
+      payload: { type: 'message', role: 'user', content }
+    })
+
+    async function parse(records: unknown[]) {
+      const root = await mkdtemp(join(tmpdir(), 'orca-ai-vault-codex-aborted-'))
+      tempRoots.push(root)
+      const sessionPath = join(root, 'sessions', '2026', '10', '12', 'rollout-aborted.jsonl')
+      await mkdir(dirname(sessionPath), { recursive: true })
+      await writeFile(
+        sessionPath,
+        jsonLines([
+          {
+            timestamp: '2026-10-12T10:00:00.000Z',
+            type: 'session_meta',
+            payload: { id: 'aborted-session', cwd: '/repo/app' }
+          },
+          ...records
+        ])
+      )
+      const sessionStat = await stat(sessionPath)
+      return withFullFirstUserPromptCapture(() =>
+        parseCodexSessionFile(
+          {
+            path: sessionPath,
+            mtimeMs: sessionStat.mtimeMs,
+            modifiedAt: sessionStat.mtime.toISOString()
+          },
+          'darwin',
+          root
+        )
+      )
+    }
+
+    it('is never the title, first prompt or a preview row after an image-only message', async () => {
+      const session = await parse([
+        userMessage([{ type: 'input_image', image_url: 'data:image/png;base64,AAAA' }]),
+        userMessage([{ type: 'input_text', text: MARKER }]),
+        userMessage([{ type: 'input_text', text: 'what is in the picture?' }])
+      ])
+
+      expect(session).toMatchObject({
+        title: 'what is in the picture?',
+        firstUserPrompt: 'what is in the picture?',
+        previewMessages: [{ role: 'user', text: 'what is in the picture?' }]
+      })
+    })
+
+    it('is hidden in a natively interrupted session too', async () => {
+      const session = await parse([
+        userMessage([{ type: 'input_text', text: 'delete the build' }]),
+        {
+          timestamp: '2026-10-12T10:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Deleting' }]
+          }
+        },
+        userMessage([{ type: 'input_text', text: MARKER }]),
+        userMessage([{ type: 'input_text', text: 'never mind' }])
+      ])
+
+      expect(session).toMatchObject({
+        title: 'delete the build',
+        firstUserPrompt: 'delete the build',
+        previewMessages: [
+          { role: 'user', text: 'delete the build' },
+          { role: 'assistant', text: 'Deleting' },
+          { role: 'user', text: 'never mind' }
+        ]
+      })
     })
   })
 

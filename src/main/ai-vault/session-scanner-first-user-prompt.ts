@@ -82,7 +82,12 @@ function finalizeFullFirstUserPrompt(value: string): string | null {
 
 function isSuppressedFullFirstUserPrompt(value: string): boolean {
   const head = value.slice(0, 64).toLowerCase()
-  return head.startsWith('# agents.md instructions') || head.startsWith('<instructions>')
+  return (
+    head.startsWith('# agents.md instructions') ||
+    head.startsWith('<instructions>') ||
+    // Codex's own user-role record of a Stop.
+    head.startsWith('<turn_aborted>')
+  )
 }
 
 function firstUserPromptContentItemText(item: unknown): string | null {
