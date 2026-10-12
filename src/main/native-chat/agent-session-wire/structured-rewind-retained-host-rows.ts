@@ -5,7 +5,10 @@
 // each keeps the ones its retained row held.
 
 import { parseCodexGoalJournalItemId } from '../../codex/codex-goal-journal-identity'
-import { parseAgentJournalItemKey } from '../../../shared/agent-session-journal-item-key'
+import {
+  agentJournalItemKey,
+  parseAgentJournalItemKey
+} from '../../../shared/agent-session-journal-item-key'
 import {
   AGENT_JOURNAL_ITEM_BODY_KINDS,
   isAdmissibleAgentJournalMessageBody
@@ -19,6 +22,7 @@ import type {
 import type { AgentSessionRewindRecord } from '../../../shared/agent-session-rewind'
 import { readAgentJournalTurn } from '../../../shared/agent-session-turn-record'
 import { restoreRewindJournalBody } from './structured-rewind-journal-body'
+import type { RewindRestatedSends } from './structured-rewind-restated-sends'
 
 type RetainedRow = AgentSessionRewindRecord['retained'][number]
 
@@ -33,10 +37,12 @@ export function isRetainedHostLifecycleRow(item: RetainedRow): boolean {
   )
 }
 
-/** `reference` fixes where each carried row sits; provider items are the ordered spine. */
+/** `reference` fixes where each carried row sits; provider items are the ordered spine. A send
+ *  only the host holds is carried when it is restated (`structured-rewind-restated-sends.ts`). */
 export function mergeRetainedHostLifecycleRows(
   reference: readonly RetainedRow[],
-  providerItems: readonly RetainedRow[]
+  providerItems: readonly RetainedRow[],
+  restated: RewindRestatedSends
 ): RetainedRow[] {
   const spineIndex = new Map(providerItems.map((item, index) => [item.itemId, index]))
   const held = new Map(reference.map((item) => [item.itemId, item]))
@@ -49,19 +55,50 @@ export function mergeRetainedHostLifecycleRows(
       anchor = spine
     } else if (
       isRetainedHostLifecycleRow(item) ||
-      !AGENT_JOURNAL_ITEM_BODY_KINDS.has(item.body.kind)
+      !AGENT_JOURNAL_ITEM_BODY_KINDS.has(item.body.kind) ||
+      (parseAgentJournalItemKey(item.itemId)?.provider === 'orca' && restated.has(item.itemId))
     ) {
       rowsAfter.set(anchor, [...(rowsAfter.get(anchor) ?? []), item])
     }
   }
-  const merged = [...(rowsAfter.get(-1) ?? [])]
+  const after = (index: number) => inSendOrder(rowsAfter.get(index) ?? [], restated)
+  const merged = after(-1)
   providerItems.forEach((item, index) =>
-    merged.push(withHeldAttribution(item, held.get(item.itemId)), ...(rowsAfter.get(index) ?? []))
+    merged.push(withHeldAttribution(item, held.get(item.itemId)), ...after(index))
   )
   const turnRecords = turnRecordsByProviderTurn(merged)
   return merged.map((item) =>
     held.has(item.itemId) || item.turnScope ? item : withProviderTurnScope(item, turnRecords)
   )
+}
+
+/** The restated sends among `rows` in the order they were sent, the other rows where they sat:
+ *  each restated row's new sequence is the order stopped history is owed in. */
+function inSendOrder(rows: readonly RetainedRow[], restated: RewindRestatedSends): RetainedRow[] {
+  const sentAt = (row: RetainedRow) => restated.get(row.itemId)?.submission.acceptedSequence
+  const sends = rows
+    .flatMap((row) => {
+      const sequence = sentAt(row)
+      return sequence === undefined ? [] : [{ row, sequence }]
+    })
+    .sort((left, right) => left.sequence - right.sequence)
+  let next = 0
+  return rows.map((row) => (sentAt(row) === undefined ? row : (sends[next++]?.row ?? row)))
+}
+
+/** `reference` with the provider's own list of what it kept spliced in. */
+export function retainedWithProviderItems(
+  reference: readonly RetainedRow[],
+  items: readonly { identity: AgentJournalItemIdentity; body: AgentJournalItemBody }[],
+  restated: RewindRestatedSends,
+  observedAt: number
+): RetainedRow[] {
+  const providerItems = items.map(({ identity, body }) => ({
+    itemId: agentJournalItemKey(identity),
+    body,
+    observedAt
+  }))
+  return mergeRetainedHostLifecycleRows(reference, providerItems, restated)
 }
 
 /** The rebuilt epoch's item for one retained row, with the scope and producer it was written with. */
