@@ -73,8 +73,11 @@ async function listedSeedOptions(
   host: StructuredAgentSessionHost,
   seed: Readonly<Record<string, string>> | undefined
 ): Promise<Readonly<Record<string, string>> | undefined> {
+  if (args.agent !== 'claude' || !seed?.model || args.options?.model !== undefined) {
+    return seed
+  }
   const catalog = host.deps.modelCatalog
-  if (args.agent !== 'claude' || !seed?.model || args.options?.model !== undefined || !catalog) {
+  if (!catalog) {
     return seed
   }
   // The same folder the picker's catalog read names, so both pick the same default.
