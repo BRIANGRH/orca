@@ -6716,6 +6716,9 @@
           "turnedOffShort": "Turned off in Settings → Experimental",
           "serverFilesMissing": "This build of Orca can’t run WSL hosts (server files missing).",
           "serverFilesMissingShort": "This build can’t run WSL hosts"
+        },
+        "wslHostRemoval": {
+          "partial": "The host was removed, but something in the distro is still running: {{value0}}"
         }
       },
       "shared": {

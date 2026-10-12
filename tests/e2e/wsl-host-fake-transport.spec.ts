@@ -265,7 +265,9 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     await setWslHostsEnabled(page, true)
     await section.getByRole('button', { name: 'Remove' }).click()
     const confirm = page.getByRole('dialog', { name: `Remove ${WSL_HOST_LABEL}?` })
-    await expect(confirm).toContainText('stops Orca’s server in that distro')
+    await expect(confirm).toContainText(
+      'ends its open terminals and stops Orca’s server in that distro'
+    )
     await expect(confirm).toContainText('Files in the distro are untouched.')
     await settleAnimations(page)
     await page.screenshot({ path: testInfo.outputPath('wsl-host-remove-confirm.png') })

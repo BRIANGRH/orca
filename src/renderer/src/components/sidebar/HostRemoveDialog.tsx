@@ -172,7 +172,7 @@ export function HostRemoveDialog({
     target.kind === 'wsl'
       ? translate(
           'auto.components.sidebar.HostRemoveDialog.wslHost',
-          'Removes {{value0}} from Orca and stops Orca’s server in that distro. Files in the distro are untouched.',
+          'Removes {{value0}} from Orca, ends its open terminals and stops Orca’s server in that distro. Files in the distro are untouched.',
           { value0: label }
         )
       : target.kind === 'runtime'
