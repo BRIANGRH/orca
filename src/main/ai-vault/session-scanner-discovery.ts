@@ -12,6 +12,7 @@ import { recordSessionScanIssue } from './session-scan-issues'
 import type { FileWithMtime, SessionFileDiscovery } from './session-scanner-types'
 import { errorMessage } from './session-scanner-values'
 import { throwIfAiVaultScanCancelled } from './ai-vault-scan-cancellation'
+import { noteAiVaultScanProgress } from './ai-vault-scan-progress'
 
 const NATIVE_DISCOVERY_CONCURRENCY = 4
 const NATIVE_DISCOVERY_BATCH_SIZE = 16
@@ -50,6 +51,7 @@ export async function discoverFiles(args: {
   function consume(observations: readonly SessionFileObservation[]): void {
     // A stat the cancel cut short is not an unreadable file; never record it.
     throwIfAiVaultScanCancelled(args.signal)
+    noteAiVaultScanProgress(args.signal)
     for (const observation of observations) {
       if ('issue' in observation) {
         recordSessionScanIssue(args.issues, { agent: args.agent, ...observation.issue })
@@ -274,6 +276,7 @@ export async function forEachSessionFile(
     }
     return
   }
+  noteAiVaultScanProgress(options.signal)
 
   for (const entry of entries) {
     options.signal?.throwIfAborted()

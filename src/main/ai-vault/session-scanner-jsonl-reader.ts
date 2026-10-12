@@ -1,5 +1,6 @@
 import { openTranscriptReadStream } from '../native-chat/wsl-transcript-fs-access'
 import { throwIfAiVaultScanCancelled } from './ai-vault-scan-cancellation'
+import { noteAiVaultScanProgress } from './ai-vault-scan-progress'
 import {
   MAX_SESSION_TRANSCRIPT_RECORD_BYTES,
   type SkippedTranscriptRecord
@@ -57,6 +58,7 @@ export async function consumeCompleteJsonlLines(args: {
     // Per chunk, so a cancel stops a giant (or over-budget) record within one
     // chunk; leaving the loop destroys the stream and releases its handle.
     throwIfAiVaultScanCancelled(args.signal)
+    noteAiVaultScanProgress(args.signal)
     bytesRead += chunk.length
     const chunkEnd = chunkStart + chunk.length
     let lineStart = 0
