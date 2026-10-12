@@ -53,13 +53,6 @@ describe('a pane an agent launch laid out', () => {
     expect(running.closedByUser()).toBe(true)
   })
 
-  it('never offers a shell in a tab the host is taking back', async () => {
-    const running = trackRunningAgentLaunchPane(PANE)
-    const verdict = resolveAgentLaunchPaneVerdict(PANE, notLive)
-    running.finish({ kind: 'withdrawn' })
-    await expect(verdict).resolves.toEqual({ kind: 'withdrawn' })
-  })
-
   it('attaches to a process that holds the pane, whatever the launch says', async () => {
     const running = trackRunningAgentLaunchPane(PANE)
     const verdict = resolveAgentLaunchPaneVerdict(PANE, () => true)

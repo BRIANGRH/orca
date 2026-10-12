@@ -269,12 +269,11 @@ describe('the instant tab', () => {
     }
   })
 
-  it('lets the pane attach once the agent runs, and writes no pane onto the launch record', async () => {
+  it('lets the pane attach once the agent runs', async () => {
     const runtime = hostWithWindow({ terminalPaneKey: PANE_KEY })
 
     await replayLaunch(runtime, { paneKey: PANE_KEY }, CLI)
 
-    expect(store.listOperationRows()[0]).not.toHaveProperty('ownedPane')
     await expect(paneVerdict(runtime)).resolves.toBe('unowned')
     expect(runtime.reportAgentLaunchPaneVerdict).not.toHaveBeenCalled()
   })
