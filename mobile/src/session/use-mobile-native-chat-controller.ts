@@ -133,8 +133,7 @@ export function useMobileNativeChatController(args: {
     // terminal view would permanently decline the prefill.
     chatActive: showNativeChat,
     transcriptLoading: nativeChatSession.transcriptLoading,
-    transcriptSettled: nativeChatSession.status === 'ready',
-    queuedCards: structuredNativeChat.queued.cards
+    transcriptSettled: nativeChatSession.status === 'ready'
   })
 
   // Deliberately not gated on the chat view being visible: the streaming gate
@@ -231,8 +230,6 @@ export function useMobileNativeChatController(args: {
     sendStructured: structuredNativeChat.sendWithOutcome,
     captureSendOrigin,
     clearDraftForSend,
-    acceptSend,
-    holdUnconfirmedSend,
     restoreRejectedDraft,
     onSendError
   })
@@ -294,7 +291,9 @@ export function useMobileNativeChatController(args: {
     setChatComposerText,
     getChatComposerEditGeneration,
     chatPending,
-    chatImagePreviewsByMessageId,
+    chatImagePreviewsByMessageId: activeChatStructured
+      ? structuredNativeChat.imagePreviewsByMessageId
+      : chatImagePreviewsByMessageId,
     nativeChatSession,
     /** Structured lane: drives the per-turn status row and live tool progress. */
     nativeChatStructured: activeChatStructured,

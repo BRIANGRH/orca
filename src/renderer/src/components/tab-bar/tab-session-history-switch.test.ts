@@ -87,7 +87,9 @@ function makeState(
     activeRepoId: 'repo-1',
     activeWorktreeId: WORKTREE_ID,
     repos: [{ ...makeRepo(), ...repo }],
-    tabsByWorktree: { [WORKTREE_ID]: [makeTerminalTab('term-1', WORKTREE_ID, 'claude')] },
+    tabsByWorktree: {
+      [WORKTREE_ID]: [makeTerminalTab('term-1', WORKTREE_ID, 'claude')]
+    },
     worktreesByRepo: {
       'repo-1': [
         makeWorktree(WORKTREE_ID, 'wt', { path: '/repo/wt' }),
@@ -179,14 +181,26 @@ describe('resolveTabSessionHistorySubject', () => {
     ).toEqual({ ...chatSubject })
   })
 
-  it('skips chats whose agent has no history move', () => {
+  it('finds a chat of any agent whose CLI can open a copy', () => {
     expect(
       resolveTabSessionHistorySubject(makeState(), {
         tab: { id: 'unified-1', worktreeId: WORKTREE_ID, launchAgent: 'grok' },
         structuredSessionId: 'orca-chat-1'
       })
-    ).toBeNull()
+    ).toEqual({ ...chatSubject })
   })
+
+  it.each(['opencode', 'omp'] as const)(
+    'skips a %s chat, whose CLI cannot open a copy',
+    (launchAgent) => {
+      expect(
+        resolveTabSessionHistorySubject(makeState(), {
+          tab: { id: 'unified-1', worktreeId: WORKTREE_ID, launchAgent },
+          structuredSessionId: 'orca-chat-1'
+        })
+      ).toBeNull()
+    }
+  )
 
   it('finds a terminal tab by the conversation its agent reported', () => {
     expect(
@@ -265,21 +279,33 @@ describe('resolveTabSessionHistorySubject', () => {
   it('looks nothing up over SSH, where neither move is ever offered', () => {
     const state = makeState(liveClaudeEntry, { connectionId: 'dev-box' })
     expect(
-      resolveTabSessionHistorySubject(state, { tab: { id: 'term-1', worktreeId: WORKTREE_ID } })
+      resolveTabSessionHistorySubject(state, {
+        tab: { id: 'term-1', worktreeId: WORKTREE_ID }
+      })
     ).toBeNull()
     expect(
       resolveTabSessionHistorySubject(state, {
-        tab: { id: 'unified-1', worktreeId: WORKTREE_ID, launchAgent: 'claude' },
+        tab: {
+          id: 'unified-1',
+          worktreeId: WORKTREE_ID,
+          launchAgent: 'claude'
+        },
         structuredSessionId: 'orca-chat-1'
       })
     ).toBeNull()
   })
 
   it('looks a chat up on a remote Orca server, which owns its chats, but never a CLI there', () => {
-    const state = makeState(liveClaudeEntry, { executionHostId: 'runtime:server-1' })
+    const state = makeState(liveClaudeEntry, {
+      executionHostId: 'runtime:server-1'
+    })
     expect(
       resolveTabSessionHistorySubject(state, {
-        tab: { id: 'unified-1', worktreeId: WORKTREE_ID, launchAgent: 'claude' },
+        tab: {
+          id: 'unified-1',
+          worktreeId: WORKTREE_ID,
+          launchAgent: 'claude'
+        },
         structuredSessionId: 'orca-chat-1'
       })
     ).toMatchObject({
@@ -287,7 +313,9 @@ describe('resolveTabSessionHistorySubject', () => {
       request: { executionHostScope: 'runtime:server-1' }
     })
     expect(
-      resolveTabSessionHistorySubject(state, { tab: { id: 'term-1', worktreeId: WORKTREE_ID } })
+      resolveTabSessionHistorySubject(state, {
+        tab: { id: 'term-1', worktreeId: WORKTREE_ID }
+      })
     ).toBeNull()
   })
 
@@ -537,7 +565,10 @@ describe('lookupTabSessionHistoryRow', () => {
   it('forces no scan on a remote Orca server', async () => {
     const listSessions = vi.fn(async (_args: AiVaultListArgs) => listResult([]))
     await lookupTabSessionHistoryRow(
-      { ...chatSubject, request: { ...PANEL_REQUEST, executionHostScope: 'runtime:server-1' } },
+      {
+        ...chatSubject,
+        request: { ...PANEL_REQUEST, executionHostScope: 'runtime:server-1' }
+      },
       listSessions,
       lookupOptions
     )

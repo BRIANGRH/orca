@@ -36,12 +36,15 @@ import { ClaudeHookService } from '../claude/hook-service'
 import { CommandCodeHookService } from '../command-code/hook-service'
 import { CopilotHookService } from '../copilot/hook-service'
 import { DroidHookService } from '../droid/hook-service'
+import { DevinHookService } from '../devin/hook-service'
 import { DshHookService } from '../dsh/hook-service'
 import { GeminiHookService } from '../gemini/hook-service'
+import { GrokHookService } from '../grok/hook-service'
 import { KimiHookService } from '../kimi/hook-service'
 import { KiroHookService } from '../kiro/hook-service'
 import { MuseHookService } from '../muse/hook-service'
 import { getMuseManagedHooksPath } from '../muse/hook-settings'
+import { zcodeHookService } from '../zcode/hook-service'
 import { readHooksJson, WINDOWS_CMD_SAFE_PATH, wrapWindowsHookCommand } from './installer-utils'
 import { getConfigPath, getWindowsManagedLifecycleHook } from '../claude/hook-settings'
 import { findGitBash } from './windows-git-bash-path.test-fixture'
@@ -201,6 +204,11 @@ function readEvent(path: string, event: string): (string | undefined)[] {
   return commandsOf(JSON.parse(readFileSync(path, 'utf8')).hooks?.[event])
 }
 
+// The pre-forward-slash bare path: Git Bash strips its backslashes and exits 127.
+const legacyBackslashEntry = (home: string, script: string): Entry => ({
+  hooks: [{ command: join(home, '.orca', 'agent-hooks', script) }]
+})
+
 function writeHooks(
   path: string,
   hooks: Record<string, Entry[]>,
@@ -325,6 +333,50 @@ const PROVIDERS: Provider[] = [
       ),
     runners: COPILOT_RUNNERS,
     hookEventName: 'Stop'
+  },
+  {
+    // Grok spawns a one-token command directly, wraps a spaced one in PowerShell, or uses Git Bash.
+    name: 'Grok',
+    script: 'grok-hook.cmd',
+    stdout: '',
+    install: () => new GrokHookService().install(),
+    commands: (home) => readEvent(join(home, '.grok', 'hooks', 'orca-status.json'), 'Stop'),
+    seedStale: (home, stale) =>
+      writeHooks(join(home, '.grok', 'hooks', 'orca-status.json'), {
+        Stop: [{ hooks: [{ command: stale }] }, legacyBackslashEntry(home, 'grok-hook.cmd')]
+      }),
+    runners: [CMD_PLAIN, GIT_BASH, POWERSHELL_PLAIN]
+  },
+  {
+    name: 'Devin',
+    script: 'devin-hook.cmd',
+    stdout: '',
+    install: () => new DevinHookService().install(),
+    commands: (home) => readEvent(join(home, 'AppData', 'Roaming', 'devin', 'config.json'), 'Stop'),
+    seedStale: (home, stale) =>
+      writeHooks(join(home, 'AppData', 'Roaming', 'devin', 'config.json'), {
+        Stop: [{ hooks: [{ command: stale }] }, legacyBackslashEntry(home, 'devin-hook.cmd')]
+      }),
+    runners: [CMD_PLAIN, GIT_BASH, POWERSHELL_PLAIN]
+  },
+  {
+    // ZCode nests events one level deeper (`hooks.events`) and runs hooks through its own shell resolver.
+    name: 'ZCode',
+    script: 'zcode-hook.cmd',
+    stdout: '',
+    install: () => zcodeHookService.install(),
+    commands: (home) =>
+      commandsOf(
+        JSON.parse(readFileSync(join(home, '.zcode', 'cli', 'config.json'), 'utf8')).hooks?.events
+          ?.Stop
+      ),
+    seedStale: (home, stale) => {
+      const path = join(home, '.zcode', 'cli', 'config.json')
+      mkdirSync(dirname(path), { recursive: true })
+      const Stop = [{ hooks: [{ command: stale }] }, legacyBackslashEntry(home, 'zcode-hook.cmd')]
+      writeFileSync(path, JSON.stringify({ hooks: { enabled: true, events: { Stop } } }))
+    },
+    runners: [CMD_PLAIN, GIT_BASH, POWERSHELL_PLAIN]
   }
 ]
 
@@ -388,12 +440,14 @@ describe.skipIf(process.platform !== 'win32')('Windows managed hook payload deli
       for (const name of ['USERPROFILE', 'HOME']) {
         vi.stubEnv(name, home)
       }
+      vi.stubEnv('APPDATA', join(home, 'AppData', 'Roaming'))
       for (const name of [
         'XDG_CONFIG_HOME',
         'KIRO_HOME',
         'DSH_HOME',
         'KIMI_CODE_HOME',
-        'COPILOT_HOME'
+        'COPILOT_HOME',
+        'GROK_HOME'
       ]) {
         vi.stubEnv(name, undefined)
       }

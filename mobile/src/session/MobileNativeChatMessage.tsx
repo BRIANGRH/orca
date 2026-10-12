@@ -146,6 +146,7 @@ function MobileNativeChatMessageImpl({
   reasoningIsLive = false,
   reasoningExpanded,
   onToggleReasoning,
+  unsentNotice,
   subagentGroupsOpen,
   onToggleSubagentGroup
 }: {
@@ -175,6 +176,8 @@ function MobileNativeChatMessageImpl({
   /** The transcript-held disclosure of a reasoning row; one stable handler takes its key. */
   reasoningExpanded?: boolean
   onToggleReasoning?: (key: string) => void
+  /** Why the host did not deliver this message, when it is drawn as not sent. */
+  unsentNotice?: string
   /** The roster groups the reader opened, held by the transcript; only a roster row gets it. */
   subagentGroupsOpen?: ReadonlySet<string>
   onToggleSubagentGroup?: (groupId: string) => void
@@ -308,6 +311,7 @@ function MobileNativeChatMessageImpl({
             />
           ) : null}
         </Content>
+        {unsentNotice ? <NativeText style={styles.unsentNotice}>{unsentNotice}</NativeText> : null}
       </View>
       {actionsOpen ? (
         <MobileNativeChatMessageActionsSheet

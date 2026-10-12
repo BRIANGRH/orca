@@ -6,7 +6,7 @@ import { getDefaultSettings } from '../../../../shared/constants'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import { AGENT_SESSION_QUEUED_MESSAGES_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
 import { setLocalRuntimeCapabilitiesForTests } from '@/runtime/local-runtime-capabilities'
-import { NativeChatExperimentalSetting } from './NativeChatExperimentalSetting'
+import { ChatBehaviorSetting } from './ChatBehaviorSetting'
 
 afterEach(() => {
   cleanup()
@@ -19,7 +19,7 @@ const NAME_INPUT = '#settings-native-chat-shell-environment-name'
 
 function renderSetting(overrides: Partial<GlobalSettings>, updateSettings = vi.fn()) {
   return render(
-    <NativeChatExperimentalSetting
+    <ChatBehaviorSetting
       settings={{ ...getDefaultSettings('/tmp'), ...overrides }}
       updateSettings={updateSettings}
     />
@@ -44,31 +44,17 @@ function listedNames(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('li')).map((item) => item.title)
 }
 
-describe('NativeChatExperimentalSetting shell environment', () => {
-  it('shows structured controls when Chat UI is on', () => {
-    const enabled = renderSetting({ experimentalNativeChat: true })
-    expect(enabled.container.querySelector(SHELL_ENV_TOGGLE)).not.toBeNull()
-    expect(enabled.container.textContent).not.toContain('Default view')
-    enabled.unmount()
-
-    const disabled = renderSetting({ experimentalNativeChat: false })
-    expect(disabled.container.querySelector(SHELL_ENV_TOGGLE)).toBeNull()
-    disabled.unmount()
-  })
-
-  const structuredOn = {
-    experimentalNativeChat: true
-  }
-  const chooseNames = { ...structuredOn, nativeChatInheritShellEnvironment: false }
+describe('ChatBehaviorSetting shell environment', () => {
+  const chooseNames = { nativeChatInheritShellEnvironment: false }
 
   it('hides the variable list while the whole shell is inherited', () => {
-    const { container } = renderSetting(structuredOn)
+    const { container } = renderSetting({})
     expect(container.querySelector(NAME_INPUT)).toBeNull()
   })
 
   it('turns inheritance off from the toggle', () => {
     const updateSettings = vi.fn()
-    const { container } = renderSetting(structuredOn, updateSettings)
+    const { container } = renderSetting({}, updateSettings)
     fireEvent.click(container.querySelector(SHELL_ENV_TOGGLE)!)
     expect(updateSettings).toHaveBeenCalledWith({ nativeChatInheritShellEnvironment: false })
   })
@@ -79,7 +65,7 @@ describe('NativeChatExperimentalSetting shell environment', () => {
     expect(container.textContent).toContain('No variables added yet.')
 
     rerender(
-      <NativeChatExperimentalSetting
+      <ChatBehaviorSetting
         settings={{
           ...getDefaultSettings('/tmp'),
           ...chooseNames,
@@ -180,7 +166,7 @@ describe('NativeChatExperimentalSetting shell environment', () => {
     fireEvent.change(nameInput(container), { target: { value: 'HTTPS_PRO' } })
 
     rerender(
-      <NativeChatExperimentalSetting
+      <ChatBehaviorSetting
         settings={{
           ...getDefaultSettings('/tmp'),
           ...chooseNames,
@@ -194,16 +180,13 @@ describe('NativeChatExperimentalSetting shell environment', () => {
   })
 })
 
-describe('NativeChatExperimentalSetting queue follow-ups', () => {
+describe('ChatBehaviorSetting queue follow-ups', () => {
   const QUEUE_TOGGLE = '[aria-label="Toggle queue follow-ups"]'
-  const structuredOn = {
-    experimentalNativeChat: true
-  }
 
   it('shows the switch, with copy naming the image exception, when the host queues messages', () => {
     setLocalRuntimeCapabilitiesForTests([AGENT_SESSION_QUEUED_MESSAGES_RUNTIME_CAPABILITY])
     const updateSettings = vi.fn()
-    const { container } = renderSetting(structuredOn, updateSettings)
+    const { container } = renderSetting({}, updateSettings)
     expect(container.textContent).toContain('Messages with images send right away.')
     fireEvent.click(container.querySelector(QUEUE_TOGGLE)!)
     expect(updateSettings).toHaveBeenCalledWith({ nativeChatQueueFollowUps: false })
@@ -211,7 +194,7 @@ describe('NativeChatExperimentalSetting queue follow-ups', () => {
 
   it('hides the switch when the host does not queue messages, since it would do nothing', () => {
     setLocalRuntimeCapabilitiesForTests([])
-    const { container } = renderSetting(structuredOn)
+    const { container } = renderSetting({})
     expect(container.querySelector(QUEUE_TOGGLE)).toBeNull()
   })
 
@@ -221,27 +204,20 @@ describe('NativeChatExperimentalSetting queue follow-ups', () => {
     vi.stubGlobal('api', {
       runtime: { getStatus: () => new Promise((resolve) => (answer = resolve)) }
     })
-    const { container } = renderSetting(structuredOn)
+    const { container } = renderSetting({})
     expect(container.querySelector(QUEUE_TOGGLE)).toBeNull()
     await act(async () =>
       answer({ capabilities: [AGENT_SESSION_QUEUED_MESSAGES_RUNTIME_CAPABILITY] })
     )
     expect(container.querySelector(QUEUE_TOGGLE)).not.toBeNull()
   })
-
-  it('hides the switch with Chat UI off when no structured chats are held', () => {
-    setLocalRuntimeCapabilitiesForTests([AGENT_SESSION_QUEUED_MESSAGES_RUNTIME_CAPABILITY])
-    const { container } = renderSetting({ experimentalNativeChat: false })
-    expect(container.querySelector(QUEUE_TOGGLE)).toBeNull()
-  })
 })
 
-describe('NativeChatExperimentalSetting inline visuals', () => {
-  it('leaves Inline visuals on the Chat page even while structured chat is enabled', () => {
-    const { queryByRole, getByRole } = renderSetting({
-      experimentalNativeChat: true
-    })
-    expect(getByRole('switch', { name: 'Toggle automatic resume after a restart' })).toBeTruthy()
-    expect(queryByRole('switch', { name: 'Toggle inline visuals' })).toBeNull()
+describe('ChatBehaviorSetting resume after restart', () => {
+  it('turns automatic resume on from its switch', () => {
+    const updateSettings = vi.fn()
+    const { getByRole } = renderSetting({ nativeChatResumeWorkOnRestart: false }, updateSettings)
+    fireEvent.click(getByRole('switch', { name: 'Toggle automatic resume after a restart' }))
+    expect(updateSettings).toHaveBeenCalledWith({ nativeChatResumeWorkOnRestart: true })
   })
 })

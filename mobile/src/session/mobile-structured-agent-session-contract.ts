@@ -34,4 +34,6 @@ export type StructuredMobileSession = ReturnType<typeof useMobileStructuredAgent
     commandRefusalCauses: MobileNativeChatCommandRefusalCauses
     /** Running child work for the strip above the composer, as desktop shows it. */
     backgroundTasks: MobileStructuredBackgroundTasks
+    /** This phone's photos, by the row id their send is drawn under. */
+    imagePreviewsByMessageId: Record<string, string[]>
   }
