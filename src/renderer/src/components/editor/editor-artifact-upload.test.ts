@@ -4,8 +4,7 @@ import {
   createCurrentEditorArtifactRequest,
   createEditorArtifactRequest,
   editorArtifactContentType,
-  editorArtifactSourceKey,
-  fileArtifactSourceKey
+  editorArtifactSourceKey
 } from './editor-artifact-upload'
 
 const mocks = vi.hoisted(() => ({
@@ -103,36 +102,5 @@ describe('Editor artifact upload', () => {
     // Why: JSP highlights as HTML but is not a page a share link can render.
     expect(editorArtifactContentType('/repo/index.jsp', false)).toBeNull()
     expect(editorArtifactContentType('/repo/main.ts', false)).toBeNull()
-  })
-
-  it('gives a rendered preview the same key as the editor tab for the same file', () => {
-    const route = {
-      runtimeEnvironmentId: 'server-1',
-      executionHostId: 'runtime:server-1'
-    } as const
-    expect(
-      fileArtifactSourceKey(
-        { filePath: '/repo/report.html', runtimeEnvironmentId: 'server-1' },
-        route
-      )
-    ).toBe(
-      editorArtifactSourceKey(
-        openFile({
-          filePath: '/repo/report.html',
-          runtimeEnvironmentId: 'server-1',
-          operationProvenance: {
-            ownershipProjection: 'explicit',
-            generation: {
-              route,
-              runtimeConnectionGeneration: 1,
-              runtimePairingRevision: 1,
-              runtimeSshGeneration: null,
-              nestedSshGeneration: null,
-              directSshGeneration: null
-            }
-          }
-        })
-      )
-    )
   })
 })

@@ -14,7 +14,8 @@ import { attachDocPreviewWebview } from './doc-preview-webview-attach'
 import {
   buildDocPreviewGrantRequest,
   ensureDocPreviewGrant,
-  releaseDocPreviewGrant
+  releaseDocPreviewGrant,
+  type DocPreviewGrantHandle
 } from '@/lib/doc-preview-grants'
 import { selectWorktreeHostDisplayLabel } from '@/lib/execution-host-display-label'
 import { translate } from '@/i18n/i18n'
@@ -75,7 +76,8 @@ export function HtmlDocPreview({
   const [assetFailures, setAssetFailures] = useState<DocPreviewFileFailure[]>([])
   const [downloadBlocked, setDownloadBlocked] = useState(false)
   const [remintCount, setRemintCount] = useState(0)
-  const [grantId, setGrantId] = useState<string | null>(null)
+  const [grant, setGrant] = useState<DocPreviewGrantHandle | null>(null)
+  const grantId = grant?.grantId ?? null
   const {
     requests: accessRequests,
     busy: accessRequestBusy,
@@ -174,7 +176,7 @@ export function HtmlDocPreview({
     setAssetFailures([])
     resetDirectoryAccess()
     setDownloadBlocked(false)
-    setGrantId(null)
+    setGrant(null)
     resetHistory()
     const request = buildDocPreviewGrantRequest(useAppStore.getState(), worktreeId, filePath)
     if (!request) {
@@ -246,7 +248,7 @@ export function HtmlDocPreview({
         webviewRef.current = attached.webview
         // Why only now: main binds this grant to the guest on its first commit, so the tools have
         // nothing to name until the webview exists and is pointed at it.
-        setGrantId(handle.grantId)
+        setGrant(handle)
       })
       .catch(() => {
         if (!disposed) {
@@ -383,7 +385,7 @@ export function HtmlDocPreview({
         onToggleMarkup={() => (markup.isActive ? markup.cancel() : void markup.start())}
         // Nothing has painted yet on a loading or failed preview, so there is nothing to draw on.
         markupDisabled={isUnavailable || state !== 'ready' || grab.state !== 'idle'}
-        shareControl={buildDocPreviewShareControl(previewDocument)}
+        shareControl={buildDocPreviewShareControl(filePath, grant?.location ?? null)}
       />
       {notices.map((notice) => (
         <div

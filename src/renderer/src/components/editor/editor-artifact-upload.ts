@@ -1,50 +1,24 @@
 import type { ArtifactWriteRequest } from '../../../../shared/artifacts'
-import { sshArtifactSourceKey } from '../../../../shared/artifact-cli-bridge'
-import { parseExecutionHostId } from '../../../../shared/execution-host'
+import { fileArtifactSourceKey, type FileArtifactOwner } from '@/lib/file-artifact-source-key'
 import { basename } from '@/lib/path'
-import type { WorktreeOperationRoute } from '@/lib/worktree-operation-route'
 import { useAppStore } from '@/store'
 import type { OpenFile } from '@/store/slices/editor'
 import { flushPendingEditorChange } from './editor-pending-flush'
 
 export type ShareableFileContentType = ArtifactWriteRequest['contentType']
 
-type ArtifactSourceFile = Pick<
-  OpenFile,
-  'filePath' | 'externalSshTargetId' | 'runtimeEnvironmentId'
->
-
-/**
- * One published link per file per host, whichever surface shares it: the editor, a rendered
- * preview, or the CLI. SSH keys match the CLI's.
- */
-export function fileArtifactSourceKey(
-  file: ArtifactSourceFile,
-  route: Pick<WorktreeOperationRoute, 'executionHostId' | 'runtimeEnvironmentId'> | null | undefined
-): string {
-  const host = parseExecutionHostId(route?.executionHostId)
-  if (host?.kind === 'ssh') {
-    return sshArtifactSourceKey(host.targetId, file.filePath)
+/** The host the tab opened its file through; tabs opened before routes were recorded keep their environment. */
+function editorArtifactOwner(file: OpenFile): FileArtifactOwner {
+  const route = file.operationProvenance?.generation.route
+  return {
+    executionHostId: route?.executionHostId ?? null,
+    runtimeEnvironmentId: route ? route.runtimeEnvironmentId : (file.runtimeEnvironmentId ?? null),
+    externalSshTargetId: file.externalSshTargetId
   }
-  if (file.externalSshTargetId) {
-    return sshArtifactSourceKey(file.externalSshTargetId, file.filePath)
-  }
-  if (route && (route.runtimeEnvironmentId || route.executionHostId !== 'local')) {
-    return JSON.stringify([
-      'editor',
-      route.runtimeEnvironmentId ?? null,
-      route.executionHostId,
-      file.filePath
-    ])
-  }
-  if (file.runtimeEnvironmentId) {
-    return JSON.stringify(['editor', file.runtimeEnvironmentId ?? null, 'remote', file.filePath])
-  }
-  return file.filePath
 }
 
 export function editorArtifactSourceKey(file: OpenFile): string {
-  return fileArtifactSourceKey(file, file.operationProvenance?.generation.route)
+  return fileArtifactSourceKey(editorArtifactOwner(file), file.filePath)
 }
 
 /** What an editor file shares as, or null when it isn't a shareable document. */
