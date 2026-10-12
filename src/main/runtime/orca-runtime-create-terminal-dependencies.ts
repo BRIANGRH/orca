@@ -42,22 +42,6 @@ export const BACKGROUND_TERMINAL_SPAWN_FLAGS = {
   persistHostSessionBinding: true
 } as const
 
-/** Whether the window spawns this create's pane, by its own shell rule, rather than this host. */
-export function windowSpawnsTerminal(
-  opts: Pick<
-    TerminalCreateOptions,
-    'agentSessionClaim' | 'requireFreshPane' | 'presentation' | 'focus' | 'rendererBacked'
-  >,
-  windowAvailable: boolean
-): boolean {
-  return (
-    windowAvailable &&
-    !opts.agentSessionClaim &&
-    !opts.requireFreshPane &&
-    (opts.presentation === 'focused' || opts.focus === true || opts.rendererBacked === true)
-  )
-}
-
 /** The PTY's shell inputs: a requested shell, and an agent launch's runtime fact. */
 export const spawnShellInputs = ({
   shellOverride,

@@ -22,11 +22,14 @@ export class OrcaRuntimeWithCreateTerminal extends OrcaRuntimeWithTerminalCreate
       dependencies.setPairedViewerColors(callerColors)
     }
     const presentation = dependencies.resolveTerminalPresentation(opts)
+    const requiresRendererFocus = opts.presentation === 'focused' || opts.focus === true
     const availableAuthoritativeWindow = this.getAvailableAuthoritativeWindow()
     const rendererWindow = opts.rendererBacked === true ? availableAuthoritativeWindow : null
     const shouldCreateInBackground =
       worktreeSelector !== undefined &&
-      !dependencies.windowSpawnsTerminal(opts, availableAuthoritativeWindow !== null)
+      (Boolean(opts.agentSessionClaim || opts.requireFreshPane) ||
+        (!requiresRendererFocus && opts.rendererBacked !== true) ||
+        availableAuthoritativeWindow === null)
     if (shouldCreateInBackground) {
       if (!this.ptyController?.spawn) {
         throw new Error('runtime_unavailable')

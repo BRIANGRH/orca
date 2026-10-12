@@ -127,19 +127,3 @@ it("keeps a folder's WSL Terminal shell where its repo's project is set to Windo
     'posix'
   ])
 })
-
-// TEMPORARY until STA-10231: a pane the window spawns keeps main's Terminal-shell answer.
-it('writes the command for the Terminal shell when the window spawns the pane', () => {
-  const s = store({ global: { kind: 'windows-host' }, shell: 'wsl.exe' })
-  const quoting = (windowSpawnsPane: boolean) =>
-    agentLaunchQuotingShell(
-      resolveAgentLaunchRuntime(
-        s,
-        scope(WIN, { repo: repo(WIN) }),
-        undefined,
-        'codex',
-        windowSpawnsPane
-      )
-    )
-  expect([quoting(true), quoting(false)]).toEqual(['posix', 'powershell'])
-})

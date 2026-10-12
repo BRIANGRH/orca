@@ -21,9 +21,7 @@ export class OrcaRuntimeWithResolveMobileSessionTerminalCommand extends OrcaRunt
       agentPrompt?: string
       launchConfig?: SleepingAgentLaunchConfig
       launchAgent?: TuiAgent
-    },
-    /** The window spawns the tab by its own shell rule. */
-    windowSpawnsPane = false
+    }
   ): Promise<{
     command?: string
     env?: Record<string, string>
@@ -51,7 +49,7 @@ export class OrcaRuntimeWithResolveMobileSessionTerminalCommand extends OrcaRunt
     if (!isTuiAgentEnabled(opts.agent, settings.disabledTuiAgents)) {
       throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
     }
-    const launchRuntime = this.resolveAgentLaunchRuntime(workspace, opts.agent, windowSpawnsPane)
+    const launchRuntime = this.resolveAgentLaunchRuntime(workspace, opts.agent)
     const startupPlan = buildAgentStartupPlan({
       ...resolveAgentStartupPlanInputs({
         agent: opts.agent,

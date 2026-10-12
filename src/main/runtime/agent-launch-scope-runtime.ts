@@ -47,9 +47,7 @@ export function agentLaunchPlatformForScope(
 export function agentLaunchProjectRuntime(
   store: LaunchScopeRuntimeStore,
   scope: TerminalWorkspaceLaunchScope,
-  agent: TuiAgent | undefined,
-  /** The window spawns the pane, by the Terminal shell, so the command must be written for it. */
-  windowSpawnsPane = false
+  agent: TuiAgent | undefined
 ): ProjectExecutionRuntimeResolution | undefined {
   const runtime = resolveLocalLaunchScopeRuntime(store, scope)
   const onWindowsHost = runtime?.status === 'resolved' && runtime.runtime.kind === 'windows-host'
@@ -59,9 +57,8 @@ export function agentLaunchProjectRuntime(
     // PERMANENT fix, not parity: a `\\wsl$` cwd runs in WSL whatever the setting says. Keep it
     // when the temporary terms go; the window adopts it in C2.
     (onWindowsHost && isWslUncPath(scope.path)) ||
-    // TEMPORARY (STA-10231): an explicit Windows host can't be told from the shipped default, so
-    // folders and panes the window spawns keep main's Terminal-shell answer (often WSL).
-    (onWindowsHost && (mainHadNone || windowSpawnsPane)) ||
+    // TEMPORARY (STA-10231): an explicit Windows host can't be told from the shipped default.
+    (onWindowsHost && mainHadNone) ||
     // TEMPORARY (STA-10251): OpenCode models can't yet be verified inside WSL.
     (agent === 'opencode' && mainHadNone)
   return pathDecides ? undefined : runtime
@@ -73,8 +70,7 @@ export function resolveAgentLaunchRuntime(
   store: AgentLaunchRuntimeStore,
   scope: TerminalWorkspaceLaunchScope,
   requestedShellOverride: string | undefined,
-  agent: TuiAgent | undefined,
-  windowSpawnsPane = false
+  agent: TuiAgent | undefined
 ): AgentLaunchRuntime {
   if (scope.connectionId) {
     return {
@@ -82,7 +78,7 @@ export function resolveAgentLaunchRuntime(
       pty: { shellOverride: undefined, terminalWindowsWslDistro: null }
     }
   }
-  const projectRuntime = agentLaunchProjectRuntime(store, scope, agent, windowSpawnsPane)
+  const projectRuntime = agentLaunchProjectRuntime(store, scope, agent)
   return {
     platform: executionRuntimePlatform(projectRuntime, scope.path, process.platform),
     pty: resolveLocalPtyOptions(store.getSettings(), projectRuntime, requestedShellOverride)

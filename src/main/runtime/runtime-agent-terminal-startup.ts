@@ -40,8 +40,6 @@ type AgentTerminalPlanHost = {
   toSessionOptions: (
     preferences: AgentLaunchPreferences | undefined
   ) => Record<string, SessionOptionValue> | undefined
-  /** The window spawns this pane by its own shell rule (`windowSpawnsTerminal`). */
-  windowSpawnsPane?: boolean
 }
 
 /**
@@ -83,12 +81,7 @@ export async function resolveAgentTerminalCreateOptions(
     projectRuntime:
       opts.shellOverride && store
         ? plannedAgent || opts.launchRuntime
-          ? agentLaunchProjectRuntime(
-              store,
-              workspace,
-              plannedAgent ?? opts.launchAgent,
-              host.windowSpawnsPane
-            )
+          ? agentLaunchProjectRuntime(store, workspace, plannedAgent ?? opts.launchAgent)
           : resolveLocalProjectRuntimeForWorktreeId(store, workspace.id)
         : undefined,
     cwd: resolveTerminalStartupCwd(workspace.path, opts.cwd) ?? workspace.path,
@@ -116,13 +109,7 @@ export async function resolveAgentTerminalCreateOptions(
   const runtime =
     opts.launchRuntime ??
     (plannedAgent
-      ? resolveAgentLaunchRuntime(
-          store,
-          workspace,
-          opts.shellOverride,
-          plannedAgent,
-          host.windowSpawnsPane
-        )
+      ? resolveAgentLaunchRuntime(store, workspace, opts.shellOverride, plannedAgent)
       : undefined)
   const launch =
     plannedAgent && runtime

@@ -276,10 +276,9 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
 
   protected resolveAgentLaunchRuntime(
     scope: TerminalWorkspaceLaunchScope,
-    agent: TuiAgent | undefined,
-    windowSpawnsPane = false
+    agent: TuiAgent | undefined
   ): AgentLaunchRuntime {
-    return resolveAgentLaunchRuntime(this.requireStore(), scope, undefined, agent, windowSpawnsPane)
+    return resolveAgentLaunchRuntime(this.requireStore(), scope, undefined, agent)
   }
 
   /** A startup's fact: the workspace it starts in, else the new worktree a create is making. */
