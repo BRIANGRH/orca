@@ -6,10 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as loginShell from '../startup/login-shell-environment'
 import type * as runProcessModule from '@orca/process-host'
 import { __resetPersistedWindowsPathCacheForTests } from '../pty/windows-environment-path'
+import { resolveAgainAfterRefreshOnMissingProgram } from '../native-chat/structured-agent-command-resolution'
 import { __setWindowsPathRegistryLoaderForTests } from '../pty/windows-path-registry-reader'
 import {
   createStructuredAgentEnvironmentResolvers,
-  resetHostShellEnvironmentForTests,
   structuredAgentBaseEnvironment
 } from './structured-agent-shell-environment'
 
@@ -31,17 +31,7 @@ vi.mock('@orca/process-host', async (importOriginal) => {
 
 const INHERIT_ALL = { inheritAll: true, names: [] }
 
-afterEach(resetHostShellEnvironmentForTests)
-
-/** The value if the promise settles without any timer firing; undefined if it is still waiting. */
-async function settledWithoutWaiting<T>(promise: Promise<T>): Promise<T | undefined> {
-  let value: T | undefined
-  void promise.then((resolved) => {
-    value = resolved
-  })
-  await vi.advanceTimersByTimeAsync(0)
-  return value
-}
+afterEach(loginShell.resetLoginShellEnvironmentCacheForTests)
 
 function pathSegments(env: Record<string, string>): string[] {
   const key = Object.keys(env).find((name) => name.toLowerCase() === 'path')
@@ -200,7 +190,8 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
           expect.arrayContaining(['C:\\Windows', 'C:\\Users\\me\\bin'])
         )
         expect(pathSegments(first)).not.toContain('C:\\NewTool')
-        vi.advanceTimersByTime(10_000)
+        // Past the saved PATH cache's own 30 s.
+        vi.advanceTimersByTime(30_000)
         await resolvers.resolveBaseEnvironment()
         // A machine-wide install reaches new chats, and the profile's variables stay.
         await vi.waitFor(async () => {
@@ -238,7 +229,7 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
         expect(spawnProcessMock).toHaveBeenCalledTimes(failedRuns + 1)
         // Once loaded, a refresh rereads only the saved PATH.
         const registryReads = runProcessMock.mock.calls.length
-        vi.advanceTimersByTime(10_000)
+        vi.advanceTimersByTime(30_000)
         await resolvers.resolveBaseEnvironment()
         await vi.waitFor(() => {
           expect(runProcessMock.mock.calls.length).toBeGreaterThan(registryReads)
@@ -250,30 +241,37 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
     )
   })
 
-  it('reruns a failed PowerShell profile at most once per TTL, however often a launch misses', async () => {
+  it('retries a failed PowerShell profile 10 s after the last attempt, however often launches miss', async () => {
     let machinePath = 'C:\\Windows'
+    let profileFails = true
     await withSimulatedWindowsServer(
       (key) => (key.startsWith('HKLM') ? machinePath : null),
       async () => {
         spawnProcessMock.mockImplementation((spec: { env: NodeJS.ProcessEnv }) =>
-          fakePowerShell(spec, true)
+          fakePowerShell(spec, profileFails)
         )
         const resolvers = createStructuredAgentEnvironmentResolvers({
           resolveShellEnvironmentPolicy: () => INHERIT_ALL
         })
         await resolvers.resolveBaseEnvironment()
-        const profileRuns = spawnProcessMock.mock.calls.length
-        expect(profileRuns).toBeGreaterThan(0)
+        const failedRuns = spawnProcessMock.mock.calls.length
+        expect(failedRuns).toBeGreaterThan(0)
         machinePath = 'C:\\Windows;C:\\NewTool'
-        for (let miss = 0; miss < 3; miss += 1) {
-          await resolvers.refreshAfterMissingProgram()
-        }
-        // The saved PATH still reaches a miss, which is where a Windows install lands.
-        expect(pathSegments(await resolvers.resolveBaseEnvironment())).toContain('C:\\NewTool')
-        expect(spawnProcessMock).toHaveBeenCalledTimes(profileRuns)
-        vi.advanceTimersByTime(10_000)
-        await resolvers.refreshAfterMissingProgram()
-        expect(spawnProcessMock).toHaveBeenCalledTimes(2 * profileRuns)
+        profileFails = false
+        // A launch misses every 9 s; each miss rereads the saved PATH, and the next start reads.
+        vi.advanceTimersByTime(9_000)
+        await resolvers.refreshAfterMissingProgram(Date.now())
+        const afterMiss = await resolvers.resolveBaseEnvironment()
+        expect(pathSegments(afterMiss)).toContain('C:\\NewTool')
+        expect(spawnProcessMock).toHaveBeenCalledTimes(failedRuns)
+        vi.advanceTimersByTime(9_000)
+        await resolvers.refreshAfterMissingProgram(Date.now())
+        await resolvers.resolveBaseEnvironment()
+        // 18 s after the failed attempt, however recent the saved PATH reread.
+        await vi.waitFor(async () => {
+          expect((await resolvers.resolveBaseEnvironment()).PROFILE_ONLY).toBe('1')
+        })
+        expect(spawnProcessMock).toHaveBeenCalledTimes(failedRuns + 1)
       }
     )
   })
@@ -388,154 +386,62 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
     }
   )
 
-  it('starts the first capture when created, before any chat asks for it', () => {
-    const capture = vi.fn(async () => ({ PATH: '/shell/A' }))
-    createStructuredAgentEnvironmentResolvers({ resolveEnvironment: capture })
-    expect(capture).toHaveBeenCalledOnce()
-  })
-
-  // Windows reloads only the saved PATH, covered by the simulated-Windows case above.
   it.skipIf(process.platform === 'win32')(
-    'serves the last snapshot to every start after the first and refreshes it past the TTL',
+    'retries a launch on a shell run started after it looked, not on one that predates an install',
     async () => {
-      const capture = vi
-        .spyOn(loginShell, 'captureLoginShellEnvironment')
-        .mockResolvedValueOnce({ status: 'captured', env: { PATH: '/shell/A' } })
-        .mockResolvedValueOnce({ status: 'captured', env: { PATH: '/shell/B' } })
+      const dir = await mkdtemp(join(tmpdir(), 'orca-structured-shell-install-'))
+      const [counter, pathFile, hold, shell] = ['count', 'path', 'hold', 'shell.sh'].map((name) =>
+        join(dir, name)
+      )
+      // Run 2 reads PATH, then waits while `hold` exists: a background rerun still going.
+      await writeFile(
+        shell,
+        [
+          '#!/bin/sh',
+          `echo run >> '${counter}'; n=$(wc -l < '${counter}'); p=$(cat '${pathFile}')`,
+          `if [ $n -eq 2 ]; then while [ -f '${hold}' ]; do sleep 0.02; done; fi`,
+          'printf \'\\000__ORCA_LOGIN_SHELL_ENV_START__\\000PATH=%s\\000\\000__ORCA_LOGIN_SHELL_ENV_END__\\000\' "$p"',
+          ''
+        ].join('\n')
+      )
+      await chmod(shell, 0o755)
+      await writeFile(pathFile, '/old')
+      const originalShell = process.env.SHELL
+      process.env.SHELL = shell
       vi.useFakeTimers({ toFake: ['Date'] })
       try {
-        const resolvers = createStructuredAgentEnvironmentResolvers({})
-        expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/shell/A')
-        expect((await resolvers.resolveAgentEnvironment('claude')).PATH).toBe('/shell/A')
-        expect(capture).toHaveBeenCalledOnce()
-        // The first capture may share a startup reader's run; refreshes must run the shell again.
-        expect(capture).toHaveBeenCalledWith(expect.objectContaining({ force: false }))
+        const resolvers = createStructuredAgentEnvironmentResolvers({
+          resolveShellEnvironmentPolicy: () => INHERIT_ALL
+        })
+        expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/old')
+        await writeFile(hold, '')
         vi.advanceTimersByTime(10_000)
-        // The stale start still gets the old snapshot; the install shows up on the next one.
-        expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/shell/A')
-        expect(capture).toHaveBeenCalledTimes(2)
-        expect(capture).toHaveBeenLastCalledWith(expect.objectContaining({ force: true }))
-        await new Promise((resolve) => setImmediate(resolve))
-        expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/shell/B')
+        await resolvers.resolveBaseEnvironment()
+        await vi.waitFor(async () =>
+          expect((await readFile(counter, 'utf8')).trim().split('\n')).toHaveLength(2)
+        )
+        await writeFile(pathFile, '/installed')
+        vi.advanceTimersByTime(1)
+        const launch = resolveAgainAfterRefreshOnMissingProgram(async () => {
+          const { PATH } = await resolvers.resolveBaseEnvironment()
+          return { command: PATH === '/installed' ? '/installed/agent' : 'agent' }
+        }, resolvers.refreshAfterMissingProgram)
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        await rm(hold, { force: true })
+        expect((await launch).command).toBe('/installed/agent')
       } finally {
         vi.useRealTimers()
-        capture.mockRestore()
+        if (originalShell === undefined) {
+          delete process.env.SHELL
+        } else {
+          process.env.SHELL = originalShell
+        }
+        await rm(dir, { recursive: true, force: true })
       }
     }
   )
 
-  it('makes only the first start wait on a slow profile', async () => {
-    vi.useFakeTimers()
-    try {
-      let captures = 0
-      const capture = vi.fn(
-        () =>
-          new Promise<NodeJS.ProcessEnv>((resolve) => {
-            captures += 1
-            const path = `/capture-${captures}`
-            setTimeout(() => resolve({ PATH: path }), 2000)
-          })
-      )
-      const resolvers = createStructuredAgentEnvironmentResolvers({ resolveEnvironment: capture })
-      const first = resolvers.resolveBaseEnvironment()
-      expect(await settledWithoutWaiting(first)).toBeUndefined()
-      await vi.advanceTimersByTimeAsync(2000)
-      expect((await first).PATH).toBe('/capture-1')
-      for (const expected of ['/capture-1', '/capture-2', '/capture-3']) {
-        // Each start is past the TTL, so it starts a 2 s refresh but must not wait for it.
-        await vi.advanceTimersByTimeAsync(12_000)
-        expect((await settledWithoutWaiting(resolvers.resolveBaseEnvironment()))?.PATH).toBe(
-          expected
-        )
-      }
-      expect(capture).toHaveBeenCalledTimes(4)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('does not hold later starts behind a hung profile', async () => {
-    vi.useFakeTimers()
-    try {
-      // The first capture ends at the login-shell timeout with Orca's own env; later ones hang.
-      const capture = vi
-        .fn<() => Promise<NodeJS.ProcessEnv>>(() => new Promise(() => {}))
-        .mockImplementationOnce(
-          () => new Promise((resolve) => setTimeout(() => resolve({ PATH: '/fallback' }), 5000))
-        )
-      const resolvers = createStructuredAgentEnvironmentResolvers({ resolveEnvironment: capture })
-      const first = resolvers.resolveBaseEnvironment()
-      await vi.advanceTimersByTimeAsync(5000)
-      expect((await first).PATH).toBe('/fallback')
-      for (let start = 0; start < 3; start += 1) {
-        await vi.advanceTimersByTimeAsync(10_000)
-        expect((await settledWithoutWaiting(resolvers.resolveBaseEnvironment()))?.PATH).toBe(
-          '/fallback'
-        )
-      }
-      // The hung refresh is shared, not restarted per start.
-      expect(capture).toHaveBeenCalledTimes(2)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('lets a launch that found no program wait for one shared refresh, at most one shell timeout', async () => {
-    vi.useFakeTimers()
-    try {
-      const capture = vi
-        .fn<() => Promise<NodeJS.ProcessEnv>>(() => new Promise(() => {}))
-        .mockResolvedValueOnce({ PATH: '/before-install' })
-        .mockImplementationOnce(
-          () => new Promise((resolve) => setTimeout(() => resolve({ PATH: '/installed' }), 1000))
-        )
-      const resolvers = createStructuredAgentEnvironmentResolvers({ resolveEnvironment: capture })
-      expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/before-install')
-      // Inside the TTL only a miss refreshes, and two misses share one run.
-      const misses = Promise.all([
-        resolvers.refreshAfterMissingProgram(),
-        resolvers.refreshAfterMissingProgram()
-      ])
-      await vi.advanceTimersByTimeAsync(1000)
-      await misses
-      expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/installed')
-      expect(capture).toHaveBeenCalledTimes(2)
-      // A hung profile holds a miss for one shell timeout, and the snapshot stays.
-      let released = false
-      void resolvers.refreshAfterMissingProgram().then(() => {
-        released = true
-      })
-      await vi.advanceTimersByTimeAsync(4999)
-      expect(released).toBe(false)
-      await vi.advanceTimersByTimeAsync(1)
-      expect(released).toBe(true)
-      expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/installed')
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('shares concurrent first captures and retries after a failed first capture', async () => {
-    let release: (env: NodeJS.ProcessEnv) => void = () => {}
-    const capture = vi.fn<() => Promise<NodeJS.ProcessEnv>>()
-    capture.mockRejectedValueOnce(new Error('shell failed'))
-    const resolvers = createStructuredAgentEnvironmentResolvers({ resolveEnvironment: capture })
-    await expect(resolvers.resolveBaseEnvironment()).rejects.toThrow('shell failed')
-    capture.mockImplementationOnce(
-      () =>
-        new Promise<NodeJS.ProcessEnv>((resolve) => {
-          release = resolve
-        })
-    )
-    const first = resolvers.resolveBaseEnvironment()
-    const second = resolvers.resolveAgentEnvironment('claude')
-    release({ PATH: '/repaired' })
-    expect((await first).PATH).toBe('/repaired')
-    expect((await second).PATH).toBe('/repaired')
-    expect(capture).toHaveBeenCalledTimes(2)
-  })
-
-  it('rereads settings on every acquisition while the shell snapshot is cached', async () => {
+  it('rereads settings on every acquisition', async () => {
     let overlay = 'A'
     const resolveEnvironment = vi.fn(async () => ({ PATH: '/shell/A' }))
     const resolvers = createStructuredAgentEnvironmentResolvers({
@@ -552,7 +458,6 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
       PATH: '/shell/A',
       CURRENT_SETTING: 'B'
     })
-    expect(resolveEnvironment).toHaveBeenCalledOnce()
   })
 
   it("gives every agent the same base, with each agent's own overlay on it", async () => {

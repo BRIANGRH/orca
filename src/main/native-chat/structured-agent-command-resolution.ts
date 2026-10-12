@@ -64,15 +64,16 @@ export function resolveStructuredAgentCommand(
 }
 
 /** Resolves a launch's program from the shell snapshot. When none is found there (a bare name back,
- *  or a Command setting naming no program), waits for one refresh and resolves once more, so an
- *  agent installed since the last read starts. A found program never waits. */
+ *  or a Command setting naming no program), waits for a reread that started after this lookup did
+ *  and resolves once more, so an agent installed before it starts. A found program never waits. */
 export async function resolveAgainAfterRefreshOnMissingProgram<T extends { command: string }>(
   resolve: () => Promise<T>,
-  refreshAfterMiss: (() => Promise<void>) | undefined
+  refreshAfterMiss: ((askedAt: number) => Promise<void>) | undefined
 ): Promise<T> {
   if (!refreshAfterMiss) {
     return resolve()
   }
+  const askedAt = Date.now()
   try {
     const resolved = await resolve()
     if (isAbsolute(resolved.command)) {
@@ -83,6 +84,6 @@ export async function resolveAgainAfterRefreshOnMissingProgram<T extends { comma
       throw error
     }
   }
-  await refreshAfterMiss()
+  await refreshAfterMiss(askedAt)
   return resolve()
 }

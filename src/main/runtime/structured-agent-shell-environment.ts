@@ -1,9 +1,11 @@
 import {
   captureLoginShellEnvironment,
-  LOGIN_SHELL_SPAWN_TIMEOUT_MS,
-  type LoginShellEnvironmentCapture
+  LOGIN_SHELL_SPAWN_TIMEOUT_MS
 } from '../startup/login-shell-environment'
-import { mergePersistedWindowsPathAsync } from '../pty/windows-environment-path'
+import {
+  mergePersistedWindowsPathAsync,
+  readPersistedWindowsPathSegmentsAsync
+} from '../pty/windows-environment-path'
 import type { GlobalSettings } from '../../shared/global-settings-types'
 import {
   nativeChatShellEnvironmentPolicy,
@@ -94,6 +96,40 @@ async function withinShellTimeout(pending: Promise<unknown>): Promise<void> {
   clearTimeout(timer)
 }
 
+// Why: long enough that a burst of starts shares one capture, short enough that a CLI
+// installed on the host reaches new chats without a restart.
+const SHELL_ENVIRONMENT_TTL_MS = 10_000
+
+/**
+ * This host's shell env, from the shared login-shell cache: the last result at once, rerun in the
+ * background past the TTL. Windows keeps a loaded PowerShell profile for good (only a failed load
+ * is retried) and lays the saved PATH, where installers add themselves, over it on every read.
+ */
+async function hostShellEnvironment(): Promise<NodeJS.ProcessEnv> {
+  const windows = process.platform === 'win32'
+  const { env } = await captureLoginShellEnvironment({
+    refreshAfterMs: SHELL_ENVIRONMENT_TTL_MS,
+    keepCaptured: windows
+  })
+  if (!windows) {
+    return env
+  }
+  const withSavedPath = { ...env }
+  await mergePersistedWindowsPathAsync(withSavedPath)
+  return withSavedPath
+}
+
+/** For a lookup that started at `askedAt` and found no program: waits, at most one shell's
+ *  timeout, for a shell run that started no earlier (on Windows, a saved PATH reread), so an
+ *  agent installed before the lookup counts. */
+export function refreshHostAgentBaseEnvironmentAfterMiss(askedAt: number): Promise<void> {
+  return withinShellTimeout(
+    process.platform === 'win32'
+      ? readPersistedWindowsPathSegmentsAsync({ forceRefresh: true })
+      : captureLoginShellEnvironment({ startedAfter: askedAt })
+  )
+}
+
 /** The base env every local agent launch on this host starts from, read from current settings. */
 export async function resolveHostAgentBaseEnvironment(
   settings: Pick<
@@ -102,125 +138,21 @@ export async function resolveHostAgentBaseEnvironment(
   >
 ): Promise<Record<string, string>> {
   return structuredAgentBaseEnvironment({
-    shellEnv: await hostShellEnvironment().resolve(),
+    shellEnv: await hostShellEnvironment(),
     policy: nativeChatShellEnvironmentPolicy(settings)
   })
 }
 
-/** For a check that found no runnable agent: joins or starts the refresh launches share. */
-export function refreshHostAgentBaseEnvironmentAfterMiss(): Promise<void> {
-  return hostShellEnvironment().refreshAfterMissingProgram()
-}
-
 export type StructuredAgentEnvironmentSources = {
+  /** Replaces the host's shell env, read on every acquisition; such a runtime never rereads. */
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
   resolveShellEnvironmentPolicy?: () => NativeChatShellEnvironmentPolicy
   /** The user's per-agent environment overlay from settings. */
   resolveAgentLaunchEnv?: (agent: string) => Record<string, string>
 }
 
-type ShellSnapshot = {
-  env: NodeJS.ProcessEnv
-  capturedAt: number
-  /** The profile-loading shell produced it, rather than Orca falling back to its own env. */
-  profileLoaded: boolean
-}
-
-// Why: long enough that a burst of starts shares one capture, short enough that a CLI
-// installed on the host reaches new chats without a restart.
-const SHELL_ENVIRONMENT_TTL_MS = 10_000
-
-function isStale(snapshot: ShellSnapshot): boolean {
-  return Date.now() - snapshot.capturedAt >= SHELL_ENVIRONMENT_TTL_MS
-}
-
-/**
- * One capture of the host shell environment. Windows loads the PowerShell profile until a load
- * succeeds, at most once per TTL; otherwise a refresh only rereads the saved PATH.
- */
-async function captureHostShellEnvironment(
-  previous: ShellSnapshot | null
-): Promise<LoginShellEnvironmentCapture> {
-  if (process.platform !== 'win32') {
-    // Why: the first capture shares a run a startup reader already began; later ones need a fresh run.
-    return captureLoginShellEnvironment({ force: previous !== null })
-  }
-  const loaded = previous?.profileLoaded ? previous.env : null
-  const env = { ...(loaded ?? process.env) }
-  await mergePersistedWindowsPathAsync(env, { forceRefresh: true })
-  if (loaded) {
-    return { status: 'captured', env }
-  }
-  return previous && !isStale(previous)
-    ? { status: 'fallback', env }
-    : captureLoginShellEnvironment({ force: true, env })
-}
-
-type ShellEnvironment = {
-  resolve: () => Promise<NodeJS.ProcessEnv>
-  /** For a launch that found no program in the snapshot: joins or starts one refresh, waiting at
-   *  most one shell's timeout. */
-  refreshAfterMissingProgram: () => Promise<void>
-}
-
-/**
- * Stale-while-refresh: the first capture starts at creation; later acquisitions get the last
- * snapshot at once and, once it is older than the TTL, refresh it in the background. One refresh
- * runs at a time, so captures never land out of order. A capture that fell back to Orca's own env
- * never replaces a loaded profile.
- */
-function createShellEnvironment(
-  capture: (previous: ShellSnapshot | null) => Promise<LoginShellEnvironmentCapture>
-): ShellEnvironment {
-  let snapshot: ShellSnapshot | null = null
-  let pendingEnvironment: Promise<NodeJS.ProcessEnv> | null = null
-  const refresh = (): Promise<NodeJS.ProcessEnv> => {
-    pendingEnvironment ??= capture(snapshot)
-      .then((result) => {
-        const capturedAt = Date.now()
-        const profileLoaded = result.status === 'captured'
-        // Over another fallback a fallback still carries a newer saved Windows PATH.
-        snapshot =
-          profileLoaded || !snapshot?.profileLoaded
-            ? { env: result.env, capturedAt, profileLoaded }
-            : { ...snapshot, capturedAt }
-        return snapshot.env
-      })
-      .finally(() => {
-        pendingEnvironment = null
-      })
-    return pendingEnvironment
-  }
-  // Why: start as soon as it exists so the first chat rarely waits for the profile.
-  refresh().catch(() => {})
-  return {
-    resolve: () => {
-      if (!snapshot) {
-        return refresh()
-      }
-      if (isStale(snapshot)) {
-        refresh().catch(() => {})
-      }
-      return Promise.resolve(snapshot.env)
-    },
-    refreshAfterMissingProgram: () => withinShellTimeout(refresh())
-  }
-}
-
-// One per host, so launches, their misses and the create check all share a snapshot and a refresh.
-let hostShell: ShellEnvironment | null = null
-
-function hostShellEnvironment(): ShellEnvironment {
-  hostShell ??= createShellEnvironment(captureHostShellEnvironment)
-  return hostShell
-}
-
-export function resetHostShellEnvironmentForTests(): void {
-  hostShell = null
-}
-
-/** Every agent's child env over the host's shell snapshot; an injected `resolveEnvironment` gets
- *  its own snapshot. Policy and overlays are re-read per acquisition. */
+/** Every agent's child env over the host's shell env. Policy and overlays are re-read per
+ *  acquisition, so a settings change reaches the next chat without a restart. */
 export function createStructuredAgentEnvironmentResolvers(
   sources: StructuredAgentEnvironmentSources
 ): {
@@ -228,22 +160,22 @@ export function createStructuredAgentEnvironmentResolvers(
   resolveBaseEnvironment: () => Promise<Record<string, string>>
   /** The base with the user's overlay for `agent` laid over it. */
   resolveAgentEnvironment: (agent: string) => Promise<Record<string, string>>
-  refreshAfterMissingProgram: () => Promise<void>
+  refreshAfterMissingProgram: (askedAt: number) => Promise<void>
 } {
-  const injected = sources.resolveEnvironment
-  const shell = injected
-    ? createShellEnvironment(async () => ({
-        status: 'captured',
-        env: await injected()
-      }))
-    : hostShellEnvironment()
+  const shellEnvironment = sources.resolveEnvironment ?? hostShellEnvironment
+  if (!sources.resolveEnvironment) {
+    // Why: start as soon as the runtime exists so the first chat rarely waits for the profile.
+    void hostShellEnvironment().catch(() => {})
+  }
   const resolveBase = async (): Promise<Record<string, string>> =>
     structuredAgentBaseEnvironment({
-      shellEnv: await shell.resolve(),
+      shellEnv: await shellEnvironment(),
       policy: sources.resolveShellEnvironmentPolicy?.() ?? nativeChatShellEnvironmentPolicy(null)
     })
   return {
-    refreshAfterMissingProgram: shell.refreshAfterMissingProgram,
+    refreshAfterMissingProgram: sources.resolveEnvironment
+      ? async () => {}
+      : refreshHostAgentBaseEnvironmentAfterMiss,
     resolveBaseEnvironment: resolveBase,
     resolveAgentEnvironment: async (agent) => ({
       ...(await resolveBase()),

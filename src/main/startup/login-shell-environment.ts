@@ -19,21 +19,22 @@ export type LoginShellEnvironmentCapture = {
 }
 
 type CachedEnvironment = {
-  capture: Promise<LoginShellEnvironmentCapture>
-  settled: boolean
-  /** A forced capture running behind the settled one; later forced callers join it. */
-  refreshing?: Promise<LoginShellEnvironmentCapture>
+  /** The last good result: a fallback stays only until a capture replaces it. */
+  last?: LoginShellEnvironmentCapture
+  /** When the newest finished run started; an older run finishing later is ignored. */
+  attemptedAt: number
+  /** The newest run still going. */
+  running?: { capture: Promise<LoginShellEnvironmentCapture>; startedAt: number }
 }
 
 const environmentCache = new Map<string, CachedEnvironment>()
 const MAX_CACHED_ENVIRONMENTS = 8
 
-function cacheEnvironment(key: string, capture: Promise<LoginShellEnvironmentCapture>): void {
-  const entry: CachedEnvironment = { capture, settled: false }
-  void capture.then(() => {
-    entry.settled = true
-  })
-  environmentCache.delete(key)
+function cachedEnvironment(key: string): CachedEnvironment {
+  const existing = environmentCache.get(key)
+  if (existing) {
+    return existing
+  }
   while (environmentCache.size >= MAX_CACHED_ENVIRONMENTS) {
     const oldest = environmentCache.keys().next().value
     if (oldest === undefined) {
@@ -41,7 +42,9 @@ function cacheEnvironment(key: string, capture: Promise<LoginShellEnvironmentCap
     }
     environmentCache.delete(oldest)
   }
+  const entry: CachedEnvironment = { attemptedAt: -Infinity }
   environmentCache.set(key, entry)
+  return entry
 }
 
 function processEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -156,14 +159,20 @@ function spawnShellAndReadEnvironment(
 }
 
 export type ResolveLoginShellEnvironmentOptions = {
-  force?: boolean
+  /** Only a run that started at or after this time answers; one is started if none has. */
+  startedAfter?: number
+  /** Serves the last result, rerunning the shell in the background once the last run is older. */
+  refreshAfterMs?: number
+  /** A captured env is kept for good; only a fallback is rerun after `refreshAfterMs`. */
+  keepCaptured?: boolean
   shellOverride?: string | null
   env?: NodeJS.ProcessEnv
   spawner?: (shell: string, env: NodeJS.ProcessEnv) => Promise<NodeJS.ProcessEnv | null>
 }
 
 /** Captures the environment seen by commands launched from Orca's profile-loading terminal
- *  shell, saying whether the shell produced it or it is Orca's own env as a fallback. */
+ *  shell, saying whether the shell produced it or it is Orca's own env as a fallback. One cache
+ *  per shell and env owns the result, the run in progress and which run's result wins. */
 export function captureLoginShellEnvironment(
   options: ResolveLoginShellEnvironmentOptions = {}
 ): Promise<LoginShellEnvironmentCapture> {
@@ -171,45 +180,56 @@ export function captureLoginShellEnvironment(
     options.shellOverride !== undefined ? options.shellOverride : resolveProfileLoadingShell()
   const fallback = options.shellOverride === undefined ? resolveProfileLoadingFallbackShell() : null
   const env = processEnvironment(options.env)
+  const fellBack: LoginShellEnvironmentCapture = { status: 'fallback', env }
+  if (!shell) {
+    return Promise.resolve(fellBack)
+  }
   const envKey =
     options.env === undefined
       ? ''
       : createHash('sha256')
           .update(JSON.stringify(Object.entries(env).sort(([a], [b]) => a.localeCompare(b))))
           .digest('hex')
-  const shellKey = `${shell ?? ''}\0${fallback ?? ''}\0${envKey}`
-  const cached = environmentCache.get(shellKey)
-  // Why: one run per key at a time, so an older capture can never land over a newer one.
-  if (cached && (!options.force || !cached.settled)) {
-    return cached.capture
-  }
-  if (cached?.refreshing) {
-    return cached.refreshing
-  }
-  const fellBack: LoginShellEnvironmentCapture = { status: 'fallback', env }
-  if (!shell) {
-    return Promise.resolve(fellBack)
-  }
-  const spawner = options.spawner ?? spawnShellAndReadEnvironment
-  const pending = spawner(shell, env)
-    .then(async (environment): Promise<LoginShellEnvironmentCapture> => {
-      const captured = environment ?? (fallback ? await spawner(fallback, env) : null)
-      return captured ? { status: 'captured', env: captured } : fellBack
-    })
-    .catch(() => fellBack)
-  if (cached) {
-    // Why: readers keep any settled env, a fallback too, during a forced refresh; only a capture replaces it.
-    cached.refreshing = pending
-    void pending.then((capture) => {
-      cached.refreshing = undefined
-      if (capture.status === 'captured') {
-        cacheEnvironment(shellKey, Promise.resolve(capture))
+  const entry = cachedEnvironment(`${shell}\0${fallback ?? ''}\0${envKey}`)
+  const run = (): Promise<LoginShellEnvironmentCapture> => {
+    const startedAt = Date.now()
+    const spawner = options.spawner ?? spawnShellAndReadEnvironment
+    const capture = spawner(shell, env)
+      .then(async (environment): Promise<LoginShellEnvironmentCapture> => {
+        const captured = environment ?? (fallback ? await spawner(fallback, env) : null)
+        return captured ? { status: 'captured', env: captured } : fellBack
+      })
+      .catch(() => fellBack)
+    entry.running = { capture, startedAt }
+    void capture.then((result) => {
+      if (entry.running?.capture === capture) {
+        entry.running = undefined
+      }
+      if (startedAt < entry.attemptedAt) {
+        return
+      }
+      entry.attemptedAt = startedAt
+      if (result.status === 'captured' || entry.last?.status !== 'captured') {
+        entry.last = result
       }
     })
-    return pending
+    return capture
   }
-  cacheEnvironment(shellKey, pending)
-  return pending
+  const { running, last } = entry
+  if (options.startedAfter !== undefined) {
+    return running && running.startedAt >= options.startedAfter ? running.capture : run()
+  }
+  if (!last) {
+    return running?.capture ?? run()
+  }
+  const stale =
+    options.refreshAfterMs !== undefined &&
+    Date.now() - entry.attemptedAt >= options.refreshAfterMs &&
+    !(options.keepCaptured && last.status === 'captured')
+  if (stale && !running) {
+    void run()
+  }
+  return Promise.resolve(last)
 }
 
 /** Resolves the environment seen by commands launched from Orca's profile-loading terminal shell. */

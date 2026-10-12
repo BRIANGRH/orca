@@ -6,19 +6,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentSessionRecordFixture } from '../../shared/agent-session-record.test-fixture'
 import { acpLaunchSpecFor } from '../acp/acp-launch-specs'
 import { structuredAgentSupportsLaunch } from './structured-agent-launch-support'
+import { createStructuredAgentEnvironmentResolvers } from './structured-agent-shell-environment'
+import type * as LoginShellModule from '../startup/login-shell-environment'
 import {
-  createStructuredAgentEnvironmentResolvers,
-  resetHostShellEnvironmentForTests
-} from './structured-agent-shell-environment'
+  resetLoginShellEnvironmentCacheForTests,
+  type ResolveLoginShellEnvironmentOptions as LoginShellOptions
+} from '../startup/login-shell-environment'
 
 const { probeAgentCliVersion, loginShell } = vi.hoisted(() => {
   const loginShell: {
-    env: Record<string, string>
-    capture: ReturnType<typeof vi.fn>
+    env: NodeJS.ProcessEnv
+    spawn: ReturnType<typeof vi.fn<() => Promise<NodeJS.ProcessEnv | null>>>
   } = {
     env: {},
-    // Each call is one shell run; a test can hold one open to see who shares it.
-    capture: vi.fn(async () => ({ status: 'captured', env: loginShell.env }))
+    // Each call is one shell run through the real cache; a test can hold one open.
+    spawn: vi.fn(async (): Promise<NodeJS.ProcessEnv | null> => loginShell.env)
   }
   return { probeAgentCliVersion: vi.fn(), loginShell }
 })
@@ -26,11 +28,18 @@ vi.mock('../agent-cli-version-probe', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   probeAgentCliVersion
 }))
-vi.mock('../startup/login-shell-environment', () => ({
-  LOGIN_SHELL_SPAWN_TIMEOUT_MS: 5000,
-  resolveLoginShellEnvironment: async () => loginShell.env,
-  captureLoginShellEnvironment: loginShell.capture
-}))
+vi.mock('../startup/login-shell-environment', async (importOriginal) => {
+  const real = await importOriginal<typeof LoginShellModule>()
+  return {
+    ...real,
+    captureLoginShellEnvironment: (options: LoginShellOptions = {}) =>
+      real.captureLoginShellEnvironment({
+        ...options,
+        shellOverride: '/bin/test-login-shell',
+        spawner: loginShell.spawn
+      })
+  }
+})
 
 let bin: string
 const asked: { program: string; cwd: string; env: Record<string, string> }[] = []
@@ -58,8 +67,8 @@ beforeEach(async () => {
   await writeFile(opencode, '#!/bin/sh\n')
   await chmod(opencode, 0o755)
   loginShell.env = { PATH: bin, HOME: '/home/user' }
-  loginShell.capture.mockClear()
-  resetHostShellEnvironmentForTests()
+  loginShell.spawn.mockClear()
+  resetLoginShellEnvironmentCacheForTests()
 })
 afterEach(async () => {
   probeAgentCliVersion.mockReset()
@@ -113,17 +122,18 @@ describe('structuredAgentSupportsLaunch', () => {
       // A chat launched from this host reads the same snapshot.
       const launches = createStructuredAgentEnvironmentResolvers({})
       expect((await launches.resolveBaseEnvironment()).PATH).toBe(join(bin, 'not-installed'))
-      const reread = Promise.withResolvers<{ status: 'captured'; env: Record<string, string> }>()
-      loginShell.capture.mockReturnValueOnce(reread.promise)
+      const reread = Promise.withResolvers<NodeJS.ProcessEnv | null>()
+      loginShell.spawn.mockReturnValueOnce(reread.promise)
+      const askedAt = Date.now()
       const checks = Array.from({ length: 8 }, () =>
         structuredAgentSupportsLaunch('opencode', 'id:workspace-1', installing)
       )
-      const launchMiss = launches.refreshAfterMissingProgram()
-      await vi.waitFor(() => expect(loginShell.capture).toHaveBeenCalledTimes(2))
-      reread.resolve({ status: 'captured', env: { PATH: bin, HOME: '/home/user' } })
+      const launchMiss = launches.refreshAfterMissingProgram(askedAt)
+      await vi.waitFor(() => expect(loginShell.spawn).toHaveBeenCalledTimes(2))
+      reread.resolve({ PATH: bin, HOME: '/home/user' })
       expect(await Promise.all(checks)).toEqual(Array(8).fill(true))
       await launchMiss
-      expect(loginShell.capture).toHaveBeenCalledTimes(2)
+      expect(loginShell.spawn).toHaveBeenCalledTimes(2)
       expect(asked.map(({ program }) => program)).toEqual(Array(8).fill(join(bin, name)))
       expect((await launches.resolveBaseEnvironment()).PATH).toBe(bin)
     }
@@ -134,7 +144,7 @@ describe('structuredAgentSupportsLaunch', () => {
     expect(await structuredAgentSupportsLaunch('opencode', 'id:workspace-1', runtime)).toBe(false)
     expect(await structuredAgentSupportsLaunch('opencode', 'id:workspace-1', runtime)).toBe(false)
     // Only the first read of the shell; neither refusal asked for another.
-    expect(loginShell.capture).toHaveBeenCalledOnce()
+    expect(loginShell.spawn).toHaveBeenCalledOnce()
     expect(asked).toHaveLength(2)
   })
 

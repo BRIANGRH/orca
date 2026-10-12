@@ -40,7 +40,7 @@ export type LaunchTestSources = Pick<StructuredAgentLaunchSources, 'store'> & {
   resolveLaunchEnv?: (agent: string) => Record<string, string>
   resolveCommandSettings?: () => StructuredAgentCommandSettings
   prepareVisuals?: PrepareNativeChatVisuals
-  refreshAfterMissingProgram?: () => Promise<void>
+  refreshAfterMissingProgram?: (askedAt: number) => Promise<void>
 }
 
 function definedEnv(env: NodeJS.ProcessEnv): Record<string, string> {

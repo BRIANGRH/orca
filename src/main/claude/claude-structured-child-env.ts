@@ -20,7 +20,7 @@ function cloneDefinedEnv(env: NodeJS.ProcessEnv | Record<string, string>): Recor
 export type ClaudeEnvDeps = {
   resolveCommand?: (options?: { pathEnv?: string | null; homePath?: string }) => string
   /** Refreshes the inherited env after the command was not found in it; absent never retries. */
-  refreshEnvironmentAfterMiss?: () => Promise<void>
+  refreshEnvironmentAfterMiss?: (askedAt: number) => Promise<void>
   resolveEnv?: () =>
     | Promise<Record<string, string> | undefined>
     | Record<string, string>

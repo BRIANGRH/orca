@@ -11,9 +11,7 @@ import {
   createAcpStructuredLaunchResolver,
   createCodexStructuredLaunchResolver
 } from './structured-agent-launch-composition.test-support'
-import { createStructuredAgentEnvironmentResolvers } from './structured-agent-shell-environment'
 
-const INHERIT_ALL = { inheritAll: true, names: [] }
 const GROK = acpLaunchSpecFor('grok')!
 const identity = {
   sessionId: 'session-alpha-1',
@@ -29,26 +27,25 @@ afterEach(() => {
 })
 
 /**
- * A host whose shell profile is read once, after which an agent is installed into a folder only
- * the profile puts on PATH, as in the live check over SSH. `name` is unique so nothing on the
- * machine running the test can answer for it.
+ * A host whose shell env was read before an agent was installed into a folder only the profile
+ * puts on PATH, as in the live check over SSH; only a reread sees it. `name` is unique so nothing
+ * on the machine running the test can answer for it.
  */
-async function hostInstallingAfterFirstCapture(name: string) {
+function hostInstallingAfterFirstCapture(name: string) {
   const root = mkdtempSync(join(tmpdir(), 'orca-install-after-capture-'))
   roots.push(root)
   const profileBin = join(root, 'profile-bin')
-  let profilePath = '/usr/bin'
-  const capture = vi.fn(async () => ({ PATH: profilePath, HOME: root }))
-  const environment = createStructuredAgentEnvironmentResolvers({
-    resolveEnvironment: capture,
-    resolveShellEnvironmentPolicy: () => INHERIT_ALL
-  })
-  expect((await environment.resolveBaseEnvironment()).PATH).toBe('/usr/bin')
   mkdirSync(profileBin)
   const program = join(profileBin, process.platform === 'win32' ? `${name}.cmd` : name)
   writeFileSync(program, '#!/bin/sh\nexit 0\n')
   chmodSync(program, 0o755)
-  profilePath = profileBin
+  let served = '/usr/bin'
+  const environment = {
+    resolveBaseEnvironment: async () => ({ PATH: served, HOME: root }),
+    refreshAfterMissingProgram: vi.fn(async (_askedAt: number) => {
+      served = profileBin
+    })
+  }
   return { environment, program, profileBin }
 }
 
@@ -62,7 +59,7 @@ function store(record: Partial<AgentSessionRecord>) {
 describe('an agent installed after the first shell capture', () => {
   it("starts Claude's first chat, from the refreshed environment", async () => {
     const name = `claude-l5-${process.pid}`
-    const host = await hostInstallingAfterFirstCapture(name)
+    const host = hostInstallingAfterFirstCapture(name)
     const sources = await resolveClaudeChildEnvSources({
       resolveInheritedEnv: host.environment.resolveBaseEnvironment,
       refreshEnvironmentAfterMiss: host.environment.refreshAfterMissingProgram,
@@ -74,7 +71,7 @@ describe('an agent installed after the first shell capture', () => {
 
   it("starts Codex's first chat through the composed launch, from the refreshed environment", async () => {
     const name = `codex-l5-${process.pid}`
-    const host = await hostInstallingAfterFirstCapture(name)
+    const host = hostInstallingAfterFirstCapture(name)
     const launch = await createCodexStructuredLaunchResolver({
       store: store({
         provider: 'codex',
@@ -91,7 +88,7 @@ describe('an agent installed after the first shell capture', () => {
 
   it('starts a Command setting installed after the capture, rather than refusing it', async () => {
     const name = `grok-l5-${process.pid}`
-    const host = await hostInstallingAfterFirstCapture(name)
+    const host = hostInstallingAfterFirstCapture(name)
     const launch = await createAcpStructuredLaunchResolver(GROK, {
       store: store({
         provider: 'grok',
@@ -107,9 +104,9 @@ describe('an agent installed after the first shell capture', () => {
 
   it('never refreshes for a program the snapshot already finds', async () => {
     const name = `codex-l5-found-${process.pid}`
-    const host = await hostInstallingAfterFirstCapture(name)
+    const host = hostInstallingAfterFirstCapture(name)
     // Puts the install in the snapshot before the launch asks.
-    await host.environment.refreshAfterMissingProgram()
+    await host.environment.refreshAfterMissingProgram(Date.now())
     const refresh = vi.fn(async () => {})
     const launch = await createCodexStructuredLaunchResolver({
       store: store({

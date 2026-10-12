@@ -30,8 +30,9 @@ export type StructuredAgentLaunchSources = {
   resolveAgentLaunchEnv?: (agent: string) => Record<string, string>
   resolveCommandSettings?: () => StructuredAgentCommandSettings
   prepareVisuals?: PrepareNativeChatVisuals
-  /** Refreshes the base environment after a launch found no program in it; absent never retries. */
-  refreshAfterMissingProgram?: () => Promise<void>
+  /** Rereads the base environment after a lookup that started at `askedAt` found no program in
+   *  it; absent never retries. */
+  refreshAfterMissingProgram?: (askedAt: number) => Promise<void>
 }
 
 /** What an agent's part reads. Each read runs once, when the part first asks, so every agent keeps
@@ -51,7 +52,7 @@ export type StructuredAgentLaunchBasis = {
   commandSettings(): StructuredAgentCommandSettings
   /** For a part that found no program: refreshes the environment, after which both environment
    *  reads return the refreshed one. Absent when the runtime never retries. */
-  refreshAfterMissingProgram?: () => Promise<void>
+  refreshAfterMissingProgram?: (askedAt: number) => Promise<void>
 }
 
 export type StructuredLaunchRequest = {
@@ -151,8 +152,8 @@ async function composedPart<L>(
     commandSettings: once(() => sources.resolveCommandSettings?.() ?? {}),
     ...(refresh
       ? {
-          refreshAfterMissingProgram: async () => {
-            await refresh()
+          refreshAfterMissingProgram: async (askedAt) => {
+            await refresh(askedAt)
             environments = readEnvironments()
           }
         }

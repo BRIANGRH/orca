@@ -7,7 +7,6 @@ import type { GlobalSettings } from '../../shared/global-settings-types'
 import { agentSessionRecordFixture } from '../../shared/agent-session-record.test-fixture'
 import { acpLaunchSpecFor } from '../acp/acp-launch-specs'
 import { structuredAgentSupportsLaunch } from './structured-agent-launch-support'
-import { resetHostShellEnvironmentForTests } from './structured-agent-shell-environment'
 
 const { loginShell } = vi.hoisted(() => {
   const loginShell: { env: Record<string, string> } = { env: {} }
@@ -74,7 +73,6 @@ function launchWith(settings: Settings) {
 }
 
 beforeEach(async () => {
-  resetHostShellEnvironmentForTests()
   root = await mkdtemp(join(tmpdir(), 'orca-omp-probe-'))
   shellBin = await fakeOmp(join(root, 'shell-bin'), '16.2.0')
   privateBin = await fakeOmp(join(root, 'omp-prefix', 'bin'), '17.0.5')
