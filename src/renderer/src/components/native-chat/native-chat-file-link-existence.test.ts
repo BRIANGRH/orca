@@ -145,6 +145,22 @@ describe('createNativeChatFileLinkExistence', () => {
     expect(watcher.getSnapshot().check(link('src/new.ts'))).toBe(true)
   })
 
+  it('tells recheck subscribers (a chat visual re-reading its page) at every recheck', () => {
+    const existence = createNativeChatFileLinkExistence(host, hostWith(() => true).pathExists)
+    const onRecheck = vi.fn()
+    const unsubscribe = existence.subscribeRecheck(onRecheck)
+    expect(existence.recheckGeneration()).toBe(0)
+
+    existence.recheck()
+    expect(onRecheck).toHaveBeenCalledOnce()
+    expect(existence.recheckGeneration()).toBe(1)
+
+    unsubscribe()
+    existence.recheck()
+    expect(onRecheck).toHaveBeenCalledOnce()
+    expect(existence.recheckGeneration()).toBe(2)
+  })
+
   it('removes the underline of a confirmed path deleted during the turn', async () => {
     let deleted = false
     const { pathExists } = hostWith(() => !deleted)

@@ -90,9 +90,9 @@ describe('MobileNativeChatMessage visuals', () => {
   }
 
   it("renders a finished assistant reply's directives through the transcript renderer", () => {
-    const props = markdownProps(message('a1', 'assistant', '::orca-visual{file="a.html"}'))
+    const props = markdownProps(message('a1', 'assistant', '::orca-visual{path="a.html"}'))
     expect(props.renderVisual).toBe(renderVisual)
-    expect(props.content).toBe('::orca-visual{file="a.html"}')
+    expect(props.content).toBe('::orca-visual{path="a.html"}')
   })
 
   it('hides a directive still being typed while its turn works, and mounts finished lines', () => {
@@ -100,16 +100,16 @@ describe('MobileNativeChatMessage visuals', () => {
       message(
         'a1',
         'assistant',
-        '::orca-visual{file="done.html"}\nChart below.\n::orca-visual{file="usage"}'
+        '::orca-visual{path="done.html"}\nChart below.\n::orca-visual{path="usage"}'
       ),
       { activeTurnIsWorking: true }
     )
     expect(props.renderVisual).toBe(renderVisual)
-    expect(props.content).toBe('::orca-visual{file="done.html"}\nChart below.\n')
+    expect(props.content).toBe('::orca-visual{path="done.html"}\nChart below.\n')
   })
 
   it('shows an earlier finished row of a working turn in full', () => {
-    const text = 'Pick one:\n::orca-visual{file="options.html"}'
+    const text = 'Pick one:\n::orca-visual{path="options.html"}'
     expect(
       markdownProps(message('a0', 'assistant', text), {
         activeTurnIsWorking: true,
@@ -119,7 +119,7 @@ describe('MobileNativeChatMessage visuals', () => {
   })
 
   it('holds back only the last block of the row: text followed by a tool call is finished', () => {
-    const text = 'Options:\n::orca-visual{file="options'
+    const text = 'Options:\n::orca-visual{path="options'
     const row: NativeChatMessage = {
       id: 'a1',
       role: 'assistant',
@@ -134,21 +134,21 @@ describe('MobileNativeChatMessage visuals', () => {
   })
 
   it('shows the whole reply once its turn settles', () => {
-    const text = 'Chart below.\n::orca-visual{file="usage'
+    const text = 'Chart below.\n::orca-visual{path="usage'
     expect(markdownProps(message('a1', 'assistant', text)).content).toBe(text)
   })
 
   it('leaves directives as text where the chat has no visual source', () => {
-    const props = markdownProps(message('a1', 'assistant', '::orca-visual{file="a.html"}'), {
+    const props = markdownProps(message('a1', 'assistant', '::orca-visual{path="a.html"}'), {
       visuals: null,
       activeTurnIsWorking: true
     })
     expect(props.renderVisual).toBeUndefined()
-    expect(props.content).toBe('::orca-visual{file="a.html"}')
+    expect(props.content).toBe('::orca-visual{path="a.html"}')
   })
 
   it('never renders visuals in system rows', () => {
-    const props = markdownProps(message('s1', 'system', '::orca-visual{file="a.html"}'))
+    const props = markdownProps(message('s1', 'system', '::orca-visual{path="a.html"}'))
     expect(props.renderVisual).toBeUndefined()
   })
 })

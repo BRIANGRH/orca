@@ -9,6 +9,8 @@ export type LocalFileAccess =
   | { kind: 'document-resource'; documentPath: string }
   /** An image a chat transcript or composer shows: any local image file; a network share only inside a project. */
   | { kind: 'chat-image' }
+  /** An HTML visual a chat transcript shows: any local `.html`/`.htm` file by its real target; read only. */
+  | { kind: 'chat-html' }
   /** A document the user opened: renaming it to any path, or adding files in its own folder. */
   | { kind: 'document-folder'; documentPath: string }
 

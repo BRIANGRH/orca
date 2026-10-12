@@ -26,9 +26,9 @@ describe('nativeChatMessagePlainText', () => {
 
   it('leaves a visual line out of the copied prose, but not one inside a code fence', () => {
     const text =
-      'Chart:\n::orca-visual{file="usage.html"}\nDone.\n```\n::orca-visual{file="x.html"}\n```'
+      'Chart:\n::orca-visual{path="usage.html"}\nDone.\n```\n::orca-visual{path="x.html"}\n```'
     expect(nativeChatMessagePlainText({ blocks: [{ type: 'text', text }] })).toBe(
-      'Chart:\nDone.\n```\n::orca-visual{file="x.html"}\n```'
+      'Chart:\nDone.\n```\n::orca-visual{path="x.html"}\n```'
     )
   })
 

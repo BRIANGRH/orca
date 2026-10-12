@@ -17,7 +17,6 @@ import {
   projectStructuredQuestion
 } from './mobile-structured-agent-prompts'
 import type { StructuredMobileSession } from './mobile-structured-agent-session-contract'
-import type { MobileNativeChatVisualSource } from './mobile-native-chat-visual-read'
 import type { RpcClient } from '../transport/rpc-client'
 import { useMobileStructuredAgentState } from './use-mobile-structured-agent-state'
 import { useMobileStructuredStopPress } from './use-mobile-structured-stop-press'
@@ -251,14 +250,8 @@ export function useMobileStructuredAgentSession(args: {
     ]
   )
 
-  const visualSource = useMemo<MobileNativeChatVisualSource | null>(
-    () => (client && sessionId ? { client, sessionId } : null),
-    [client, sessionId]
-  )
-
   return {
     ...options,
-    visualSource,
     session: {
       messages,
       status,

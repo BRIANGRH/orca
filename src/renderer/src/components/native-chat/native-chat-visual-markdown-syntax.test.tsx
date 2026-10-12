@@ -19,9 +19,8 @@ function Probe(props: ComponentProps<'div'> & ExtraProps): React.JSX.Element {
   }
   const title = 'data-orca-visual-title' in props ? props['data-orca-visual-title'] : undefined
   const path = 'data-orca-visual-path' in props ? props['data-orca-visual-path'] : undefined
-  const legacy = 'data-orca-visual-legacy' in props ? props['data-orca-visual-legacy'] : undefined
   return (
-    <span data-visual={String(path)} data-legacy={String(legacy === 'true')}>
+    <span data-visual={String(path)}>
       {typeof title === 'string' ? `[${title}]` : '[untitled]'}
     </span>
   )
@@ -54,9 +53,10 @@ describe('remarkNativeChatVisuals', () => {
     expect(markup).toContain('That is the trend.')
   })
 
-  it("marks an older host's file line as legacy and a path line as not", () => {
-    expect(render('::orca-visual{file="old.html"}')).toContain('data-legacy="true"')
-    expect(render(LINE)).toContain('data-legacy="false"')
+  it("shows an older host's file line as the text it is", () => {
+    const markup = render('::orca-visual{file="old.html"}')
+    expect(mountedFiles(markup)).toEqual([])
+    expect(markup).toContain('::orca-visual{file=')
   })
 
   it('splits a paragraph that runs straight into and out of the directive', () => {

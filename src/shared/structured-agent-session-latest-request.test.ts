@@ -343,9 +343,9 @@ describe('the assistant line plain-text surfaces show', () => {
         'said',
         2,
         'assistant',
-        'p95 is highest in ap-south.\n\n::orca-visual{file="latency.html" title="p95"}'
+        'p95 is highest in ap-south.\n\n::orca-visual{path="latency.html" title="p95"}'
       ),
-      message('only-visual', 3, 'assistant', '::orca-visual{file="table.html"}')
+      message('only-visual', 3, 'assistant', '::orca-visual{path="table.html"}')
     ]
     // A reply that is nothing but a visual leaves the turn's earlier prose as the preview.
     expect(projectStructuredAgentSessionStatusSummary(items).lastAssistantMessage).toBe(

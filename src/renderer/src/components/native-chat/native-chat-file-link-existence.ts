@@ -37,6 +37,9 @@ export type NativeChatFileLinkExistence = {
   watch: () => NativeChatFileLinkWatcher
   /** Files may have changed (a turn ended, the host came back): ask again about every watched path. */
   recheck: () => void
+  /** Counts rechecks, for views that re-read a file's content at each one (a chat visual). */
+  recheckGeneration: () => number
+  subscribeRecheck: (listener: () => void) => () => void
 }
 
 /** The generation is the recheck an answer was asked in; older answers still show but are re-asked. */
@@ -63,6 +66,7 @@ export function createNativeChatFileLinkExistence(
   pathExists: FileLinkPathExistence = createTerminalPathExistenceBatch()
 ): NativeChatFileLinkExistence {
   let generation = 0
+  const recheckListeners = new Set<() => void>()
   const answers = new Map<string, Answer>()
   /** Generation each outstanding request was sent in. */
   const inFlight = new Map<string, number>()
@@ -274,6 +278,14 @@ export function createNativeChatFileLinkExistence(
       for (const { target } of holders.values()) {
         send(target)
       }
+      for (const listener of recheckListeners) {
+        listener()
+      }
+    },
+    recheckGeneration: () => generation,
+    subscribeRecheck: (listener) => {
+      recheckListeners.add(listener)
+      return () => recheckListeners.delete(listener)
     }
   }
 }

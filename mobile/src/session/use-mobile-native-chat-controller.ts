@@ -19,6 +19,7 @@ import { useMobileBridgeChatPromptWrites } from './use-mobile-bridge-chat-prompt
 import { useMobileNativeChatActiveResolution } from './use-mobile-native-chat-active-resolution'
 import { useMobileNativeChatPromptCards } from './use-mobile-native-chat-prompt-cards'
 import { mobileNativeChatScopeKey } from './mobile-native-chat-scope-key'
+import { useMobileNativeChatVisualSource } from './use-mobile-native-chat-visual'
 
 export type { MobileNativeChatController } from './mobile-native-chat-controller-contract'
 
@@ -281,6 +282,8 @@ export function useMobileNativeChatController(args: {
     onSendResolved
   })
 
+  const visualSource = useMobileNativeChatVisualSource(client, hostId, worktreeId)
+
   return {
     isTabChatView,
     toggleTabChatView,
@@ -295,7 +298,7 @@ export function useMobileNativeChatController(args: {
     nativeChatSession,
     /** Structured lane: drives the per-turn status row and live tool progress. */
     nativeChatStructured: activeChatStructured,
-    nativeChatVisualSource: activeChatStructured ? structuredNativeChat.visualSource : null,
+    nativeChatVisualSource: activeChatStructured ? visualSource : null,
     nativeChatAgentWorking,
     nativeChatTurnIndicator: activeChatStructured ? structuredNativeChat.turnIndicator : null,
     nativeChatWorkingStartedAt: activeChatStructured ? structuredNativeChat.workingStartedAt : null,

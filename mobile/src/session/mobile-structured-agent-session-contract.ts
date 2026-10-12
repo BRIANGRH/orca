@@ -1,5 +1,4 @@
 import type { MobileNativeChatSendOutcome } from './mobile-native-chat-send'
-import type { MobileNativeChatVisualSource } from './mobile-native-chat-visual-read'
 import type { MobileChatPermission } from './mobile-native-chat-permission'
 import type { MobileChatQuestion } from './mobile-native-chat-question'
 import type { MobileNativeChatSession } from './use-mobile-native-chat-session'
@@ -35,6 +34,4 @@ export type StructuredMobileSession = ReturnType<typeof useMobileStructuredAgent
     commandRefusalCauses: MobileNativeChatCommandRefusalCauses
     /** Running child work for the strip above the composer, as desktop shows it. */
     backgroundTasks: MobileStructuredBackgroundTasks
-    /** Where this chat's `::orca-visual` lines read their HTML from; null without a client. */
-    visualSource: MobileNativeChatVisualSource | null
   }

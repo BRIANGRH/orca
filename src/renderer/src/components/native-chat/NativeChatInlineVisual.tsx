@@ -1,18 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { SquareArrowOutUpRight } from 'lucide-react'
-import { ArtifactPublishButton } from '@/components/artifacts/ArtifactPublishButton'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { translate } from '@/i18n/i18n'
+import { getConnectionIdFromState } from '@/lib/connection-context'
+import { useAppStore } from '@/store'
 import { NATIVE_CHAT_VISUAL_RESERVED_HEIGHT, NativeChatVisualFrame } from './NativeChatVisualFrame'
 import { observeTranscriptVisibility } from './NativeChatTranscriptChrome'
 import type { NativeChatVisualOwner } from './native-chat-visual-owner'
 import { openNativeChatVisualFile } from './native-chat-visual-open'
-import {
-  nativeChatVisualArtifactSourceKey,
-  readNativeChatVisualArtifactRequest
-} from './native-chat-visual-share'
 import { useNativeChatFileLinkContext } from './use-native-chat-file-link-context'
+import { useNativeChatFileLinkRecheckGeneration } from './use-native-chat-file-link-existence'
+import { resolveNativeChatVisualFile } from './native-chat-visual-file'
 import { useNativeChatVisualDocument } from './use-native-chat-visual-document'
 
 export function NativeChatVisualUnavailable(): React.JSX.Element {
@@ -24,27 +23,38 @@ export function NativeChatVisualUnavailable(): React.JSX.Element {
 }
 
 /**
- * A visual inside an assistant reply. Its frame mounts once the reply scrolls near it and stays
- * mounted, so what the reader did in it survives scrolling away and back.
+ * A visual inside an assistant reply: a file link that renders, read through the chat's file-link
+ * context. Its frame mounts once the reply scrolls near it and stays mounted, so what the reader
+ * did in it survives scrolling away and back.
  */
 export function NativeChatInlineVisual({
   owner,
   path,
-  legacy,
   title
 }: {
   owner: NativeChatVisualOwner
   path: string
-  /** An older host's per-chat folder page: shown inline, but not a workspace file to open. */
-  legacy: boolean
   title: string | null
 }): React.JSX.Element {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [near, setNear] = useState(false)
   const [retired, setRetired] = useState(false)
+  // Null until a floating chat's folder is pinned: the placeholder shows and nothing is read.
   const fileLinkContext = useNativeChatFileLinkContext(owner.tabId)
-  const identity = { target: owner.target, sessionId: owner.sessionId, path, legacy }
-  const state = useNativeChatVisualDocument(identity, near)
+  // Why the connection too: an SSH workspace's host can resolve after its context does.
+  const connectionId = useAppStore((s) =>
+    fileLinkContext ? getConnectionIdFromState(s, fileLinkContext.worktreeId) : null
+  )
+  const file = useMemo(
+    () => (fileLinkContext ? resolveNativeChatVisualFile(fileLinkContext, path) : null),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- connectionId re-resolves the file's host.
+    [fileLinkContext, path, connectionId]
+  )
+  const state = useNativeChatVisualDocument(
+    file,
+    near && fileLinkContext !== null,
+    useNativeChatFileLinkRecheckGeneration()
+  )
 
   useEffect(() => {
     const element = boxRef.current
@@ -63,8 +73,6 @@ export function NativeChatInlineVisual({
   }
   const label = title ?? path
   const openLabel = translate('components.native-chat.visualOpenInNewTab', 'Open in new tab')
-  const shareSourceKey =
-    fileLinkContext && !legacy ? nativeChatVisualArtifactSourceKey(path, fileLinkContext) : null
 
   return (
     <div ref={boxRef} className="group/visual relative my-3">
@@ -77,13 +85,13 @@ export function NativeChatInlineVisual({
             themeScope={boxRef}
             onRetired={() => setRetired(true)}
           />
-          {fileLinkContext && !legacy ? (
-            <div className="absolute top-2 right-2 flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5 shadow-xs transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100">
+          {fileLinkContext ? (
+            <div className="absolute top-2 right-2 transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant="ghost"
-                    size="icon-sm"
+                    variant="outline"
+                    size="icon-xs"
                     aria-label={openLabel}
                     onClick={() => openNativeChatVisualFile(path, fileLinkContext)}
                   >
@@ -94,14 +102,6 @@ export function NativeChatInlineVisual({
                   {openLabel}
                 </TooltipContent>
               </Tooltip>
-              {shareSourceKey ? (
-                <ArtifactPublishButton
-                  sourceKey={shareSourceKey}
-                  createRequest={() =>
-                    readNativeChatVisualArtifactRequest(identity, shareSourceKey)
-                  }
-                />
-              ) : null}
             </div>
           ) : null}
         </>

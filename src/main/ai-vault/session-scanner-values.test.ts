@@ -25,7 +25,7 @@ describe('AI Vault session scanner text values', () => {
   })
 
   it("drops a reply's visual lines from its preview, but not a user's", () => {
-    const line = '::orca-visual{file="latency.html" title="p95"}'
+    const line = '::orca-visual{path="latency.html" title="p95"}'
     expect(normalizePreviewText(`p95 is highest.\n\n${line}\n\nDone.`, 'assistant')).toBe(
       'p95 is highest. Done.'
     )

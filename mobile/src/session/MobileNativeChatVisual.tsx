@@ -1,8 +1,12 @@
 import { memo, useCallback, useMemo, useState } from 'react'
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Maximize2, X } from 'lucide-react-native'
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useRouter } from 'expo-router'
+import { ExternalLink } from 'lucide-react-native'
 import type { NativeChatVisualDirective } from '../../../src/shared/native-chat-visual-directive'
+import {
+  createMobileFilePreviewHref,
+  displayNameFromPreviewPath
+} from '../files/mobile-file-preview-route'
 import { colors, radii, spacing, typography } from '../theme/mobile-theme'
 import type { MobileNativeChatVisualSource } from './mobile-native-chat-visual-read'
 import { MOBILE_NATIVE_CHAT_VISUAL_INITIAL_HEIGHT } from './mobile-native-chat-visual-host-document'
@@ -34,7 +38,7 @@ export function useMobileNativeChatVisualRenderer(
   )
 }
 
-/** A `::orca-visual{...}` line in a finished assistant reply, rendered from the chat's host. */
+/** A `::orca-visual{...}` line in a finished assistant reply: a workspace file that renders. */
 export const MobileNativeChatVisual = memo(function MobileNativeChatVisual({
   directive,
   source
@@ -42,20 +46,28 @@ export const MobileNativeChatVisual = memo(function MobileNativeChatVisual({
   directive: NativeChatVisualDirective
   source: MobileNativeChatVisualSource
 }) {
-  const { state, retry } = useMobileNativeChatVisual(source, directive.path, directive.legacy)
+  const { state, retry } = useMobileNativeChatVisual(source, directive.path)
+  const router = useRouter()
   // A frame that navigated away or kept crashing; cleared by the reader's retry.
   const [frameFailed, setFrameFailed] = useState(false)
-  const [fullscreen, setFullscreen] = useState(false)
   const title = directive.title ?? DEFAULT_TITLE
-  const onFrameFailed = useCallback(() => {
-    setFrameFailed(true)
-    setFullscreen(false)
-  }, [])
+  const onFrameFailed = useCallback(() => setFrameFailed(true), [])
   const onRetry = useCallback(() => {
     setFrameFailed(false)
     retry()
   }, [retry])
-  const closeFullscreen = useCallback(() => setFullscreen(false), [])
+  // Opens like any workspace file the phone shows: in its file viewer.
+  const onOpen = useCallback(() => {
+    router.push(
+      createMobileFilePreviewHref({
+        hostId: source.hostId,
+        worktreeId: source.worktreeId,
+        source: 'worktree',
+        relativePath: directive.path,
+        name: displayNameFromPreviewPath(directive.path)
+      })
+    )
+  }, [directive.path, router, source.hostId, source.worktreeId])
 
   if (state.kind === 'loading') {
     return <MobileNativeChatVisualPlaceholder />
@@ -82,65 +94,17 @@ export const MobileNativeChatVisual = memo(function MobileNativeChatVisual({
         onFailed={onFrameFailed}
       />
       <Pressable
-        onPress={() => setFullscreen(true)}
+        onPress={onOpen}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${title} full screen`}
+        accessibilityLabel={`Open ${title}`}
         hitSlop={8}
         style={styles.openButton}
       >
-        <Maximize2 size={14} color={colors.textSecondary} strokeWidth={2.2} />
+        <ExternalLink size={14} color={colors.textSecondary} strokeWidth={2.2} />
       </Pressable>
-      {fullscreen ? (
-        <MobileNativeChatVisualFullscreen
-          html={state.html}
-          title={title}
-          onClose={closeFullscreen}
-          onFailed={onFrameFailed}
-        />
-      ) : null}
     </View>
   )
 })
-
-function MobileNativeChatVisualFullscreen({
-  html,
-  title,
-  onClose,
-  onFailed
-}: {
-  html: string
-  title: string
-  onClose: () => void
-  onFailed: () => void
-}) {
-  const insets = useSafeAreaInsets()
-  return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <View style={[styles.sheet, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle} numberOfLines={1}>
-            {title}
-          </Text>
-          <Pressable
-            onPress={onClose}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-            hitSlop={8}
-            style={styles.closeButton}
-          >
-            <X size={18} color={colors.textSecondary} strokeWidth={2.2} />
-          </Pressable>
-        </View>
-        <MobileNativeChatVisualFrame
-          html={html}
-          title={title}
-          mode="fullscreen"
-          onFailed={onFailed}
-        />
-      </View>
-    </Modal>
-  )
-}
 
 const styles = StyleSheet.create({
   frame: {
@@ -169,21 +133,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgPanel,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.borderSubtle
-  },
-  sheet: { flex: 1, backgroundColor: colors.bgBase },
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderSubtle
-  },
-  sheetTitle: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontSize: typography.bodySize,
-    fontWeight: '600'
-  },
-  closeButton: { padding: spacing.xs }
+  }
 })

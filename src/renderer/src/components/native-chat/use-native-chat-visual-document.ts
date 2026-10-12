@@ -1,102 +1,114 @@
 import { useEffect, useState } from 'react'
 import {
-  isRetryableNativeChatVisualFailure,
-  peekCachedNativeChatVisual,
-  readNativeChatVisual,
+  isPathInsideOrEqual,
+  normalizeRuntimePathForComparison
+} from '../../../../shared/cross-platform-path'
+import type { FsChangedPayload } from '../../../../shared/filesystem-entry-types'
+import {
+  ORCA_WORKTREE_FILE_CHANGE_EVENT,
+  type WorktreeFileChangeEventDetail
+} from '@/hooks/worktree-file-change-event'
+import {
+  peekNativeChatVisualFile,
+  readNativeChatVisualFile,
   type NativeChatVisualDocument,
-  type NativeChatVisualIdentity
-} from './native-chat-visual-read-client'
+  type NativeChatVisualFile
+} from './native-chat-visual-file'
 
 export type NativeChatVisualDocumentState =
   | { status: 'loading' }
   | { status: 'ready'; document: NativeChatVisualDocument }
   | { status: 'unavailable' }
 
-/** Waits before each retry of a read that may yet succeed; bounded, then the failure shows. */
-export const NATIVE_CHAT_VISUAL_RETRY_DELAYS_MS = [1_500, 4_000, 10_000] as const
+const FILE_CHANGE_DEBOUNCE_MS = 125
 
-function waitFor(ms: number, signal: AbortSignal): Promise<boolean> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(!signal.aborted), ms)
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        resolve(false)
-      },
-      { once: true }
-    )
-  })
+/** Whether a watcher batch another view's watch produced names this file (or may have: an overflow). */
+export function fileChangeNamesVisual(
+  detail: WorktreeFileChangeEventDetail,
+  file: Pick<NativeChatVisualFile, 'absolutePath' | 'owner'>
+): boolean {
+  if (detail.runtimeEnvironmentId !== file.owner.runtimeEnvironmentId) {
+    return false
+  }
+  const payload: FsChangedPayload = detail.payload
+  const target = normalizeRuntimePathForComparison(file.absolutePath)
+  return payload.events.some((event) =>
+    event.kind === 'overflow'
+      ? isPathInsideOrEqual(payload.worktreePath, file.absolutePath)
+      : [event.absolutePath, event.oldAbsolutePath].some(
+          (path) => path !== undefined && normalizeRuntimePathForComparison(path) === target
+        )
+  )
 }
 
-async function loadWithRetries(
-  identity: NativeChatVisualIdentity,
-  signal: AbortSignal,
-  setState: (
-    update: (shown: NativeChatVisualDocumentState) => NativeChatVisualDocumentState
-  ) => void
-): Promise<void> {
-  for (let retry = 0; ; retry += 1) {
-    const outcome = await readNativeChatVisual(identity)
-    if (signal.aborted) {
+/** Bumps when a watch someone else installed reports this file changed; installs no watch itself. */
+function useVisualFileChangeCount(file: NativeChatVisualFile | null, enabled: boolean): number {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!file || !enabled) {
       return
     }
-    if (outcome.ok) {
-      setState((shown) =>
-        shown.status === 'ready' && shown.document.revision === outcome.document.revision
-          ? shown
-          : { status: 'ready', document: outcome.document }
-      )
-      return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const onChange = (event: WindowEventMap[typeof ORCA_WORKTREE_FILE_CHANGE_EVENT]): void => {
+      if (!fileChangeNamesVisual(event.detail, file)) {
+        return
+      }
+      clearTimeout(timer)
+      timer = setTimeout(() => setCount((value) => value + 1), FILE_CHANGE_DEBOUNCE_MS)
     }
-    const delay = NATIVE_CHAT_VISUAL_RETRY_DELAYS_MS[retry]
-    if (!isRetryableNativeChatVisualFailure(outcome.reason) || delay === undefined) {
-      // Why keep a shown document on `unavailable`: losing contact says nothing about the file.
-      setState((shown) =>
-        shown.status === 'ready' && outcome.reason === 'unavailable'
-          ? shown
-          : { status: 'unavailable' }
-      )
-      return
+    window.addEventListener(ORCA_WORKTREE_FILE_CHANGE_EVENT, onChange)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener(ORCA_WORKTREE_FILE_CHANGE_EVENT, onChange)
     }
-    if (!(await waitFor(delay, signal))) {
-      return
-    }
-  }
+  }, [enabled, file])
+  return count
 }
 
 /**
- * The visual's current document. Starts from the cached revision when there is one, then asks the
- * host (revalidating it) once `enabled`, and again whenever `refreshKey` changes. A later failure
- * keeps a document already shown.
+ * The visual's current page. Starts from the cached copy when there is one, reads the file once
+ * `enabled`, and again whenever `refreshKey` changes or the file changes under a watch. An
+ * unchanged page keeps its frame; an unreachable host keeps the page already shown.
  */
 export function useNativeChatVisualDocument(
-  identity: NativeChatVisualIdentity,
+  file: NativeChatVisualFile | null,
   enabled: boolean,
-  refreshKey?: unknown
+  refreshKey: unknown
 ): NativeChatVisualDocumentState {
-  const { sessionId, path, legacy } = identity
-  const environmentId =
-    identity.target.kind === 'environment' ? identity.target.environmentId : null
   const [state, setState] = useState<NativeChatVisualDocumentState>(() => {
-    const cached = peekCachedNativeChatVisual(identity)
+    const cached = file ? peekNativeChatVisualFile(file) : null
     return cached ? { status: 'ready', document: cached } : { status: 'loading' }
   })
+  const changes = useVisualFileChangeCount(file, enabled)
 
   useEffect(() => {
     if (!enabled) {
       return
     }
-    const identityNow: NativeChatVisualIdentity = {
-      target: environmentId === null ? { kind: 'local' } : { kind: 'environment', environmentId },
-      sessionId,
-      path,
-      legacy
+    if (!file) {
+      setState({ status: 'unavailable' })
+      return
     }
-    const abort = new AbortController()
-    void loadWithRetries(identityNow, abort.signal, setState)
-    return () => abort.abort()
-  }, [enabled, environmentId, legacy, path, sessionId, refreshKey])
+    let current = true
+    void readNativeChatVisualFile(file).then((outcome) => {
+      if (!current) {
+        return
+      }
+      setState((shown) => {
+        if (outcome.kind === 'ready') {
+          return shown.status === 'ready' && shown.document.html === outcome.document.html
+            ? shown
+            : { status: 'ready', document: outcome.document }
+        }
+        return outcome.kind === 'unreachable' && shown.status === 'ready'
+          ? shown
+          : { status: 'unavailable' }
+      })
+    })
+    return () => {
+      current = false
+    }
+  }, [enabled, file, refreshKey, changes])
 
   return state
 }
