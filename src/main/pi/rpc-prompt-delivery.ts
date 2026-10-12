@@ -4,6 +4,9 @@ import type { AgentSessionDispatchOutcome } from '../native-chat/agent-session-w
 import type { JsonlRpcRecord } from '../jsonl-rpc/peer'
 import { piRpcPromptReplySchema } from './rpc-protocol'
 
+const MAX_PENDING_PROMPTS = 128
+const MAX_HELD_BYTES = 32 * 1024 * 1024
+
 type Submission = {
   id: string
   at: number
@@ -42,6 +45,10 @@ export class PiRpcPromptDelivery {
   get holdsDispatch(): boolean {
     return this.waiting.length > 0 || this.retries.size > 0
   }
+  /** How many more prompt bytes the queue holds before it refuses one. */
+  get heldBytesFree(): number {
+    return MAX_HELD_BYTES - this.heldBytes
+  }
 
   async submit(
     id: string,
@@ -53,7 +60,7 @@ export class PiRpcPromptDelivery {
       throw new Error('Pi prompt queue unavailable')
     }
     const bytes = Buffer.byteLength(JSON.stringify(frame))
-    if (this.pending.size >= 128 || this.heldBytes + bytes > 32 * 1024 * 1024) {
+    if (this.pending.size >= MAX_PENDING_PROMPTS || bytes > this.heldBytesFree) {
       return {
         state: 'rejected',
         ...agentSessionFailureWords(agentSessionFailureFact('queueFull'), {
@@ -124,9 +131,14 @@ export class PiRpcPromptDelivery {
         return
       }
       this.remove(submission)
+      // Pi checks sign-in before it records a prompt (0.84.0 onward), so this one never reached it.
+      const settledFact =
+        fact.kind === 'notSignedIn' && !submission.accepted
+          ? { ...fact, neverReachedAgent: true as const }
+          : fact
       this.deps.settled(submission.id, {
         state: 'rejected',
-        ...agentSessionFailureWords(fact, { agentName: 'Pi', surface: 'rejection' })
+        ...agentSessionFailureWords(settledFact, { agentName: 'Pi', surface: 'rejection' })
       })
       if (submission.accepted) {
         this.deps.rejectedAfterAcceptance(reply.error ?? 'Pi rejected the prompt')
