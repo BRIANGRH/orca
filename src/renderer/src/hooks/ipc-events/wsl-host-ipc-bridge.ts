@@ -57,7 +57,8 @@ export function selectWslHostsWithVisibleWork(state: AppState): string[] {
 /** Mirrors WSL host status into the store and tells main which hosts the user has open. */
 export function registerWslHostIpcBridge(unsubs: (() => void)[]): void {
   const api = window.api.runtimeEnvironments?.wslHosts
-  if (!api) {
+  // An older preload, or a partial test bridge, lacks the WSL host namespace.
+  if (typeof api?.onStatusChanged !== 'function') {
     return
   }
   const apply = (status: WslHostStatus): void => useAppStore.getState().applyWslHostStatus(status)
