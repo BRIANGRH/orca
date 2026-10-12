@@ -1,10 +1,11 @@
 import {
-  mergeRetainedHostLifecycleRows,
-  retainedRowReplacement
+  retainedRowReplacement,
+  retainedWithProviderItems
 } from './structured-rewind-retained-host-rows'
 import { isDeepStrictEqual } from 'node:util'
 import {
   agentJournalItemKey,
+  agentJournalSubmissionKey,
   parseAgentJournalItemKey
 } from '../../../shared/agent-session-journal-item-key'
 import type { AgentSessionRewindRecord } from '../../../shared/agent-session-rewind'
@@ -13,6 +14,7 @@ import type { AgentSessionJournal } from '../agent-session-journal/journal-store
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
 import { AGENT_SESSION_HISTORY_MAX_PAGE_BYTES } from './agent-session-history-page-bounds'
 import { rewindRefusal } from './structured-rewind-refusal'
+import { rewindRestatedSends, withRewindRestatedSends } from './structured-rewind-restated-sends'
 import type { StructuredAgentSessionLogger } from './structured-agent-session-logger'
 import type { JournalOperationReceipt } from '../agent-session-journal/journal-row-writer'
 import type { AgentJournalCursor } from '../../../shared/agent-session-journal-types'
@@ -133,13 +135,11 @@ export async function recoverStructuredRewind(
     if (observedItems.size !== expectedItems.size) {
       throw new Error('agent_session_rewind:proof-mismatch')
     }
-    const retained = mergeRetainedHostLifecycleRows(
+    const retained = retainedWithProviderItems(
       rewind.retained,
-      recovered.items.map(({ identity, body }) => ({
-        itemId: agentJournalItemKey(identity),
-        body,
-        observedAt: now()
-      }))
+      recovered.items,
+      rewindRestatedSends(journal),
+      now()
     )
     if (
       retained.length > 10_000 ||
@@ -153,7 +153,10 @@ export async function recoverStructuredRewind(
   if (rewind.phase !== 'provider-succeeded') {
     return
   }
-  const replacement = rewind.retained.map(retainedRowReplacement)
+  const replacement = withRewindRestatedSends(
+    rewind.retained.map(retainedRowReplacement),
+    rewindRestatedSends(journal)
+  )
   if (rewind.contextClearOperationId && rewind.contextClearSequence) {
     if (
       store.getRecord(sessionId)?.providerContextBoundary?.operationId !==
@@ -176,11 +179,21 @@ export async function recoverStructuredRewind(
   }
   // A crash after the journal transaction must settle its existing epoch, not replace it twice.
   const alreadyReplaced = journal.cursor().epoch !== rewind.expectedEpoch
+  // A restated accepted send's bubble is its submission's; the retained row names its provider item.
+  const providerIds = new Map(
+    journal
+      .submissions()
+      .flatMap(({ clientMessageId, dispatchState, providerItemId }) =>
+        dispatchState === 'accepted' && providerItemId
+          ? [[agentJournalSubmissionKey(clientMessageId), providerItemId] as const]
+          : []
+      )
+  )
   if (
     alreadyReplaced &&
     !isDeepStrictEqual(
       journal.snapshot().items.map(({ itemId }) => ({
-        itemId,
+        itemId: providerIds.get(itemId) ?? itemId,
         body: journal.itemBody(itemId)
       })),
       replacement.map(({ identity, body }) => ({ itemId: agentJournalItemKey(identity), body }))

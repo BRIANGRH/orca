@@ -27,6 +27,7 @@ const codexKey = (turnId: string, ordinal: number) =>
   agentJournalItemKey({ provider: 'codex', threadId: 'thread-1', turnId, ordinal })
 const orcaKey = (clientMessageId: string) =>
   agentJournalItemKey({ provider: 'orca', clientMessageId })
+const NO_RESTATED_SENDS = new Map()
 
 function prose(text: string): AgentJournalItemBody {
   return { kind: 'message', role: 'assistant', blocks: [{ type: 'text', text }] }
@@ -58,10 +59,11 @@ describe('rewind keeps each retained row attributed', () => {
         producerKind: 'agent'
       })
     ]
-    const merged = mergeRetainedHostLifecycleRows(reference, [
-      providerItem(own, prose('own')),
-      providerItem(child, prose('child'))
-    ])
+    const merged = mergeRetainedHostLifecycleRows(
+      reference,
+      [providerItem(own, prose('own')), providerItem(child, prose('child'))],
+      NO_RESTATED_SENDS
+    )
     expect(merged.find((item) => item.itemId === own)).toMatchObject({ turnScope: inTurnA })
     expect(merged.find((item) => item.itemId === own)?.agentId).toBeUndefined()
     expect(merged.find((item) => item.itemId === child)).toMatchObject({
@@ -94,9 +96,11 @@ describe('rewind keeps each retained row attributed', () => {
         { turnScope: { kind: 'turn', turnItemId: commandTurn } }
       )
     ]
-    const merged = mergeRetainedHostLifecycleRows(reference, [
-      providerItem(before, prose('before'))
-    ])
+    const merged = mergeRetainedHostLifecycleRows(
+      reference,
+      [providerItem(before, prose('before'))],
+      NO_RESTATED_SENDS
+    )
     expect(merged.map((item) => item.itemId)).toEqual([before, entry, commandTurn, commandResult])
     expect(merged.at(-1)?.turnScope).toEqual({ kind: 'turn', turnItemId: commandTurn })
   })
@@ -114,7 +118,8 @@ describe('rewind keeps each retained row attributed', () => {
       [
         providerItem(codexKey('turn-a', 2), prose('ok')),
         providerItem(codexKey('turn-a', 9), prose('provider now renders it'))
-      ]
+      ],
+      NO_RESTATED_SENDS
     )
 
     expect(merged.map((row) => row.itemId)).toEqual([
@@ -136,16 +141,68 @@ describe('rewind keeps each retained row attributed', () => {
         providerTurnId: 'b'
       })
     ]
-    const merged = mergeRetainedHostLifecycleRows(reference, [
-      providerItem(codexKey('a', 1), prose('in a')),
-      providerItem(codexKey('b', 1), prose('claimed by the command')),
-      providerItem(codexKey('c', 1), prose('no record'))
-    ])
+    const merged = mergeRetainedHostLifecycleRows(
+      reference,
+      [
+        providerItem(codexKey('a', 1), prose('in a')),
+        providerItem(codexKey('b', 1), prose('claimed by the command')),
+        providerItem(codexKey('c', 1), prose('no record'))
+      ],
+      NO_RESTATED_SENDS
+    )
     const scopeOf = (itemId: string) => merged.find((item) => item.itemId === itemId)?.turnScope
     expect(scopeOf(codexKey('a', 1))).toEqual(inTurnA)
     expect(scopeOf(codexKey('b', 1))).toEqual({ kind: 'turn', turnItemId: commandTurn })
     // No record to join: the rebuilt epoch places it by position.
     expect(scopeOf(codexKey('c', 1))).toBeUndefined()
+  })
+})
+
+describe('a rewind keeps a send only the host holds', () => {
+  const said = (text: string): AgentJournalItemBody => ({
+    kind: 'message',
+    role: 'user',
+    blocks: [{ type: 'text', text }]
+  })
+  const restatedSend = (clientMessageId: string) => ({
+    submission: {
+      clientMessageId,
+      fence: 1,
+      payloadFingerprint: clientMessageId,
+      dispatchState: 'rejected' as const,
+      providerItemId: null,
+      reason: null,
+      submittedAt: 1,
+      resolvedAt: 1
+    },
+    carries: []
+  })
+
+  it('where it sat, and only when the rewind restates it', () => {
+    const stopped = orcaKey('stopped')
+    const failed = orcaKey('failed')
+    // An accepted carrier is keyed by its provider item: kept only while the provider holds it.
+    const gone = codexKey('gone', 0)
+    const merged = mergeRetainedHostLifecycleRows(
+      [
+        retained(codexKey('a', 1), prose('before')),
+        retained(stopped, said('stopped')),
+        retained(failed, said('failed')),
+        retained(gone, said('carrier')),
+        retained(codexKey('b', 1), prose('after'))
+      ],
+      [
+        providerItem(codexKey('a', 1), prose('before')),
+        providerItem(codexKey('b', 1), prose('after'))
+      ],
+      new Map([
+        [stopped, restatedSend('stopped')],
+        [gone, restatedSend('gone')]
+      ])
+    )
+
+    expect(merged.map((row) => row.itemId)).toEqual([codexKey('a', 1), stopped, codexKey('b', 1)])
+    expect(merged[1]).toEqual(retained(stopped, said('stopped')))
   })
 })
 
@@ -170,7 +227,8 @@ describe("a rewind keeps another agent's messages its", () => {
     const itemId = codexKey('turn-1', 0)
     const merged = mergeRetainedHostLifecycleRows(
       [retained(itemId, { ...user('You have 1 orchestration message.'), from })],
-      [providerItem(itemId, user('You have 1 orchestration message.'))]
+      [providerItem(itemId, user('You have 1 orchestration message.'))],
+      NO_RESTATED_SENDS
     )
     expect(merged).toHaveLength(1)
     expect(merged[0]?.body).toMatchObject({ from })
@@ -181,7 +239,8 @@ describe("a rewind keeps another agent's messages its", () => {
     const answer = codexKey('turn-1', 1)
     const merged = mergeRetainedHostLifecycleRows(
       [retained(own, user('mine')), retained(answer, { ...user('hi'), from })],
-      [providerItem(own, user('mine')), providerItem(answer, prose('hi'))]
+      [providerItem(own, user('mine')), providerItem(answer, prose('hi'))],
+      NO_RESTATED_SENDS
     )
     expect(merged.map((row) => 'from' in row.body)).toEqual([false, false])
   })
@@ -193,7 +252,8 @@ describe("a rewind keeps another agent's messages its", () => {
     const framed = withStoppedHistory(user('B'), [user('A')])
     const merged = mergeRetainedHostLifecycleRows(
       [retained(carrier, user('B')), retained(mail, { ...user('mail'), from })],
-      [providerItem(carrier, framed), providerItem(mail, user('mail, as Codex holds it'))]
+      [providerItem(carrier, framed), providerItem(mail, user('mail, as Codex holds it'))],
+      NO_RESTATED_SENDS
     )
     expect(JSON.stringify(framed)).toContain('<stopped-message>')
     expect(merged[0]?.body).toEqual(user('B'))
@@ -266,7 +326,7 @@ describe('rewind merge cost', () => {
     )
     vi.mocked(restoreRewindJournalBody).mockClear()
 
-    const merged = mergeRetainedHostLifecycleRows(reference, providerItems)
+    const merged = mergeRetainedHostLifecycleRows(reference, providerItems, NO_RESTATED_SENDS)
 
     expect(merged.find((item) => item.itemId === codexKey(`t${turns - 1}`, 1))).toMatchObject({
       turnScope: { kind: 'turn', turnItemId: orcaKey(`turn-${turns - 1}`) }

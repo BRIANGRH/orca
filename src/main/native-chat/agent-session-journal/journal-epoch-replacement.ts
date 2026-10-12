@@ -15,6 +15,7 @@ import type { JournalHostDatabase } from './journal-host-database'
 import type { JournalLoad } from './journal-open'
 import { applyJournalRow, createJournalReducerState } from './journal-reducer'
 import { buildJournalItemRow, journalRowBase } from './journal-row-builders'
+import { journalRestatedSendRows, type JournalRestatedSend } from './journal-rewind-restated-send'
 import {
   buildJournalQueueReopenRow,
   buildJournalQueueClearRow,
@@ -38,6 +39,8 @@ export type JournalReplacementItem = AgentJournalProducerLinkage & {
   /** Absent for history rebuilt from a source that never stated one: derived from position, as
    *  a legacy row's is, and then written down. */
   turnScope?: AgentJournalTurnScope
+  /** A rewind's: the send this row is, restated with its own rows instead of an item row. */
+  send?: JournalRestatedSend
 }
 
 export function replaceJournalEpoch(input: {
@@ -56,15 +59,25 @@ export function replaceJournalEpoch(input: {
 }): void {
   const epoch = input.mintEpoch()
   const state = createJournalReducerState(input.identity.sessionId, epoch)
+  const providerHandle = agentSessionJournalProviderHandle(input.identity)
   const epochRow: JournalRow = {
     kind: 'epoch',
     reason: input.reason,
-    providerHandle: agentSessionJournalProviderHandle(input.identity),
+    providerHandle,
     ...journalRowBase(epoch, 1, input.fence, input.now())
   }
   const rows: JournalRow[] = [epochRow]
   applyJournalRow(state, epochRow)
   for (const item of input.items) {
+    const restated = journalRestatedSendRows({ state, providerHandle, fence: input.fence, item })
+    if (restated.length > 0) {
+      for (const build of restated) {
+        const row = build(state.lastSequence + 1, item.observedAt ?? input.now())
+        applyJournalRow(state, row)
+        rows.push(row)
+      }
+      continue
+    }
     const row = buildJournalItemRow({
       state,
       identity: item.identity,
