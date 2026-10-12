@@ -1,3 +1,4 @@
+import type { AgentLaunchRuntime } from '../../../../shared/agent-launch-runtime'
 import type { SpawnIntent } from '../../../../shared/host-spawn-admission'
 import type { IPtyProvider, PtySpawnOptions, PtySpawnResult } from '../../../providers/types'
 import type { CodexPaneHomeRoute } from '../../../codex/codex-pane-account-registry'
@@ -106,6 +107,8 @@ export type RuntimePtySpawnArgs = {
   leafId?: string
   sessionId?: string
   shellOverride?: string
+  /** The agent launch's runtime fact; when present the PTY shell comes only from it. */
+  launchRuntime?: AgentLaunchRuntime
   isNewSession?: boolean
   /** No renderer view exists at spawn; main owns delivery and query replies until one mounts. */
   initiallyHidden?: boolean

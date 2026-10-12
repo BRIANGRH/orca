@@ -2,6 +2,10 @@ import type { Store } from './persistence'
 import type { GlobalSettings } from '../shared/global-settings-types'
 import type { Project } from '../shared/project-types'
 import type { Repo } from '../shared/repo-types'
+import type { FolderWorkspace } from '../shared/folder-workspace-types'
+import type { ProjectGroup } from '../shared/project-group-types'
+import { findFolderWorkspaceCandidateRepos } from '../shared/folder-workspace-execution-host'
+import { parseWslUncPath } from '../shared/wsl-paths'
 import {
   getWorkspaceRuntimePreference,
   resolveProjectExecutionRuntime,
@@ -105,6 +109,62 @@ export function resolveLocalWorkspaceRuntime(
       workspacePath
     )
   })
+}
+
+export type LaunchScopeRuntimeStore = ProjectRuntimeResolutionStore & {
+  getRepos?: () => Repo[]
+  getFolderWorkspaces?: () => FolderWorkspace[]
+  getProjectGroups?: () => ProjectGroup[]
+}
+
+/** The one local repo whose project runs a folder workspace; a folder spanning several has none. */
+export function findFolderWorkspaceRuntimeRepo(
+  store: LaunchScopeRuntimeStore,
+  folderWorkspaceId: string
+): Repo | undefined {
+  const candidates = findFolderWorkspaceCandidateRepos(
+    {
+      folderWorkspaces: store.getFolderWorkspaces?.() ?? [],
+      projectGroups: store.getProjectGroups?.() ?? [],
+      repos: store.getRepos?.() ?? []
+    },
+    folderWorkspaceId
+  )
+  const repo = candidates.length === 1 ? candidates[0] : undefined
+  return repo && getRepoExecutionHostId(repo) === LOCAL_EXECUTION_HOST_ID ? repo : undefined
+}
+
+/** The window's runtime for a workspace (`getLocalProjectExecutionRuntimeContext`), for a launch
+ *  scope this host resolved. A remote scope has none: its host plans for itself. */
+export function resolveLocalLaunchScopeRuntime(
+  store: LaunchScopeRuntimeStore,
+  scope: {
+    id: string
+    path: string
+    connectionId: string | null
+    repo: Repo | null
+    folderWorkspace: Pick<FolderWorkspace, 'id'> | null
+  }
+): ProjectExecutionRuntimeResolution | undefined {
+  if (scope.connectionId || !canResolveProjectRuntimeForRepo(store)) {
+    return undefined
+  }
+  const repo =
+    scope.repo ??
+    (scope.folderWorkspace
+      ? findFolderWorkspaceRuntimeRepo(store, scope.folderWorkspace.id)
+      : undefined)
+  if (repo) {
+    return resolveLocalWorkspaceRuntime(store, repo, scope.path)
+  }
+  // A repo-less folder has no project, so only a `\\wsl$` path places it, as in the window.
+  const distro = parseWslUncPath(scope.path)?.distro
+  return distro
+    ? resolveLocalProjectRuntime(store, {
+        id: scope.id,
+        localWindowsRuntimePreference: { kind: 'wsl', distro }
+      })
+    : undefined
 }
 
 export function resolveLocalProjectRuntimesForRepos(

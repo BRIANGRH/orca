@@ -7,9 +7,9 @@
  * resolves it once — settings default plus per-launch feasibility from
  * `structured-native-chat-launch-route` — so no surface carries its own copy of that decision.
  *
- * The intent deliberately does NOT name a mode. A caller states what it wants to happen, not how
+ * The intent deliberately does NOT pick a chat. A caller states what it wants to happen, not how
  * to deliver it; picking structured vs terminal is the host's job and is reported back in the
- * receipt rather than requested here.
+ * receipt. `terminalOnly` only rules a chat out, for a caller whose surface is a terminal tab.
  */
 
 import type { TuiAgent } from './tui-agent'
@@ -98,6 +98,13 @@ export type AgentLaunchIntent = {
   /** The caller-minted id of the chat session a structured launch creates. Not a route input;
    *  refused when that session already exists. */
   sessionId?: string
+  /** A terminal launch's tab title. */
+  title?: string
+  /** Saved extras merged over the launch's arguments; terminal-only, like `agentArgs`. */
+  extraAgentArgs?: string
+  /** `agent_started.request_kind`, as leniently as `launchSource`. */
+  requestKind?: string
+  terminalOnly?: boolean
 }
 
 /**

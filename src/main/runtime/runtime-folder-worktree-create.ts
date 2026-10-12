@@ -135,6 +135,7 @@ export async function createRuntimeFolderWorktree(args: {
       const terminal = await deps.createTerminal(`id:${worktree.id}`, {
         command: args.startup.command,
         ...(request.startupCwd ? { cwd: request.startupCwd } : {}),
+        ...(request.startupTitle ? { title: request.startupTitle } : {}),
         ...paneIdentity(request.startupPaneKey),
         env: args.startup.env,
         ...(args.startup.launchConfig ? { launchConfig: args.startup.launchConfig } : {}),

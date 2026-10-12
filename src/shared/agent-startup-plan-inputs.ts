@@ -46,8 +46,8 @@ export function resolveAgentStartupPlanInputs(args: {
   agentArgs?: string | null
   /** An automation's saved extras, merged over the resolved args; invalid extras throw. */
   extraAgentArgs?: string
-  /** A requested shell is the one this PTY will be, so it owns the quoting family. */
-  windowsShellOverride?: string | null
+  /** The shell family the execution host resolved for this PTY; absent derives it from Settings. */
+  shell?: AgentStartupShell
   sessionOptions?: Record<string, SessionOptionValue> | undefined
 }): AgentStartupPlanInputs {
   const { agent, settings, platform, isRemote, sessionOptions } = args
@@ -57,11 +57,13 @@ export function resolveAgentStartupPlanInputs(args: {
     args.agentArgs !== undefined
       ? args.agentArgs
       : resolveTuiAgentLaunchArgs(agent, settings.agentDefaultArgs)
-  const shell = resolveLocalWindowsAgentStartupShell({
-    platform,
-    isRemote,
-    terminalWindowsShell: args.windowsShellOverride ?? settings.terminalWindowsShell
-  })
+  const shell =
+    args.shell ??
+    resolveLocalWindowsAgentStartupShell({
+      platform,
+      isRemote,
+      terminalWindowsShell: settings.terminalWindowsShell
+    })
   if (hasExtraAgentArgs(args.extraAgentArgs)) {
     const merged = mergeExtraAgentArgs({
       agent,

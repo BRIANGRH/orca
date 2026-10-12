@@ -47,7 +47,10 @@ export function agentLaunchWorkspaceFactory(
       cwd,
       launchSource,
       paneKey,
-      options
+      options,
+      title,
+      extraAgentArgs,
+      requestKind
     }) => {
       const startupLaunchPreferences = toAgentLaunchPreferences(options)
       let promptRodeLaunchCommand = false
@@ -93,6 +96,9 @@ export function agentLaunchWorkspaceFactory(
             : {}),
           ...(cwd ? { startupCwd: cwd } : {}),
           ...(launchSource ? { startupLaunchSource: launchSource } : {}),
+          ...(requestKind ? { startupRequestKind: requestKind } : {}),
+          ...(title ? { startupTitle: title } : {}),
+          ...(extraAgentArgs ? { startupExtraAgentArgs: extraAgentArgs } : {}),
           ...(paneKey ? { startupPaneKey: paneKey } : {}),
           ...(startupLaunchPreferences ? { startupLaunchPreferences } : {}),
           // The launch owns the agent whichever surface it settles on, so the workspace records

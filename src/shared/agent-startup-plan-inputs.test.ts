@@ -79,13 +79,13 @@ describe('resolveAgentStartupPlanInputs', () => {
     ).toBeUndefined()
   })
 
-  it('lets a requested shell override the configured one', () => {
+  it("lets the host's resolved shell override the configured one", () => {
     const inputs = resolveAgentStartupPlanInputs({
       agent: 'claude',
       settings: { terminalWindowsShell: 'git-bash' },
       platform: 'win32',
       isRemote: false,
-      windowsShellOverride: 'cmd.exe'
+      shell: 'cmd'
     })
 
     expect(inputs.shell).toBe('cmd')

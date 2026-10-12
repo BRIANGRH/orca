@@ -61,8 +61,12 @@ export type RuntimeManagedWorktreeCreateArgs = {
   /** Main-internal: an automation's saved extras, merged over the startup agent's arguments. */
   startupExtraAgentArgs?: string
   startupCwd?: string
+  /** The startup terminal's tab title. */
+  startupTitle?: string
   /** The surface behind a host-built startup agent (`startupAgent` or `startupDraft`). */
   startupLaunchSource?: string
+  /** `agent_started.request_kind` for a host-built `startupAgent`; absent is `new`. */
+  startupRequestKind?: string
   /** A caller-minted `tabId:leafId` for the startup terminal's pane. */
   startupPaneKey?: string
   pendingFirstAgentMessageRename?: boolean

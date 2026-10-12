@@ -36,6 +36,7 @@ type StartupEnvironment = {
   extraAgentArgs?: string
   /** Caller-supplied telemetry attribution, validated leniently at the host boundary. */
   launchSource?: string
+  requestKind?: string
 }
 
 /** The agent a linked draft starts: the requested one, else the default, else one detected on the
@@ -194,7 +195,7 @@ export function buildWorktreeStartupForAgent(
         ? { startupCommandDelivery: startupPlan.startupCommandDelivery }
         : {}),
       ...(startupPlan.env ? { env: startupPlan.env } : {}),
-      telemetry: agentStartedTelemetry(agent, environment.launchSource)
+      telemetry: agentStartedTelemetry(agent, environment.launchSource, environment.requestKind)
     },
     ...(startupPlan.followupPrompt
       ? {
@@ -217,6 +218,7 @@ export function resolveWorktreeCreateAgentStartup(
       agentArgs?: string | null
       extraAgentArgs?: string
       launchSource?: string
+      requestKind?: string
       onPromptCarry?: (carried: boolean) => void
     }
   ) => { agent: TuiAgent; startup: WorktreeStartupLaunch; followup?: WorktreeStartupFollowup }
@@ -228,6 +230,7 @@ export function resolveWorktreeCreateAgentStartup(
     ...(args.startupAgentArgs !== undefined ? { agentArgs: args.startupAgentArgs } : {}),
     ...(args.startupExtraAgentArgs ? { extraAgentArgs: args.startupExtraAgentArgs } : {}),
     ...(args.startupLaunchSource ? { launchSource: args.startupLaunchSource } : {}),
+    ...(args.startupRequestKind ? { requestKind: args.startupRequestKind } : {}),
     ...(args.onStartupPromptCarry ? { onPromptCarry: args.onStartupPromptCarry } : {})
   })
 }

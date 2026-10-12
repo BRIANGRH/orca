@@ -4,9 +4,17 @@
  * implements, not part of the sequencing it runs.
  */
 
-import type { AgentLaunchPrompt } from '../../shared/agent-launch-intent'
+import type { AgentLaunchIntent, AgentLaunchPrompt } from '../../shared/agent-launch-intent'
 import type { StructuredAgentId } from '../../shared/agent-session-provider-handle'
 import type { TuiAgent } from '../../shared/tui-agent'
+
+/** What a terminal agent takes beyond its arguments: its tab's title, saved extra arguments, and
+ *  the `agent_started.request_kind` the host cannot tell for itself. */
+export type AgentLaunchTerminalInputs = {
+  title?: string
+  extraAgentArgs?: string
+  requestKind?: string
+}
 
 /** How a surface is built once the executor has decided which one. Injected because an
  *  orchestration worker's session carries a redrive subscription and a mailbox a plain launch
@@ -23,23 +31,25 @@ export type AgentLaunchSurfaceFactory = {
      *  is shown; absent records the id clients derive. */
     tabId?: string
   }): Promise<AgentLaunchStructuredSurface>
-  createTerminalAgent(args: {
-    worktreeId: string
-    agent: TuiAgent
-    options?: Readonly<Record<string, unknown>>
-    /** Offered only for an agent whose CLI takes the prompt on argv. It rides the launch command
-     *  only when the typed line can carry it; `promptRodeLaunchCommand` reports which happened. */
-    startupPrompt?: string
-    /** Replaces the settings default for this launch only; `null` means no arguments at all. */
-    agentArgs?: string | null
-    cwd?: string
-    /** The one member of the `agent_started` triple the host cannot derive for itself. */
-    launchSource?: string
-    /** The caller-minted pane to create; refused with `AgentLaunchPaneAlreadyLiveError` if live. */
-    paneKey?: string
-    /** The tab's first view, derived on the host by the window's own rule. */
-    viewMode?: 'terminal' | 'chat'
-  }): Promise<{
+  createTerminalAgent(
+    args: {
+      worktreeId: string
+      agent: TuiAgent
+      options?: Readonly<Record<string, unknown>>
+      /** Offered only for an agent whose CLI takes the prompt on argv. It rides the launch command
+       *  only when the typed line can carry it; `promptRodeLaunchCommand` reports which happened. */
+      startupPrompt?: string
+      /** Replaces the settings default for this launch only; `null` means no arguments at all. */
+      agentArgs?: string | null
+      cwd?: string
+      /** The `agent_started` surface, which the host cannot derive for itself. */
+      launchSource?: string
+      /** The caller-minted pane to create; refused with `AgentLaunchPaneAlreadyLiveError` if live. */
+      paneKey?: string
+      /** The tab's first view, derived on the host by the window's own rule. */
+      viewMode?: 'terminal' | 'chat'
+    } & AgentLaunchTerminalInputs
+  ): Promise<{
     handle: string
     /** The pane this create minted; a factory whose runtime reports none omits it, never invents. */
     paneKey?: string
@@ -101,27 +111,29 @@ export class AgentLaunchStructuredSessionRefusedError extends Error {
 /** Creating the workspace, when the intent asks for one. Injected so orchestration keeps recording
  *  its own worktree stages and residual-resource effects around the same call. */
 export type AgentLaunchWorkspaceFactory = {
-  createWorktree(args: {
-    create: Readonly<Record<string, unknown>>
-    /** Set only when the settled mode is a terminal agent: agent-first creation sequences the
-     *  agent's startup command behind the setup runner, which is how a PTY launch gets its
-     *  wait-for-setup gate for free. A structured launch has no startup command to sequence and
-     *  must await that gate explicitly instead. */
-    startupAgent: TuiAgent | undefined
-    /** Offered only alongside a `startupAgent` whose CLI takes the prompt on argv: agent-first
-     *  creation builds the startup command, so that is where the typed line is measured. */
-    startupPrompt?: string
-    /** Set instead of `startupPrompt` under the `legacy-host` prompt policy: this create owns the
-     *  text for any agent and length, as `worktree.create` always has. */
-    legacyPrompt?: AgentLaunchPrompt
-    /** Inputs needed when this terminal is created as the worktree's startup surface. */
-    agentArgs?: string | null
-    cwd?: string
-    launchSource?: string
-    paneKey?: string
-    /** The launch's session options, read as the startup terminal's model/effort/mode preferences. */
-    options?: Readonly<Record<string, unknown>>
-  }): Promise<{
+  createWorktree(
+    args: {
+      create: Readonly<Record<string, unknown>>
+      /** Set only when the settled mode is a terminal agent: agent-first creation sequences the
+       *  agent's startup command behind the setup runner, which is how a PTY launch gets its
+       *  wait-for-setup gate for free. A structured launch has no startup command to sequence and
+       *  must await that gate explicitly instead. */
+      startupAgent: TuiAgent | undefined
+      /** Offered only alongside a `startupAgent` whose CLI takes the prompt on argv: agent-first
+       *  creation builds the startup command, so that is where the typed line is measured. */
+      startupPrompt?: string
+      /** Set instead of `startupPrompt` under the `legacy-host` prompt policy: this create owns the
+       *  text for any agent and length, as `worktree.create` always has. */
+      legacyPrompt?: AgentLaunchPrompt
+      /** Inputs needed when this terminal is created as the worktree's startup surface. */
+      agentArgs?: string | null
+      cwd?: string
+      launchSource?: string
+      paneKey?: string
+      /** The launch's session options, read as the startup terminal's model/effort/mode preferences. */
+      options?: Readonly<Record<string, unknown>>
+    } & AgentLaunchTerminalInputs
+  ): Promise<{
     worktreeId: string
     /** The new workspace's SSH connection; `null` is local. The executor carries it but nothing
      *  reads it yet; absent when the factory did not resolve it. */
@@ -139,4 +151,20 @@ export type AgentLaunchWorkspaceFactory = {
   createFolderWorkspace?(args: {
     create: Readonly<Record<string, unknown>>
   }): Promise<{ worktreeId: string; connectionId: string | null }>
+}
+
+/** What every route that builds a terminal agent passes on, so the startup terminal of a new
+ *  workspace and the terminal of an existing one start the same agent. */
+export function terminalLaunchInputs(intent: AgentLaunchIntent) {
+  return {
+    ...(intent.sessionOptions ? { options: intent.sessionOptions } : {}),
+    // `null` is a value the caller meant, so this tests for absence rather than falsiness.
+    ...(intent.agentArgs !== undefined ? { agentArgs: intent.agentArgs } : {}),
+    ...(intent.cwd ? { cwd: intent.cwd } : {}),
+    ...(intent.launchSource ? { launchSource: intent.launchSource } : {}),
+    ...(intent.paneKey ? { paneKey: intent.paneKey } : {}),
+    ...(intent.title ? { title: intent.title } : {}),
+    ...(intent.extraAgentArgs ? { extraAgentArgs: intent.extraAgentArgs } : {}),
+    ...(intent.requestKind ? { requestKind: intent.requestKind } : {})
+  }
 }

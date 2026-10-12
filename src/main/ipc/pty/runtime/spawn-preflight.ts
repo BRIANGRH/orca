@@ -68,8 +68,13 @@ export async function prepareRuntimePtySpawn(
   // could only ever get the host default shell, so a caller asking for cmd/PowerShell got the
   // default shell with the request typed into it. Still Windows-only: the override names a
   // Windows shell, and spawn-options applies it under the same platform gate.
-  ctx.terminalRuntimeOptions =
-    process.platform === 'win32'
+  // An agent launch's shell is the one it was quoted for, resolved once by its plan.
+  ctx.terminalRuntimeOptions = args.launchRuntime
+    ? {
+        shellOverride: args.launchRuntime.ptyShellOverride,
+        terminalWindowsWslDistro: args.launchRuntime.wslDistro
+      }
+    : process.platform === 'win32'
       ? resolveLocalWindowsTerminalRuntimeOptions({
           requestedShellOverride: args.shellOverride,
           settings: ctx.deps.getSettings?.(),

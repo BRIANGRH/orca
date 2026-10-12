@@ -178,6 +178,7 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       agentArgs?: string | null
       extraAgentArgs?: string
       launchSource?: string
+      requestKind?: string
       onPromptCarry?: (carried: boolean) => void
     }
   ): { agent: TuiAgent; startup: WorktreeStartupLaunch; followup?: WorktreeStartupFollowup } {
@@ -192,6 +193,7 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       ...(launchInputs?.agentArgs !== undefined ? { agentArgs: launchInputs.agentArgs } : {}),
       ...(launchInputs?.extraAgentArgs ? { extraAgentArgs: launchInputs.extraAgentArgs } : {}),
       ...(launchInputs?.launchSource ? { launchSource: launchInputs.launchSource } : {}),
+      ...(launchInputs?.requestKind ? { requestKind: launchInputs.requestKind } : {}),
       ...(launchInputs?.onPromptCarry ? { onPromptCarry: launchInputs.onPromptCarry } : {}),
       settings: this.store.getSettings(),
       getLaunchPlatform: () => this.getAgentLaunchPlatformForRepo(repo),

@@ -16,13 +16,16 @@ import type { Repo } from '../../shared/repo-types'
 import type { GitAdmissionTier } from '../git/command-runner/git-exec-options'
 import {
   getLocalProjectGhExecOptions,
-  resolveLocalProjectRuntimeForRepo,
   type LocalProjectGhExecOptions
 } from '../project-runtime-git-options'
-import { getAgentLaunchPlatformForRepo } from './runtime-agent-launch-resolution'
+import {
+  agentLaunchPlatformForRepo,
+  agentLaunchPlatformForScope,
+  resolveAgentLaunchRuntime,
+  resolvePreC1AgentLaunchRuntime
+} from './agent-launch-scope-runtime'
+import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
-import { isWindowsAbsolutePathLike } from '../../shared/cross-platform-path'
-import { isWslUncPath } from '../../shared/wsl-paths'
 import { parseAppSshPtyId } from '../../shared/ssh-pty-id'
 import type { PtyProcessInspection } from '../providers/pty-process-inspection'
 import type { StructuredAgentId } from '../../shared/agent-session-provider-handle'
@@ -265,21 +268,25 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
   }
 
   protected getAgentLaunchPlatformForRepo(repo: Repo): NodeJS.Platform {
-    const projectRuntime = repo.connectionId
-      ? undefined
-      : resolveLocalProjectRuntimeForRepo(this.requireStore(), repo)
-    return getAgentLaunchPlatformForRepo(repo, projectRuntime)
+    return agentLaunchPlatformForRepo(this.requireStore(), repo)
   }
 
   protected getAgentLaunchPlatformForWorkspace(
     scope: TerminalWorkspaceLaunchScope
   ): NodeJS.Platform {
-    if (scope.repo) {
-      return this.getAgentLaunchPlatformForRepo(scope.repo)
-    }
-    if (scope.connectionId) {
-      return isWindowsAbsolutePathLike(scope.path) ? 'win32' : 'linux'
-    }
-    return isWslUncPath(scope.path) ? 'linux' : process.platform
+    return agentLaunchPlatformForScope(this.requireStore(), scope)
+  }
+
+  protected resolveAgentLaunchRuntime(
+    scope: TerminalWorkspaceLaunchScope,
+    requestedShellOverride?: string
+  ): AgentLaunchRuntime {
+    return resolveAgentLaunchRuntime(this.requireStore(), scope, requestedShellOverride)
+  }
+
+  protected resolvePreC1AgentLaunchRuntime(
+    scope: TerminalWorkspaceLaunchScope
+  ): AgentLaunchRuntime {
+    return resolvePreC1AgentLaunchRuntime(this.requireStore(), scope)
   }
 }

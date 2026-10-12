@@ -46,12 +46,14 @@ export class OrcaRuntimeWithResolveMobileSessionTerminalCommand extends OrcaRunt
     if (!isTuiAgentEnabled(opts.agent, settings.disabledTuiAgents)) {
       throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
     }
+    const launchRuntime = this.resolveAgentLaunchRuntime(workspace)
     const startupPlan = buildAgentStartupPlan({
       ...resolveAgentStartupPlanInputs({
         agent: opts.agent,
         settings,
         // Why: mobile may be iOS while the shell host is Windows/macOS/Linux or SSH Linux; quote for the host shell.
-        platform: this.getAgentLaunchPlatformForWorkspace(workspace),
+        platform: launchRuntime.platform,
+        shell: launchRuntime.quotingShell,
         // Why: SSH runs the CLI through the relay shim (plain `orca`), so the Linux-only `orca-ide` rename must not apply.
         isRemote: Boolean(workspace.connectionId)
       }),

@@ -128,7 +128,10 @@ export function agentLaunchSurfaceFactory(
       launchSource,
       paneKey,
       options,
-      viewMode
+      viewMode,
+      title,
+      extraAgentArgs,
+      requestKind
     }) => {
       const launchPreferences = toAgentLaunchPreferences(options)
       let promptRodeLaunchCommand = false
@@ -157,6 +160,9 @@ export function agentLaunchSurfaceFactory(
         // A live reserved pane would be attached, not launched into, so the runtime refuses it.
         ...(paneKey ? { ...paneIdentity(paneKey), requireFreshPane: true } : {}),
         ...(launchSource ? { launchSource } : {}),
+        ...(requestKind ? { requestKind } : {}),
+        ...(title ? { title } : {}),
+        ...(extraAgentArgs ? { extraAgentArgs } : {}),
         ...(viewMode ? { viewMode } : {}),
         ...(earlyTab?.windowShowsTab() || !movesHostWindow ? { surfaceOwner: false as const } : {}),
         onPtySpawnDispatched: terminalSpawn.onPtySpawnDispatched

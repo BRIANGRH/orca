@@ -1,3 +1,4 @@
+import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
 import type { SpawnIntent } from '../../shared/host-spawn-admission'
 import type { ParsedAgentStatusPayload } from '../../shared/agent-status-types'
 import type {
@@ -64,6 +65,22 @@ export type TerminalCreateOptions = {
    * the runtime still builds, so overriding them does not take the launch away from it.
    */
   agentArgs?: string | null
+  /** An automation's saved extras, merged over the launch's arguments; invalid extras throw. */
+  extraAgentArgs?: string
+  /** `agent_started.request_kind` for a `startupAgent` launch; absent or unknown is `new`. */
+  requestKind?: string
+  /**
+   * Launch-convergence parity: how a `startupPrompt` this line cannot carry is handled. Absent is
+   * the host's rule (start clean, the caller pastes it); `argv` is the window's rule (always on the
+   * command line, where long lines are staged). Dies with prompt-at-start.
+   */
+  promptCarry?: 'argv'
+  /** Launch-convergence parity: a promptless Codex waits for the shell, as window launches do.
+   *  Absent is the host's no-wait. Dies when one rule is chosen. */
+  codexNoPromptShellWait?: boolean
+  /** Main-internal: the runtime fact this agent launch was planned for; its spawn takes the PTY
+   *  shell from it. Set by `resolveAgentTerminalCreateOptions`, never by a client. */
+  launchRuntime?: AgentLaunchRuntime
   launchPreferences?: AgentLaunchPreferences
   terminalKittyKeyboardProtocol?: boolean
   terminalColorQueryReplies?: TerminalOscColorQueryReplyColors

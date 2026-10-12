@@ -41,8 +41,8 @@ export type AgentLaunchSurfaceExecution = AgentLaunchExecutionBase & {
   intent: AgentLaunchIntent
   surfaces: AgentLaunchSurfaceFactory
   workspaces?: AgentLaunchWorkspaceFactory
-  /** Host-internal, never on the wire: settles a terminal agent whatever the chat default says, for
-   *  a caller whose contract is a terminal handle. */
+  /** Settles a terminal agent whatever the chat default says, for a caller whose contract is a
+   *  terminal handle or whose surface is a terminal tab (`agent.launch`'s `terminalOnly`). */
   terminalOnly?: boolean
   /** The launch's own delivery: argv only when the typed line carries it, else a paste. */
   promptPolicy?: undefined

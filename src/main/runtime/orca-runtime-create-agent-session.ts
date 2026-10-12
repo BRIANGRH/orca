@@ -130,10 +130,13 @@ export class OrcaRuntimeWithCreateAgentSession extends OrcaRuntimeWithGetAgentSe
       if (!isTuiAgentEnabled(request.agent, settings.disabledTuiAgents)) {
         throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
       }
+      // The OpenCode model hop keeps main's own quoting and shell rules until C2 deletes it.
+      const launchRuntime = this.resolvePreC1AgentLaunchRuntime(workspace)
       const startupArgs = resolveAgentStartupPlanInputs({
         agent: request.agent,
         settings,
-        platform: this.getAgentLaunchPlatformForWorkspace(workspace),
+        platform: launchRuntime.platform,
+        shell: launchRuntime.quotingShell,
         // Why: `workspace.repo` is display metadata and may be a row from another host; the launch
         // shape must match the PTY route this scope already resolved.
         isRemote: Boolean(workspace.connectionId),
@@ -180,6 +183,7 @@ export class OrcaRuntimeWithCreateAgentSession extends OrcaRuntimeWithGetAgentSe
           env: startup.env,
           launchConfig: startup.launchConfig,
           launchAgent: request.agent,
+          launchRuntime,
           terminalKittyKeyboardProtocol: request.terminalKittyKeyboardProtocol,
           startupCommandDelivery: startup.startupCommandDelivery,
           // A fresh agent this host built; the request has no surface field, so it counts as `unknown`.

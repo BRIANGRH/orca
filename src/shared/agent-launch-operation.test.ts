@@ -29,7 +29,11 @@ const OTHER_PANE_KEY = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d:6fa459ea-ee8a-4ca4-
  * not merely that the input type has no name for it.
  */
 function fingerprintOfWirePayload(
-  params: AgentLaunchFingerprintInput & { launchSource?: string }
+  params: AgentLaunchFingerprintInput & {
+    launchSource?: string
+    title?: string
+    requestKind?: string
+  }
 ): string {
   return computeAgentLaunchFingerprint(params)
 }
@@ -80,6 +84,14 @@ describe('fields the launch fingerprint deliberately ignores', () => {
       computeAgentLaunchFingerprint(BASE)
     )
   })
+})
+
+// Relied on by C2/C3/C7, which send these through agent.launchReplay.
+it('covers the terminal inputs that change what runs, not the tab title or request kind', () => {
+  const plain = fingerprintOfWirePayload(BASE)
+  expect(fingerprintOfWirePayload({ ...BASE, title: 'Fix', requestKind: 'resume' })).toBe(plain)
+  expect(fingerprintOfWirePayload({ ...BASE, extraAgentArgs: '--verbose' })).not.toBe(plain)
+  expect(fingerprintOfWirePayload({ ...BASE, terminalOnly: true })).not.toBe(plain)
 })
 
 describe('compatibility with rows written before these fields existed', () => {

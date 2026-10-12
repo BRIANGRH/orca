@@ -9,8 +9,9 @@
  * error. So `worktree.create` keeps that meaning verbatim, forever, and everything that has to
  * choose a surface comes here instead, behind a negotiated capability.
  *
- * A caller therefore never asks for a mode, and must read `outcome.kind` rather than assume one:
- * the receipt always says which surface ran and why, so a downgrade is never silent.
+ * A caller never asks for a chat (`terminalOnly` only rules one out) and must read `outcome.kind`
+ * rather than assume one: the receipt always says which surface ran and why, so a downgrade is never
+ * silent.
  *
  * A launch is also the one call whose retry is most expensive to get wrong — a lost reply means the
  * caller cannot tell "never ran" from "ran, answer lost" — so a caller may name the operation with

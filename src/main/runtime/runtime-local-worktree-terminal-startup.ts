@@ -97,6 +97,7 @@ export async function startRuntimeLocalWorktreeTerminals(args: {
       const terminal = await ports.createTerminal(`id:${worktree.id}`, {
         command: sequencedStartup.command,
         ...(request.startupCwd ? { cwd: request.startupCwd } : {}),
+        ...(request.startupTitle ? { title: request.startupTitle } : {}),
         ...paneIdentity(request.startupPaneKey),
         ...(setup && startup ? { claudeAgentTeamsSourceCommand: startup.command } : {}),
         env: sequencedStartup.env,

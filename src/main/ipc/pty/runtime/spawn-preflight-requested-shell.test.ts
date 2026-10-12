@@ -126,6 +126,25 @@ describe('runtime pty spawn preflight: requested shell on a local Windows host',
 
     await expect(resolveSpawnShell(undefined)).resolves.toBe(HOST_DEFAULT_SHELL)
   })
+
+  // Relied on by C2 and C5b: a planned agent launch's shell is the one its command was quoted for.
+  it("takes an agent launch's shell only from its plan", async () => {
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+
+    await expect(
+      resolveSpawnOptions({
+        cols: 120,
+        rows: 40,
+        shellOverride: 'cmd.exe',
+        launchRuntime: {
+          platform: 'linux',
+          quotingShell: 'posix',
+          ptyShellOverride: 'wsl.exe',
+          wslDistro: 'Ubuntu'
+        }
+      })
+    ).resolves.toMatchObject({ shellOverride: 'wsl.exe', terminalWindowsWslDistro: 'Ubuntu' })
+  })
 })
 
 describe('runtime pty spawn preflight: OpenSSH login shell on a managed SSH host (#9327)', () => {

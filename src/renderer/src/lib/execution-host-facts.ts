@@ -4,6 +4,7 @@ import {
   type ParsedExecutionHost
 } from '../../../shared/execution-host'
 import type { ProjectExecutionRuntimeResolution } from '../../../shared/project-execution-runtime'
+import { executionRuntimePlatform } from '../../../shared/agent-launch-runtime'
 import { lastVerifiedRuntimeStatus } from '../../../shared/runtime-host-status'
 import type { AgentStartupShell } from '../../../shared/tui-agent-startup-shell'
 import { resolveLocalWindowsAgentStartupShell } from '../../../shared/windows-terminal-shell'
@@ -52,19 +53,6 @@ const RUNTIME_PLATFORM_UPDATE =
   'This Orca server does not report its operating system. Update the server to launch agents on it.'
 const HOST_UNRESOLVED_WITHHELD = 'Orca cannot tell which host owns this workspace yet.'
 
-function resolveLocalPlatform(
-  projectRuntime: ProjectExecutionRuntimeResolution | undefined,
-  workspacePath: string | null | undefined
-): NodeJS.Platform {
-  if (projectRuntime?.status === 'repair-required') {
-    return projectRuntime.repair.preferredRuntime.kind === 'wsl' ? 'linux' : CLIENT_PLATFORM
-  }
-  if (projectRuntime?.status === 'resolved') {
-    return projectRuntime.runtime.kind === 'wsl' ? 'linux' : CLIENT_PLATFORM
-  }
-  return workspacePath && isWslUncPath(workspacePath) ? 'linux' : CLIENT_PLATFORM
-}
-
 function resolveHostPlatform(
   state: HostFactsState,
   args: {
@@ -82,7 +70,11 @@ function resolveHostPlatform(
     return { kind: 'withheld', reason: HOST_UNRESOLVED_WITHHELD }
   }
   if (host.kind === 'local') {
-    const platform = resolveLocalPlatform(args.projectRuntime(), args.workspacePath)
+    const platform = executionRuntimePlatform(
+      args.projectRuntime(),
+      args.workspacePath,
+      CLIENT_PLATFORM
+    )
     return { kind: 'known', platform, hostKind: 'local' }
   }
   const sshTargetId = host.kind === 'ssh' ? host.targetId : args.nestedSshTargetId
