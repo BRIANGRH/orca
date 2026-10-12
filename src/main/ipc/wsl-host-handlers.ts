@@ -86,6 +86,13 @@ export function registerWslHostHandlers(args: {
   if (!getWslHostService()) {
     const created = createService(args)
     setWslHostService(created)
+    args.store.onSettingsChanged((updates, settings) => {
+      if ('experimentalWslHosts' in updates) {
+        void created?.enabledChanged(settings.experimentalWslHosts === true).catch((error) => {
+          console.warn('[wsl-hosts] Could not apply the WSL hosts setting:', error)
+        })
+      }
+    })
     void created?.start().catch((error: unknown) => {
       console.warn('[wsl-hosts] Could not adopt WSL distro holders:', error)
     })
@@ -103,7 +110,7 @@ export function registerWslHostHandlers(args: {
         'This server is the default host for new projects. Choose another one in Advanced before removing it.'
       )
     }
-    await wsl?.remove(request.environmentId)
+    return wsl ? wsl.remove(request.environmentId) : { stopped: true }
   })
   ipcMain.handle('wslHosts:connect', async (_event, request: { environmentId: string }) => {
     await wsl?.connect(request.environmentId)

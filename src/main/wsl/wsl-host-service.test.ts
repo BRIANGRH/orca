@@ -9,7 +9,7 @@ import {
 } from '../../shared/runtime-environment-store'
 import { findWslHostDeployment } from '../../shared/runtime-environment-wsl-host-store'
 import { getPreferredPairingOffer } from '../../shared/runtime-environments'
-import type { WslHostStatus } from '../../shared/wsl-host-types'
+import type { WslHostServerStop, WslHostStatus } from '../../shared/wsl-host-types'
 import type { WslHostDistroCandidate } from './wsl-host-distro-list'
 import { WslHostService, type WslHostConnector } from './wsl-host-service'
 import { WslOrcadLaunchDeferredError, type WslOrcadConnection } from './wsl-orcad-connection'
@@ -48,7 +48,7 @@ function makeConnector(distros: WslHostDistroCandidate[]) {
     disconnect: vi.fn(async (distro: string) => {
       active.delete(distro.toLowerCase())
     }),
-    stopServer: vi.fn(async (_distro: string, _pid: number) => {}),
+    stopServer: vi.fn(async (_distro: string): Promise<WslHostServerStop> => ({ stopped: true })),
     releaseHolder: vi.fn(async (_distro: string) => {}),
     adoptHolders: vi.fn(async () => {}),
     dispose: vi.fn(async () => {})
@@ -279,11 +279,63 @@ describe('WslHostService', () => {
     await service.remove('wsl:ubuntu')
 
     expect(connector.disconnect).toHaveBeenCalledWith('Ubuntu')
-    expect(connector.stopServer).toHaveBeenCalledWith('Ubuntu', 10)
+    expect(connector.stopServer).toHaveBeenCalledWith('Ubuntu')
     expect(connector.releaseHolder).toHaveBeenCalledWith('Ubuntu')
     expect(listEnvironments(userDataPath)).toEqual([])
     expect(findWslHostDeployment(userDataPath, 'wsl:ubuntu')).toBeNull()
     expect(removed).toHaveBeenCalledWith('wsl:ubuntu')
+  })
+
+  it('reports what removing left running, and removes the host anyway', async () => {
+    const connector = makeConnector([UBUNTU])
+    connector.stopServer.mockResolvedValueOnce({
+      stopped: false,
+      reason: '1 terminal kept running'
+    })
+    const service = makeService(connector)
+    await service.add({ distro: 'Ubuntu' })
+
+    await expect(service.remove('wsl:ubuntu')).resolves.toEqual({
+      stopped: false,
+      reason: '1 terminal kept running'
+    })
+    expect(listEnvironments(userDataPath)).toEqual([])
+  })
+
+  it('turning the experiment off closes every connection and releases holders; on resumes lazily', async () => {
+    const connector = makeConnector([UBUNTU])
+    const service = makeService(connector)
+    await service.add({ distro: 'Ubuntu' })
+    service.setVisibleWork(['wsl:ubuntu'])
+    connector.connect.mockClear()
+
+    enabled = false
+    await service.enabledChanged(false)
+    expect(connector.disconnect).toHaveBeenCalledWith('Ubuntu')
+    expect(connector.releaseHolder).toHaveBeenCalledWith('Ubuntu')
+    expect(published.at(-1)).toMatchObject({ environmentId: 'wsl:ubuntu', state: 'closed' })
+    // Liveness must not relaunch for visible work while off.
+    expect(service.hasUserVisibleWork('Ubuntu')).toBe(false)
+    service.setVisibleWork(['wsl:ubuntu'])
+    expect(connector.connect).not.toHaveBeenCalled()
+
+    enabled = true
+    await service.enabledChanged(true)
+    expect(connector.connect).toHaveBeenCalledTimes(1)
+    expect(service.hasUserVisibleWork('Ubuntu')).toBe(true)
+  })
+
+  it('turning the experiment on with nothing open connects nothing', async () => {
+    const connector = makeConnector([UBUNTU])
+    const service = makeService(connector)
+    await service.add({ distro: 'Ubuntu' })
+    await connector.disconnect('Ubuntu')
+    connector.connect.mockClear()
+    enabled = false
+    await service.enabledChanged(false)
+    enabled = true
+    await service.enabledChanged(true)
+    expect(connector.connect).not.toHaveBeenCalled()
   })
 
   it('adopts holders at startup only when a WSL host exists', async () => {

@@ -35,6 +35,9 @@ export type WslHostCapability = {
   serverFiles: boolean
 }
 
+/** What removing a host left behind in its distro. */
+export type WslHostServerStop = { stopped: true } | { stopped: false; reason: string }
+
 export type WslHostAddFailureKind =
   | 'unsupported-wsl1'
   | 'distro-stopped'

@@ -1,5 +1,4 @@
 /** The production WSL side of `WslHostService`: one holder, connection manager and supervisor. */
-import { execCommand } from '../ssh/ssh-relay-exec-command'
 import { isWslDistroRunning } from '../wsl-background-distro-gate'
 import { createWslDistroHolder } from './wsl-distro-holder'
 import { listWslHostDistros } from './wsl-host-distro-list'
@@ -11,13 +10,17 @@ import {
 } from './wsl-orcad-connection'
 import { defaultWslOrcadEnvironmentId } from './wsl-orcad-deploy'
 import { createWslOrcadHostTransport } from './wsl-orcad-host-transport'
+import type { WslOrcadHostTarget } from './wsl-orcad-host-target'
+import { stopWslHostServer, wslHostServerStopSteps } from './wsl-host-server-stop'
 import { createWslOrcadLivenessSupervisor } from './wsl-orcad-liveness-wiring'
 import type { WslOrcadLivenessSupervisor } from './wsl-orcad-liveness-supervisor'
 
+function targetFor(distro: string): WslOrcadHostTarget {
+  return { kind: 'wsl', id: defaultWslOrcadEnvironmentId(distro), distro, label: distro }
+}
+
 function transportFor(distro: string) {
-  return createWslOrcadHostTransport({
-    target: { kind: 'wsl', id: defaultWslOrcadEnvironmentId(distro), distro, label: distro }
-  })
+  return createWslOrcadHostTransport({ target: targetFor(distro) })
 }
 
 export function createWslHostConnector(options: {
@@ -44,11 +47,24 @@ export function createWslHostConnector(options: {
     connect: (distro) => liveness.connect(distro),
     get: (distro) => manager.get(distro),
     disconnect: (distro) => liveness.stop(distro),
-    stopServer: async (distro, pid) => {
-      if (!(await isWslDistroRunning(distro))) {
-        return
+    stopServer: async (distro) => {
+      let connection = manager.get(distro)
+      if (!connection) {
+        // A stopped distro runs nothing; a running one is reached without booting it.
+        if (!(await isWslDistroRunning(distro))) {
+          return { stopped: true }
+        }
+        connection = await liveness.connect(distro)
       }
-      await execCommand(transportFor(distro), `kill ${Math.trunc(pid)} 2>/dev/null || true`)
+      const target = targetFor(distro)
+      return stopWslHostServer(
+        wslHostServerStopSteps({
+          connection,
+          target,
+          transport: createWslOrcadHostTransport({ target }),
+          closeBridge: () => liveness.stop(distro)
+        })
+      )
     },
     releaseHolder: async (distro) => {
       await holder.release(distro)

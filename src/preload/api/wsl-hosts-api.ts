@@ -5,6 +5,7 @@ import {
   type WslHostAddResult,
   type WslHostCapability,
   type WslHostDistro,
+  type WslHostServerStop,
   type WslHostStatus
 } from '../../shared/wsl-host-types'
 
@@ -12,7 +13,7 @@ export type WslHostsPreloadApi = {
   getCapability: () => Promise<WslHostCapability>
   listDistros: () => Promise<WslHostDistro[]>
   add: (args: { distro: string; startIfStopped?: boolean }) => Promise<WslHostAddResult>
-  remove: (args: { environmentId: string }) => Promise<void>
+  remove: (args: { environmentId: string }) => Promise<WslHostServerStop>
   connect: (args: { environmentId: string }) => Promise<void>
   getStatuses: () => Promise<WslHostStatus[]>
   onStatusChanged: (callback: (status: WslHostStatus) => void) => () => void

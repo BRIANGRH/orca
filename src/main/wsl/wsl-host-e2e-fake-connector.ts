@@ -77,7 +77,12 @@ export function createFakeWslHostConnector(
         onChange(distro, null, { state: 'closed' })
       }
     },
-    stopServer: async () => {},
+    stopServer: async (distro) => {
+      if (active.delete(key(distro))) {
+        onChange(distro, null, { state: 'closed' })
+      }
+      return { stopped: true }
+    },
     releaseHolder: async () => {},
     adoptHolders: async () => {},
     dispose: async () => {
