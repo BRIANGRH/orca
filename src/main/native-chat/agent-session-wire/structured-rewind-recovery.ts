@@ -156,7 +156,7 @@ export async function recoverStructuredRewind(
   const replacement = withRewindRestatedSends(
     rewind.retained.map(retainedRowReplacement),
     journal,
-    target?.provider === 'codex' ? target.turnId : ''
+    target?.provider === 'codex' ? target : null
   )
   if (rewind.contextClearOperationId && rewind.contextClearSequence) {
     if (

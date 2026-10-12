@@ -5,19 +5,18 @@
 import { readAgentSessionFailureFact } from '../../../shared/agent-session-failure'
 import {
   agentJournalItemKey,
-  agentJournalSubmissionKey,
-  parseAgentJournalItemKey
+  agentJournalSubmissionKey
 } from '../../../shared/agent-session-journal-item-key'
 import type { AgentJournalSubmission } from '../../../shared/agent-session-journal-types'
-import { readAgentJournalTurn } from '../../../shared/agent-session-turn-record'
 import type { JournalReplacementItem } from '../agent-session-journal/journal-epoch-replacement'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { JournalStoppedHistory } from '../agent-session-journal/journal-stopped-message-appends'
+import { rewindBoundaryIndex, rewindProviderKey } from './structured-rewind-boundary'
 
 /** The stopped sends, keyed by each one's own item id, which its retained row keeps. */
 export type RewindRestatedSends = ReadonlyMap<string, AgentJournalSubmission>
 
-type RewindJournal = Pick<AgentSessionJournal, 'submissions' | 'visitItems'> & {
+type RewindJournal = Pick<AgentSessionJournal, 'submissions' | 'snapshot'> & {
   stoppedHistory: Pick<JournalStoppedHistory, 'appended'>
   context: Pick<AgentSessionJournal['context'], 'floor'>
 }
@@ -44,34 +43,17 @@ export function rewindRestatedSends(journal: RewindJournal): RewindRestatedSends
 export function withRewindRestatedSends(
   items: readonly JournalReplacementItem[],
   journal: RewindJournal,
-  beforeTurnId: string
+  target: { threadId: string; turnId: string } | null
 ): JournalReplacementItem[] {
   const sends = rewindRestatedSends(journal)
-  const accepted = new Map(
-    journal
-      .submissions()
-      .flatMap((submission) =>
-        submission.dispatchState === 'accepted' && submission.providerItemId
-          ? [[agentJournalSubmissionKey(submission.clientMessageId), submission.providerItemId]]
-          : []
-      )
-  )
-  const floor = journal.context.floor()?.sequence ?? 0
-  // Keyed as the rebuilt rows are: a send the agent accepted by the provider's own item.
-  const sequences = new Map<string, number>()
-  let cut = Number.POSITIVE_INFINITY
-  journal.visitItems((itemId, sequence, body) => {
-    const key = accepted.get(itemId) ?? itemId
-    sequences.set(key, sequence)
-    const identity = parseAgentJournalItemKey(key)
-    if (
-      sequence > floor &&
-      ((identity?.provider === 'codex' && identity.turnId === beforeTurnId) ||
-        readAgentJournalTurn(body)?.turnId === beforeTurnId)
-    ) {
-      cut = Math.min(cut, sequence)
-    }
-  })
+  const { items: rows, submissions } = journal.snapshot()
+  // Keyed as the rebuilt rows are.
+  const providerKey = rewindProviderKey(submissions)
+  const cutRow = target
+    ? rows[rewindBoundaryIndex(rows, target, journal.context.floor()?.sequence ?? 0, providerKey)]
+    : undefined
+  const cut = cutRow?.sequence ?? Number.POSITIVE_INFINITY
+  const sequences = new Map(rows.map((row) => [providerKey(row.itemId), row.sequence]))
   const rebuilt = items.map((item) => {
     const send =
       item.body.kind === 'message' ? sends.get(agentJournalItemKey(item.identity)) : undefined
