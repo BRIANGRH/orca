@@ -9,9 +9,10 @@ import { OrchestrationDb } from '../../../../orchestration/db'
 import { OrcaRuntimeService } from '../../../../orca-runtime'
 import { createOrchestrationWorkerReleaseHarness } from './worker-release.test-support'
 import { releaseRetriedWorkerTerminal } from './retried-worker-terminal-release'
+import type { RuntimeTerminalWait } from '../../../../../../shared/runtime-terminal-contracts'
 
 const RETRY_PANE_KEY = 'tab_retry:cccccccc-cccc-4ccc-8ccc-cccccccccccc'
-const BLOCKED_WAIT = {
+const BLOCKED_WAIT: RuntimeTerminalWait = {
   handle: 'term_worker',
   condition: 'tui-idle',
   satisfied: false,
@@ -41,30 +42,46 @@ describe('retrying a failed worker-start', () => {
     )
     vi.spyOn(h.runtime, 'getOrchestrationDispatchAuthority').mockImplementation((handle) =>
       handle === 'term_worker' || handle === 'term_retry'
-        ? ({
+        ? {
+            runtimeId: 'runtime_test',
             terminalHandle: handle,
+            ptyId: `pty_${handle}`,
+            worktreeId: 'repo::worktree',
             paneKey: paneKeys[handle],
             processIncarnation: `runtime_test:${handle}:1`,
+            launchTokenHash: null,
             hostScope: { kind: 'local', hostId: 'local' }
-          } as never)
+          }
         : null
     )
   }
 
   async function failFirstStart(): Promise<{ taskId: string; dispatchId: string }> {
     giveRetryItsOwnTerminal()
-    vi.spyOn(h.runtime, 'waitForTerminal').mockResolvedValue(BLOCKED_WAIT as never)
+    vi.spyOn(h.runtime, 'waitForTerminal').mockResolvedValue(BLOCKED_WAIT)
     const task = h.db.createTask({ spec: 'blocked at a prompt', runId: h.activeRunId })
-    const receipt = (await h.call('orchestration.workerStart', {
+    const receipt = await h.call('orchestration.workerStart', {
       task: task.id,
       from: 'term_coord',
       agent: 'codex'
-    })) as { state: string; dispatchId: string; lastError: string }
+    })
     expect(receipt).toMatchObject({
       state: 'failed',
       lastError: 'Agent startup blocked: agent-interactive-prompt'
     })
-    return { taskId: task.id, dispatchId: receipt.dispatchId }
+    return { taskId: task.id, dispatchId: dispatchIdOf(receipt) }
+  }
+
+  function dispatchIdOf(receipt: unknown): string {
+    if (
+      typeof receipt !== 'object' ||
+      receipt === null ||
+      !('dispatchId' in receipt) ||
+      typeof receipt.dispatchId !== 'string'
+    ) {
+      throw new Error('worker-start returned no dispatch')
+    }
+    return receipt.dispatchId
   }
 
   function retry(failed: { taskId: string; dispatchId: string }): Promise<unknown> {
@@ -127,7 +144,7 @@ describe('retrying a failed worker-start', () => {
       ...BLOCKED_WAIT,
       satisfied: true,
       blockedReason: undefined
-    } as never)
+    })
 
     await h.call('orchestration.workerStart', {
       task: failed.taskId,
@@ -145,16 +162,14 @@ describe('retrying a failed worker-start', () => {
   it('stops a retry loop at the third failed start', async () => {
     h.setup()
     const first = await failFirstStart()
-    const second = (await retry(first)) as { dispatchId: string }
-    const third = (await retry({ taskId: first.taskId, dispatchId: second.dispatchId })) as {
-      dispatchId: string
-    }
+    const second = dispatchIdOf(await retry(first))
+    const third = dispatchIdOf(await retry({ taskId: first.taskId, dispatchId: second }))
 
-    expect(h.db.getDispatchContextById(third.dispatchId)).toMatchObject({
+    expect(h.db.getDispatchContextById(third)).toMatchObject({
       status: 'circuit_broken',
       failure_count: 3
     })
-    await expect(retry({ taskId: first.taskId, dispatchId: third.dispatchId })).rejects.toThrow(
+    await expect(retry({ taskId: first.taskId, dispatchId: third })).rejects.toThrow(
       /failed 3 times in a row, so Orca will not retry it again/
     )
     expect(h.runtime.createTerminal).toHaveBeenCalledTimes(3)
