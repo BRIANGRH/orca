@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
   watcherCoverage: true,
   /** Tabs the shared hidden-view memory budget reports over it; empty keeps the clock rules isolated. */
   overBudgetTabIds: new Set<string>(),
-  budgetInputs: [] as unknown[]
+  budgetInputs: new Array<unknown>()
 }))
 
 vi.mock('../../store', () => ({
