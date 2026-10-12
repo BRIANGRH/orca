@@ -1,7 +1,4 @@
-import {
-  captureLoginShellEnvironment,
-  LOGIN_SHELL_SPAWN_TIMEOUT_MS
-} from '../startup/login-shell-environment'
+import { resolveLoginShellEnvironment } from '../startup/login-shell-environment'
 import {
   mergePersistedWindowsPathAsync,
   readPersistedWindowsPathSegmentsAsync
@@ -81,21 +78,6 @@ export function structuredAgentBaseEnvironment(input: {
   )
 }
 
-/** Settles when `pending` does, or after one profile-loading shell's timeout, whichever is first. */
-async function withinShellTimeout(pending: Promise<unknown>): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  await Promise.race([
-    pending.then(
-      () => {},
-      () => {}
-    ),
-    new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, LOGIN_SHELL_SPAWN_TIMEOUT_MS)
-    })
-  ])
-  clearTimeout(timer)
-}
-
 // Why: long enough that a burst of starts shares one capture, short enough that a CLI
 // installed on the host reaches new chats without a restart.
 const SHELL_ENVIRONMENT_TTL_MS = 10_000
@@ -107,7 +89,7 @@ const SHELL_ENVIRONMENT_TTL_MS = 10_000
  */
 async function hostShellEnvironment(): Promise<NodeJS.ProcessEnv> {
   const windows = process.platform === 'win32'
-  const { env } = await captureLoginShellEnvironment({
+  const env = await resolveLoginShellEnvironment({
     refreshAfterMs: SHELL_ENVIRONMENT_TTL_MS,
     keepCaptured: windows
   })
@@ -119,15 +101,15 @@ async function hostShellEnvironment(): Promise<NodeJS.ProcessEnv> {
   return withSavedPath
 }
 
-/** For a lookup that started at `askedAt` and found no program: waits, at most one shell's
- *  timeout, for a shell run that started no earlier (on Windows, a saved PATH reread), so an
- *  agent installed before the lookup counts. */
-export function refreshHostAgentBaseEnvironmentAfterMiss(askedAt: number): Promise<void> {
-  return withinShellTimeout(
+/** For a lookup that started at `askedAt` and found no program: waits for a shell run that started
+ *  no earlier (on Windows, a saved PATH reread), so an agent installed before the lookup counts.
+ *  The run's own shell timeout bounds the wait. */
+export async function refreshHostAgentBaseEnvironmentAfterMiss(askedAt: number): Promise<void> {
+  await (
     process.platform === 'win32'
       ? readPersistedWindowsPathSegmentsAsync({ forceRefresh: true })
-      : captureLoginShellEnvironment({ startedAfter: askedAt })
-  )
+      : resolveLoginShellEnvironment({ startedAfter: askedAt })
+  ).catch(() => {})
 }
 
 /** The base env every local agent launch on this host starts from, read from current settings. */

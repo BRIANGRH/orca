@@ -32,8 +32,8 @@ vi.mock('../startup/login-shell-environment', async (importOriginal) => {
   const real = await importOriginal<typeof LoginShellModule>()
   return {
     ...real,
-    captureLoginShellEnvironment: (options: LoginShellOptions = {}) =>
-      real.captureLoginShellEnvironment({
+    resolveLoginShellEnvironment: (options: LoginShellOptions = {}) =>
+      real.resolveLoginShellEnvironment({
         ...options,
         shellOverride: '/bin/test-login-shell',
         spawner: loginShell.spawn
