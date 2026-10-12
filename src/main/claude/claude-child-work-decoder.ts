@@ -4,9 +4,9 @@
 // `task_notification`; nothing else ends it. A roster (`background_tasks_changed`), a turn ending
 // or a spawn call returning is the parent's view of the child, not the child's, and the CLI sends
 // every child its own terminal frame, so none of them settles one. When the session ends, however
-// it ends, the host settles what is still live as unknown. A live child blocked on a permission request reads waiting; no task
-// frame says so, so the caller hands over which children a request blocks. Edges wait here until
-// the frame is journaled, then take the host clock.
+// it ends, the host settles what is still live as unknown. A live child blocked on a permission
+// request reads waiting; no task frame says so, so the caller hands over which children a request
+// blocks. Edges wait here until the frame is journaled, then take the host clock.
 
 import type {
   AgentChildWorkKind,

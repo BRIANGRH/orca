@@ -12,7 +12,6 @@ import type {
   AgentChildWorkKind,
   AgentChildWorkOperation,
   AgentChildWorkOutcome,
-  AgentChildWorkOutcomeBasis,
   AgentChildWorkResidency,
   AgentChildWorkState
 } from './agent-status-child-work'
@@ -64,15 +63,12 @@ export type AgentChildWorkOperationEvidence = {
   operation: AgentChildWorkOperation | null
 }
 
-/** The child's own terminal frame. `unknown` is an ending whose status the provider did not say.
- *  With `basis`, the ending is the provider acknowledging a Stop, which the child's own terminal
- *  frame of the same run still replaces. */
+/** The child's own terminal frame. `unknown` is an ending whose status the provider did not say. */
 export type AgentChildWorkEndedEvidence = {
   type: 'ended'
   observedAt: number
   handle: AgentChildWorkEvidenceHandle
   outcome: AgentChildWorkOutcome
-  basis?: AgentChildWorkOutcomeBasis
   lastMessage?: string
   totalTokens?: number
 }

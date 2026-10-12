@@ -58,8 +58,7 @@ function applyEnded(ctx: ReconcileContext, edge: AgentChildWorkEndedEvidence): v
   // lands its evidence; a conflicting definite one is refused as `stale-invocation`.
   settleAgentChildWork(ctx, existing, edge.outcome, edge.observedAt, {
     ...(edge.lastMessage !== undefined ? { lastMessage: edge.lastMessage } : {}),
-    ...(edge.totalTokens !== undefined ? { totalTokens: edge.totalTokens } : {}),
-    ...(edge.basis !== undefined ? { basis: edge.basis } : {})
+    ...(edge.totalTokens !== undefined ? { totalTokens: edge.totalTokens } : {})
   })
 }
 
