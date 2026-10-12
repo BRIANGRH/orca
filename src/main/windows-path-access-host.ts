@@ -12,6 +12,6 @@ export function resolveWindowsPathAccess(
   return windowsPathAccess(ownerHostId, {
     platform,
     wslDistroForEnvironment: (environmentId) =>
-      getWslHostService()?.distroForEnvironment(environmentId) ?? null
+      getWslHostService()?.recordForEnvironment(environmentId)?.distro ?? null
   })
 }

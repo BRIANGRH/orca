@@ -111,11 +111,6 @@ export class WslHostService {
     return [...this.statuses.values()]
   }
 
-  /** The registered distro behind a WSL host's environment; null for any other environment. */
-  distroForEnvironment(environmentId: string): string | null {
-    return this.recordForEnvironment(environmentId)?.distro ?? null
-  }
-
   async listDistros(): Promise<WslHostDistro[]> {
     const records = this.records()
     const candidates = await this.wsl.listDistros()
@@ -348,7 +343,8 @@ export class WslHostService {
     return this.records().find((record) => sameWslDistro(record.distro, distro)) ?? null
   }
 
-  private recordForEnvironment(environmentId: string): WslHostDeploymentRecord | null {
+  /** The registered WSL host behind an environment; null for any other environment. */
+  recordForEnvironment(environmentId: string): WslHostDeploymentRecord | null {
     return this.records().find((record) => record.environmentId === environmentId) ?? null
   }
 }

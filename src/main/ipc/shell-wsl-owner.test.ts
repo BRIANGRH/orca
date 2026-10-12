@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as WindowsPathAccessHost from '../windows-path-access-host'
 import type * as ExternalEditorLaunch from '../external-editor-launch'
 
-const { handleMock, launchMock, showItemInFolderMock, statMock, distroForEnvironmentMock } =
+const { handleMock, launchMock, showItemInFolderMock, statMock, recordForEnvironmentMock } =
   vi.hoisted(() => ({
     handleMock: vi.fn<(channel: string, handler: (...args: unknown[]) => unknown) => void>(),
     launchMock: vi.fn(),
     showItemInFolderMock: vi.fn(),
     statMock: vi.fn(),
-    distroForEnvironmentMock: vi.fn()
+    recordForEnvironmentMock: vi.fn()
   }))
 
 vi.mock('electron', () => ({
@@ -29,7 +29,7 @@ vi.mock('../codex-cli/command', () => ({
 }))
 
 vi.mock('../wsl/wsl-host-service-instance', () => ({
-  getWslHostService: () => ({ distroForEnvironment: distroForEnvironmentMock })
+  getWslHostService: () => ({ recordForEnvironment: recordForEnvironmentMock })
 }))
 
 // Why: a WSL host's paths only exist for a Windows desktop; pin both resolvers to win32.
@@ -74,9 +74,9 @@ describe('shell handlers for a WSL-owned path', () => {
     launchMock.mockReset().mockResolvedValue(undefined)
     showItemInFolderMock.mockReset()
     statMock.mockReset().mockResolvedValue({ isDirectory: () => true })
-    distroForEnvironmentMock
+    recordForEnvironmentMock
       .mockReset()
-      .mockImplementation((id: string) => (id === 'wsl:Ubuntu' ? 'Ubuntu' : null))
+      .mockImplementation((id: string) => (id === 'wsl:Ubuntu' ? { distro: 'Ubuntu' } : null))
   })
 
   it('reveals the \\\\wsl.localhost spelling in Explorer', async () => {
