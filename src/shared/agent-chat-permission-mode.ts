@@ -1,5 +1,5 @@
 import type { GlobalSettings } from './global-settings-types'
-import { resolveAgentPermissionModeSummary } from './tui-agent-permissions'
+import { resolvedTuiAgentArgsBypassPermissions } from './tui-agent-launch-defaults'
 
 /** A chat's own permission choice. Saved in chat records and settings: never rename a value. */
 export type AgentChatPermissionMode = 'ask' | 'accept-edits' | 'auto' | 'full-access'
@@ -104,14 +104,18 @@ export function newChatPermissionMode(
   return support ? savedChatPermissionMode(support, setting) : null
 }
 
-/** Seeded once from Agent Permissions when absent, then stored; an unknown value asks. */
+/** Seeded once when absent, then stored; an unknown value asks. */
 export function loadedChatPermissionSetting(
   saved: unknown,
-  terminal: Partial<Pick<GlobalSettings, 'agentDefaultArgs' | 'agentDefaultEnv'>>
+  terminal: Partial<Pick<GlobalSettings, 'agentDefaultArgs' | 'terminalWindowsShell'>>,
+  platform: NodeJS.Platform
 ): AgentChatPermissionMode {
   if (saved !== undefined) {
     return isAgentChatPermissionMode(saved) ? saved : 'ask'
   }
-  // As the Yolo/Manual toggle shows it: agents set differently ("mixed") still show Yolo.
-  return resolveAgentPermissionModeSummary(terminal) === 'manual' ? 'ask' : 'full-access'
+  // What chats ran before they had modes: Claude's and Codex's own arguments, not the all-agent
+  // Yolo/Manual summary, which shows custom arguments on any agent as Yolo even after Manual.
+  const bypasses = (agent: 'claude' | 'codex'): boolean =>
+    resolvedTuiAgentArgsBypassPermissions(agent, terminal, platform)
+  return bypasses('claude') && bypasses('codex') ? 'full-access' : 'ask'
 }
