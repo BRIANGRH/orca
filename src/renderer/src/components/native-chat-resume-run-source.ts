@@ -1,8 +1,4 @@
-import type {
-  AgentJournalCursor,
-  AgentJournalSubmission
-} from '../../../shared/agent-session-journal-types'
-import { getStructuredAgentSessionStatusFeed } from '@/runtime/structured-agent-session-status-feed'
+import type { AgentJournalSubmission } from '../../../shared/agent-session-journal-types'
 import {
   findStructuredAgentSessionReadOwner,
   getStructuredAgentSessionReadOwner,
@@ -10,55 +6,58 @@ import {
 } from './native-chat/structured-agent-session-read-owner'
 import { subscribeStructuredReadOwner } from './native-chat/structured-agent-session-read-owner-registry'
 import {
+  subscribeStructuredSessionUserActions,
+  type StructuredSessionUserAction,
+  type UserRequestSubmission
+} from './native-chat/structured-agent-session-user-actions'
+import {
   resumeRunUserRequestConfirmed,
   resumeRunOrderedUserRequest,
   type ResumeRun
 } from './native-chat-resume-run'
 import type { NativeChatRestartOffer } from './native-chat-resume-on-restart-store'
 
-import { readResumeRunSourceCursor } from './native-chat-resume-run-source-cursor'
+import { createResumeSourceReadLeases } from './native-chat-resume-source-read-leases'
+import {
+  confirmResumeRunSource,
+  hasLaterResumeRunSource
+} from './native-chat-resume-run-confirmation'
+import { watchResumeRunStatus, watchResumeRunActivity } from './native-chat-resume-run-status-watch'
+export { RESUME_RUN_SOURCE_READ_BUDGET_MS } from './native-chat-resume-source-read-leases'
 const LOCAL = { kind: 'local' } as const
 type Entry = ResumeRun['entries'][number]
-/** Reuse visible readers; extra observation is admitted only after activity or withdrawal. */
+type ReadSlot = {
+  owner: StructuredAgentSessionReadOwner
+  unsubscribe?: () => void
+  readState?: ReturnType<StructuredAgentSessionReadOwner['getSnapshot']>['state']
+  submissions?: readonly AgentJournalSubmission[]
+  action?: Entry['localAction']
+  baseline?: Entry['sourceCursor']
+}
+/** Observe existing owners and actual actions; extra observation has a finite lifetime. */
 export function watchResumeRunSource(deps: {
   current: () => ResumeRun | null
   publish: (run: ResumeRun) => void
   offer: () => NativeChatRestartOffer
   refresh: () => Promise<void>
-}): { offerChanged: () => void; release: () => void } {
+}): { offerChanged: (issued: ResumeRun | null) => void; settled: () => void; release: () => void } {
   let stopped = false
-  const slots = new Map<
-    string,
-    {
-      owner?: StructuredAgentSessionReadOwner
-      unsubscribe?: () => void
-      deactivate?: () => void
-      ownRead?: boolean
-      submissions?: readonly AgentJournalSubmission[]
-      pending?: AgentJournalSubmission
-      cut?: Entry['dismissal']
-      baseline?: AgentJournalCursor
-      readState?: ReturnType<StructuredAgentSessionReadOwner['getSnapshot']>['state']
-    }
-  >()
+  let reading: Promise<void> | undefined
+  const slots = new Map<string, ReadSlot>()
+  const releaseProgress = watchResumeRunStatus(deps.current, deps.publish)
   const releases: (() => void)[] = []
-  const checkpointQueue: string[] = []
-  const checkpointing = new Set<string>()
-  let readingCheckpoints = 0
-  const activity = new Map<string, string>()
   const listedIds = () =>
     new Set([...deps.offer().candidates, ...deps.offer().failed].map((row) => row.sessionId))
   let previouslyListed = listedIds()
-  const continued = new Set(
-    deps
-      .current()
-      ?.continued?.filter((record) => record.outcome === 'continued')
-      .map((record) => record.sessionId)
-  )
-  const entries = () =>
-    stopped
-      ? []
-      : (deps.current()?.entries.filter((entry) => !continued.has(entry.candidate.sessionId)) ?? [])
+  const entries = () => {
+    const run = stopped ? null : deps.current()
+    const continued = new Set(
+      run?.continued
+        ?.filter((record) => record.outcome === 'continued')
+        .map((record) => record.sessionId)
+    )
+    return run?.entries.filter((entry) => !continued.has(entry.candidate.sessionId)) ?? []
+  }
   const entryFor = (id: string) => entries().find((entry) => entry.candidate.sessionId === id)
   const change = (id: string, update: (entry: Entry) => Entry) => {
     const run = stopped ? null : deps.current()
@@ -72,78 +71,102 @@ export function watchResumeRunSource(deps: {
       deps.publish({ ...run, entries: next })
     }
   }
+  const refresh = () => {
+    if (stopped || reading) {
+      return
+    }
+    const issued = deps.current()
+    reading = deps.refresh().finally(() => {
+      reading = undefined
+      if (!stopped && hasLaterResumeRunSource(deps.current(), issued)) {
+        refresh()
+      }
+    })
+  }
+  const remember = (
+    id: string,
+    epoch: string,
+    submission: UserRequestSubmission,
+    action?: StructuredSessionUserAction
+  ) => {
+    const entry = entryFor(id)
+    if (
+      !entry ||
+      entry.userRequest ||
+      !resumeRunOrderedUserRequest(entry, epoch, submission, action) ||
+      submission.dispatchState !== 'accepted' ||
+      !submission.providerItemId
+    ) {
+      return
+    }
+    change(id, (current) => ({
+      ...current,
+      userRequest: {
+        epoch,
+        action,
+        submission: {
+          ...submission,
+          ...(submission.source ? { source: { ...submission.source } } : {})
+        }
+      }
+    }))
+    refresh()
+  }
   const detach = (id: string) => {
     const slot = slots.get(id)
     slots.delete(id)
     slot?.unsubscribe?.()
-    slot?.deactivate?.()
+    leases.release(id)
   }
   const notice = (id: string) => {
     const slot = slots.get(id)
-    const entry = entryFor(id)
-    const state = slot?.owner?.getSnapshot().state
-    if (!slot || !entry || !state || resumeRunUserRequestConfirmed(entry)) {
+    let entry = entryFor(id)
+    if (!slot || !entry || resumeRunUserRequestConfirmed(entry)) {
       detach(id)
       return
     }
-    const epoch = state.epoch
-    if (
-      state.status === 'ready' &&
-      epoch &&
-      entry.sourceCursor &&
-      (slot.submissions !== state.submissions ||
-        slot.cut !== entry.dismissal ||
-        slot.baseline !== entry.sourceCursor)
-    ) {
-      slot.submissions = state.submissions
-      slot.cut = entry.dismissal
-      slot.baseline = entry.sourceCursor
-      slot.pending = undefined
-      let submission: AgentJournalSubmission | undefined
-      for (const record of state.submissions) {
-        if (!resumeRunOrderedUserRequest(entry, epoch, record)) {
-          continue
-        }
-        if (record.dispatchState === 'accepted' && record.providerItemId) {
-          submission ??= record
-        }
-        if (
-          record.dispatchState === 'pending' ||
-          (record.dispatchState === 'unknown' && !record.recovered)
-        ) {
-          slot.pending ??= record
-        }
-      }
-      if (
-        submission &&
-        entry.userRequest?.submission.clientMessageId !== submission.clientMessageId
-      ) {
-        change(id, (current) => ({
-          ...current,
-          userRequest: {
-            epoch,
-            submission: {
-              ...submission,
-              ...(submission.source ? { source: { ...submission.source } } : {})
-            }
-          }
-        }))
-        void deps.refresh()
-      }
-    }
-    if (state.status === 'ready' && !entry.sourceCursor && state.cursor && !checkpointing.has(id)) {
+    const state = slot.owner.getSnapshot().state
+    if (state.status === 'ready' && state.cursor && !entry.sourceCursor) {
       change(id, (current) =>
         current.sourceCursor ? current : { ...current, sourceCursor: state.cursor ?? undefined }
       )
-      notice(id)
+      entry = entryFor(id)
+    }
+    if (!entry) {
       return
     }
+    let pending = false
     if (
-      slot.ownRead &&
-      state !== slot.readState &&
-      (state.status === 'error' ||
-        (state.status === 'ready' && entry.sourceCursor && !slot.pending))
+      state.status === 'ready' &&
+      state.epoch &&
+      (slot.submissions !== state.submissions ||
+        slot.action !== entry.localAction ||
+        slot.baseline !== entry.sourceCursor)
     ) {
+      slot.submissions = state.submissions
+      slot.action = entry.localAction
+      slot.baseline = entry.sourceCursor
+      for (const submission of state.submissions) {
+        if (!resumeRunOrderedUserRequest(entry, state.epoch, submission)) {
+          continue
+        }
+        remember(
+          id,
+          state.epoch,
+          submission,
+          entry.localAction?.clientMessageId === submission.clientMessageId
+            ? entry.localAction
+            : undefined
+        )
+        pending ||=
+          submission.dispatchState === 'pending' ||
+          (submission.dispatchState === 'unknown' && !submission.recovered)
+      }
+      if (leases.has(id) && state !== slot.readState && !pending) {
+        detach(id)
+      }
+    }
+    if (state.status === 'error' && leases.has(id)) {
       detach(id)
     }
   }
@@ -156,70 +179,53 @@ export function watchResumeRunSource(deps: {
     if (!owner || !entry || resumeRunUserRequestConfirmed(entry)) {
       return
     }
-    const slot: NonNullable<ReturnType<typeof slots.get>> = { owner }
+    const slot: ReadSlot = { owner }
     slots.set(id, slot)
     slot.unsubscribe = owner.subscribe(() => notice(id))
     notice(id)
   }
+  const leases = createResumeSourceReadLeases({
+    prepare: (id) => {
+      const entry = entryFor(id)
+      if (!entry || resumeRunUserRequestConfirmed(entry)) {
+        return undefined
+      }
+      const owner =
+        findStructuredAgentSessionReadOwner(id, LOCAL) ??
+        getStructuredAgentSessionReadOwner(id, LOCAL)
+      attach(id, owner)
+      const slot = slots.get(id)
+      if (!slot) {
+        return undefined
+      }
+      slot.readState = owner.getSnapshot().state
+      return owner
+    },
+    expired: detach
+  })
   const admit = (id: string) => {
     const entry = entryFor(id)
-    if (!entry || resumeRunUserRequestConfirmed(entry)) {
+    if (
+      !entry ||
+      resumeRunUserRequestConfirmed(entry) ||
+      (deps.current()?.inFlight && !entry.localAction) ||
+      leases.has(id)
+    ) {
       return
     }
-    const existing = findStructuredAgentSessionReadOwner(id, LOCAL)
-    const owner = existing ?? getStructuredAgentSessionReadOwner(id, LOCAL)
-    attach(id, owner)
-    const slot = slots.get(id)
-    if (!slot || owner.hasActiveReaders() || slot.deactivate) {
-      return
-    }
-    slot.ownRead = true
-    slot.readState = owner.getSnapshot().state
-    const deactivate = owner.activate()
-    if (slots.get(id) !== slot) {
-      deactivate()
-    } else {
-      slot.deactivate = deactivate
-    }
+    leases.admit(id)
   }
-  const drain = () => {
-    while (!stopped && readingCheckpoints < 4 && checkpointQueue.length > 0) {
-      const id = checkpointQueue.shift()
-      if (id === undefined) {
-        break
-      }
-      readingCheckpoints += 1
-      void readResumeRunSourceCursor(id)
-        .then((cursor) => {
-          if (cursor) {
-            change(id, (entry) => (entry.sourceCursor ? entry : { ...entry, sourceCursor: cursor }))
-          }
-          const slot = slots.get(id)
-          if (slot) {
-            slot.submissions = undefined
-          }
-          notice(id)
-        })
-        .finally(() => {
-          readingCheckpoints -= 1
-          checkpointing.delete(id)
-          notice(id)
-          drain()
-        })
-    }
-  }
-  const checkpoint = (id: string) => {
-    if (entryFor(id)?.sourceCursor || checkpointing.has(id)) {
-      return
-    }
-    checkpointing.add(id)
-    checkpointQueue.push(id)
-    drain()
-  }
-  const offerChanged = () => {
+  const offerChanged = (issued: ResumeRun | null) => {
     const offer = deps.offer()
     if (stopped || !offer.available) {
       return
+    }
+    const run = deps.current()
+    if (run) {
+      const next = confirmResumeRunSource(run, offer, issued)
+      if (next !== run) {
+        deps.publish(next)
+      }
     }
     const listed = listedIds()
     const withdrawn = previouslyListed
@@ -230,73 +236,58 @@ export function watchResumeRunSource(deps: {
         detach(id)
         continue
       }
-      if (entry.userRequest) {
-        change(id, (current) =>
-          current.userRequest
-            ? {
-                ...current,
-                userRequest: {
-                  ...current.userRequest,
-                  offer: {
-                    listedAt: offer.listedAt,
-                    candidate: offer.candidates.find((row) => row.sessionId === id),
-                    failure: offer.failed.find((row) => row.sessionId === id)
-                  }
-                }
-              }
-            : current
-        )
-      }
       if (!listed.has(id) && withdrawn.has(id)) {
         admit(id)
       }
     }
   }
-  const feed = getStructuredAgentSessionStatusFeed(LOCAL)
-  const feedNotice = () => {
-    for (const entry of entries()) {
-      const id = entry.candidate.sessionId
-      const status = feed.getSnapshot().get(id)
-      const key = JSON.stringify([
-        status?.status,
-        status?.latestPrompt,
-        status?.statusStartedAt,
-        status?.hostExecutionOwned,
-        status?.hostExecutionPhase
-      ])
-      const before = activity.get(id)
-      activity.set(id, key)
-      if (before !== undefined && before !== key) {
-        admit(id)
+  releases.push(
+    subscribeStructuredSessionUserActions((observation) => {
+      const { action } = observation
+      const id = action.sessionId
+      const entry = entryFor(id)
+      if (!entry || resumeRunUserRequestConfirmed(entry)) {
+        return
       }
-    }
-  }
+      if (observation.kind === 'admitted') {
+        change(id, (current) => ({ ...current, localAction: action }))
+      } else if (
+        observation.kind === 'issued' &&
+        entry.localAction?.clientMessageId === action.clientMessageId
+      ) {
+        change(id, (current) => ({ ...current, localAction: action }))
+        notice(id)
+      } else if (
+        observation.kind === 'accepted' &&
+        entry.localAction?.clientMessageId === action.clientMessageId &&
+        action.target?.kind === 'local'
+      ) {
+        remember(id, observation.epoch, observation.submission, action)
+      }
+    })
+  )
   for (const entry of entries()) {
     const id = entry.candidate.sessionId
     releases.push(subscribeStructuredReadOwner(id, LOCAL, (owner) => attach(id, owner)))
     attach(id, findStructuredAgentSessionReadOwner(id, LOCAL))
-    checkpoint(id)
   }
-  feedNotice()
-  releases.push(feed.subscribe(feedNotice))
-  // Current absence can admit a bounded read, but only a fresh answer qualifies newly found evidence.
-  if (deps.offer().available) {
-    for (const entry of entries()) {
-      const id = entry.candidate.sessionId
-      if (!previouslyListed.has(id)) {
-        admit(id)
-      }
-    }
-  }
+  releases.push(watchResumeRunActivity(entries, admit))
   return {
     offerChanged,
+    settled: () => {
+      releaseProgress()
+      if (entries().some((entry) => entry.userRequest && !entry.userRequest.offer)) {
+        refresh()
+      }
+    },
     release: () => {
       stopped = true
       releases.forEach((release) => release())
+      releaseProgress()
+      leases.dispose()
       for (const id of slots.keys()) {
         detach(id)
       }
-      checkpointQueue.length = 0
     }
   }
 }

@@ -26,6 +26,10 @@ import {
   supportsStructuredAgentSessionQuietRepeatedStop
 } from '@/runtime/structured-agent-session-client'
 import { agentSessionWriteFailureText } from './agent-session-write-notice-text'
+import {
+  observeStructuredSessionUserAction,
+  observeStructuredSessionUserReceipt
+} from './structured-agent-session-user-actions'
 
 export type StructuredAgentSessionWriteOutcome<T> =
   | { kind: 'done'; value: T }
@@ -122,11 +126,19 @@ export function useStructuredAgentSessionMutate(args: {
         return enabledRef.current && (stateRef.current.fence === targetFence || waitedOn)
       }
       let result: AgentSessionMutationResult<T>
+      const clientOperationId = structuredSessionOperationId()
+      const cardAction =
+        fingerprintMethod === 'agentSession.queuedMessageSend'
+          ? { sessionId, clientMessageId: clientOperationId, target, kind: 'card-send' as const }
+          : undefined
+      if (cardAction) {
+        observeStructuredSessionUserAction({ kind: 'admitted', action: cardAction })
+      }
       try {
         result = await callStructuredAgentSession<AgentSessionMutationResult<T>>(target, method, {
           envelope: {
             sessionId,
-            clientOperationId: structuredSessionOperationId(),
+            clientOperationId,
             expectedRuntimeFence: targetFence,
             payloadFingerprint: structuredAgentSessionPayloadFingerprint({
               method: fingerprintMethod,
@@ -155,6 +167,9 @@ export function useStructuredAgentSessionMutate(args: {
       }
       if (!settlesHere()) {
         return { kind: 'dropped' }
+      }
+      if (cardAction) {
+        observeStructuredSessionUserReceipt(cardAction, result)
       }
       return { kind: 'done', value: result.value }
     },

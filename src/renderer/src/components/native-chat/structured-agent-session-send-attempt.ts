@@ -29,6 +29,7 @@ import {
 } from '../../../../shared/agent-session-write-failure'
 import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
 import type { StructuredAgentSessionPendingSend } from './structured-agent-session-pending-sends'
+import { observeStructuredSessionUserReceipt } from './structured-agent-session-user-actions'
 
 const fences = new Map<string, number>()
 
@@ -154,6 +155,12 @@ export async function attemptStructuredAgentSessionSend(args: {
     return null
   }
   const value = answer.kind === 'result' && answer.result.ok ? answer.result.value : null
+  if (answer.kind === 'result') {
+    observeStructuredSessionUserReceipt(
+      { sessionId: entry.sessionId, clientMessageId: entry.clientMessageId, target, kind: 'send' },
+      answer.result
+    )
+  }
   return {
     kind: 'answered',
     evidence: structuredAgentSessionSendEvidence(answer),

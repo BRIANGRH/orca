@@ -1,6 +1,4 @@
 import type { AgentJournalCursor } from '../../../shared/agent-session-journal-types'
-import type { AgentSessionHistoryResult } from '../../../shared/agent-session-wire'
-import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
 import { findStructuredAgentSessionReadOwner } from './native-chat/structured-agent-session-read-owner'
 import { resumeRunUserRequestConfirmed, type ResumeRun } from './native-chat-resume-run'
 const LOCAL = { kind: 'local' } as const
@@ -8,22 +6,6 @@ export function resumeRunSourceCursor(sessionId: string): AgentJournalCursor | u
   return (
     findStructuredAgentSessionReadOwner(sessionId, LOCAL)?.getSnapshot().state.cursor ?? undefined
   )
-}
-
-/** One tiny checkpoint is background bookkeeping, never a gate on a user action. */
-export async function readResumeRunSourceCursor(
-  sessionId: string
-): Promise<AgentJournalCursor | undefined> {
-  try {
-    const result = await callStructuredAgentSession<AgentSessionHistoryResult>(
-      LOCAL,
-      'agentSession.history',
-      { sessionId, direction: 'tail', limit: 1 }
-    )
-    return result.ok === true ? result.page.liveCursor : undefined
-  } catch {
-    return undefined
-  }
 }
 
 export function captureResumeRunSource(run: ResumeRun): ResumeRun {
@@ -40,9 +22,7 @@ export function captureResumeRunSource(run: ResumeRun): ResumeRun {
 export function captureResumeRunDismissal(
   run: ResumeRun,
   ids: readonly string[] | undefined,
-  operation: number,
-  current: () => ResumeRun | null,
-  publish: (run: ResumeRun) => void
+  operation: number
 ): ResumeRun {
   return {
     ...run,
@@ -58,21 +38,7 @@ export function captureResumeRunDismissal(
         cursor: resumeRunSourceCursor(entry.candidate.sessionId),
         previousRequestId: entry.userRequest?.submission.clientMessageId
       }
-      if (!dismissal.cursor) {
-        void readResumeRunSourceCursor(entry.candidate.sessionId).then((cursor) => {
-          const active = current()
-          if (!cursor || !active) {
-            return
-          }
-          publish({
-            ...active,
-            entries: active.entries.map((row) =>
-              row.dismissal === dismissal ? { ...row, dismissal: { ...dismissal, cursor } } : row
-            )
-          })
-        })
-      }
-      return { ...entry, dismissal }
+      return { ...entry, dismissal, localAction: undefined, userRequest: undefined }
     })
   }
 }

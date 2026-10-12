@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act } from 'react'
+import { admitUserResumeRequest } from './native-chat-resume-user-action.test-support'
 import {
   getStructuredAgentSessionReadOwner,
   retireStructuredAgentSessionReadOwner,
@@ -95,6 +96,7 @@ function manualActivity(
   if (proveSource) {
     const sequence = (sourceSequences.get('b') ?? 0) + 1
     sourceSequences.set('b', sequence)
+    admitUserResumeRequest('b', `user-${sequence}`)
     const cursor = { epoch: 'resume-b', sequence }
     const page: AgentSessionHistoryPage = {
       sessionId: 'b',

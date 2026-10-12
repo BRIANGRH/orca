@@ -13,15 +13,20 @@ import {
 import { resetStructuredAgentSessionStatusFeedsForTests } from '@/runtime/structured-agent-session-status-feed'
 import { beginResumeRun, type ResumeRun } from './native-chat-resume-run'
 import { resumeRunView } from './native-chat-resume-run-view'
-import { watchResumeRunSource } from './native-chat-resume-run-source'
-import { readResumeRunSourceCursor } from './native-chat-resume-run-source-cursor'
+import {
+  watchResumeRunSource,
+  RESUME_RUN_SOURCE_READ_BUDGET_MS
+} from './native-chat-resume-run-source'
+import { admitUserResumeRequest } from './native-chat-resume-user-action.test-support'
 import type { NativeChatRestartOffer } from './native-chat-resume-on-restart-store'
 import { failure } from './native-chat-resume-modal.test-support'
 
 const rpc = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<AgentSessionHistoryResult>>())
 const wire = vi.hoisted(() => ({
   emit: (_event: AgentSessionSubscribeEvent) => {},
-  unsubscribe: vi.fn()
+  unsubscribe: vi.fn(),
+  failing: false,
+  attempts: vi.fn()
 }))
 vi.mock('@/runtime/structured-agent-session-client', () => ({
   callStructuredAgentSession: rpc,
@@ -30,6 +35,10 @@ vi.mock('@/runtime/structured-agent-session-client', () => ({
     _params: unknown,
     emit: typeof wire.emit
   ) => {
+    wire.attempts()
+    if (wire.failing) {
+      throw new Error('ECONNRESET')
+    }
     wire.emit = emit
     return { unsubscribe: wire.unsubscribe }
   },
@@ -40,6 +49,8 @@ const resources: (() => void)[] = []
 beforeEach(() => {
   rpc.mockReset()
   wire.unsubscribe.mockReset()
+  wire.attempts.mockReset()
+  wire.failing = false
   resetStructuredAgentSessionReadOwnersForTests()
   resetStructuredAgentSessionStatusFeedsForTests()
 })
@@ -110,7 +121,7 @@ function fixture(cursor?: number) {
     run = next
   })
   let watch: ReturnType<typeof watchResumeRunSource> | undefined
-  const refresh = vi.fn(async () => watch?.offerChanged())
+  const refresh = vi.fn(async () => watch?.offerChanged(run))
   watch = watchResumeRunSource({ current: () => run, publish, offer: () => offer, refresh })
   resources.push(watch.release)
   return {
@@ -120,7 +131,7 @@ function fixture(cursor?: number) {
     release: watch.release,
     withdraw: () => {
       offer = { ...offer, failed: [], listedAt: 200 }
-      watch?.offerChanged()
+      watch?.offerChanged(run)
     },
     view: () =>
       resumeRunView(
@@ -134,38 +145,23 @@ function fixture(cursor?: number) {
       )
   }
 }
-it('ignores future-dated old accepted data when the first checkpoint arrives', async () => {
-  const pending = Promise.withResolvers<AgentSessionHistoryResult>()
-  rpc.mockReturnValueOnce(pending.promise)
+it('keeps unread old history unknown instead of inventing a post-action boundary', () => {
   const test = fixture()
   publishPage(7, [submission(5)])
-  pending.resolve({ ok: true, page: page(7) })
-  await vi.waitFor(() => expect(test.run().entries[0]?.sourceCursor?.sequence).toBe(7))
   test.withdraw()
   expect(test.view().counts.resumed).toBe(0)
-  expect(test.view().counts.attention).toBe(1)
+  expect(rpc).not.toHaveBeenCalled()
+})
+it('credits the first locally admitted send even when it races first hydration', async () => {
+  const test = fixture()
+  admitUserResumeRequest('b', 'user-8')
   publishPage(8, [submission(8)])
   await vi.waitFor(() =>
     expect(test.run().entries[0]?.userRequest?.submission.clientMessageId).toBe('user-8')
   )
   test.withdraw()
   expect(test.view().counts.resumed).toBe(1)
-})
-it('keeps a request racing first hydration unknown until a later identifiable request', async () => {
-  const pending = Promise.withResolvers<AgentSessionHistoryResult>()
-  rpc.mockReturnValueOnce(pending.promise)
-  const test = fixture()
-  publishPage(8, [submission(8)])
-  pending.resolve({ ok: true, page: page(8) })
-  await vi.waitFor(() => expect(test.run().entries[0]?.sourceCursor?.sequence).toBe(8))
-  test.withdraw()
-  expect(test.view().counts.resumed).toBe(0)
-  publishPage(9, [submission(9)])
-  await vi.waitFor(() =>
-    expect(test.run().entries[0]?.userRequest?.submission.clientMessageId).toBe('user-9')
-  )
-  test.withdraw()
-  expect(test.view().counts.resumed).toBe(1)
+  expect(rpc).not.toHaveBeenCalled()
 })
 it.each(['host', 'missing source', 'missing sequence', 'different epoch'] as const)(
   'does not credit %s evidence as a later user resume',
@@ -228,30 +224,14 @@ it('does not hydrate still-listed rows or activate an already active reader agai
   test.release()
   expect(activate).toHaveBeenCalledTimes(1)
 })
-it('releases a disposed result before its delayed checkpoint can publish', async () => {
-  const pending = Promise.withResolvers<AgentSessionHistoryResult>()
-  rpc.mockReturnValueOnce(pending.promise)
+it('ignores user admissions and reader arrivals after disposal', () => {
   const test = fixture()
   test.release()
-  pending.resolve({ ok: true, page: page(7) })
-  await Promise.resolve()
-  await Promise.resolve()
+  admitUserResumeRequest('b', 'user-8')
+  publishPage(8, [submission(8)])
   expect(test.publish).not.toHaveBeenCalled()
-  expect(test.run().entries[0]?.sourceCursor).toBeUndefined()
+  expect(test.run().entries[0]?.userRequest).toBeUndefined()
 })
-
-it('does not treat a legacy backward page cursor as a current source checkpoint', async () => {
-  const history = page(7)
-  history.liveCursor = undefined
-  rpc.mockResolvedValueOnce({ ok: true, page: history })
-  expect(await readResumeRunSourceCursor('b')).toBeUndefined()
-  expect(rpc).toHaveBeenCalledWith(LOCAL, 'agentSession.history', {
-    sessionId: 'b',
-    direction: 'tail',
-    limit: 1
-  })
-})
-
 it('keeps one admitted reader through pending acceptance and releases it after confirmation', async () => {
   const owner = getStructuredAgentSessionReadOwner('b', LOCAL)
   owner.publishCreated(page(7))
@@ -291,4 +271,57 @@ it('does not repeat an admitted read for unchanged withdrawal snapshots', async 
   expect(activate).toHaveBeenCalledTimes(1)
   expect(rpc).not.toHaveBeenCalled()
   expect(test.view().counts.resumed).toBe(0)
+})
+
+it('expires an owned read despite retained ready content and ordinary contact retries', async () => {
+  vi.useFakeTimers()
+  const owner = getStructuredAgentSessionReadOwner('b', LOCAL)
+  owner.publishCreated(page(7))
+  const test = fixture(7)
+  wire.failing = true
+  test.withdraw()
+  await vi.advanceTimersByTimeAsync(900)
+  expect(owner.getSnapshot().state.status).toBe('ready')
+  expect(owner.hasActiveReaders()).toBe(true)
+  expect(wire.attempts).toHaveBeenCalledTimes(2)
+  await vi.advanceTimersByTimeAsync(RESUME_RUN_SOURCE_READ_BUDGET_MS)
+  expect(owner.hasActiveReaders()).toBe(false)
+  const attempts = wire.attempts.mock.calls.length
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(wire.attempts).toHaveBeenCalledTimes(attempts)
+  expect(test.view().counts.resumed).toBe(0)
+})
+it('expires a forever-pending owned read without inventing recovery', async () => {
+  vi.useFakeTimers()
+  const owner = getStructuredAgentSessionReadOwner('b', LOCAL)
+  owner.publishCreated(page(7))
+  const test = fixture(7)
+  test.withdraw()
+  await Promise.resolve()
+  wire.emit({
+    type: 'snapshot',
+    sessionId: 'b',
+    fence: 2,
+    page: page(8, [submission(8, { dispatchState: 'pending', providerItemId: null })])
+  })
+  expect(owner.hasActiveReaders()).toBe(true)
+  await vi.advanceTimersByTimeAsync(RESUME_RUN_SOURCE_READ_BUDGET_MS + 1)
+  expect(owner.hasActiveReaders()).toBe(false)
+  expect(test.view().counts.resumed).toBe(0)
+})
+it('keeps visible reader retries when the result has no activation to expire', async () => {
+  vi.useFakeTimers()
+  const owner = getStructuredAgentSessionReadOwner('b', LOCAL)
+  owner.publishCreated(page(7))
+  wire.failing = true
+  resources.push(owner.activate())
+  const test = fixture(7)
+  test.withdraw()
+  await vi.advanceTimersByTimeAsync(RESUME_RUN_SOURCE_READ_BUDGET_MS + 1)
+  expect(owner.hasActiveReaders()).toBe(true)
+  const attempts = wire.attempts.mock.calls.length
+  await vi.advanceTimersByTimeAsync(30_001)
+  expect(wire.attempts.mock.calls.length).toBeGreaterThan(attempts)
+  test.release()
+  expect(owner.hasActiveReaders()).toBe(true)
 })

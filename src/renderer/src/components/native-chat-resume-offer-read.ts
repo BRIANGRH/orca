@@ -48,9 +48,9 @@ export async function readNativeChatResumeHostOffer(deps: {
 
 export function createResumeOfferRead(
   target: RuntimeClientTarget,
-  answer: (offer: Omit<NativeChatRestartOffer, 'available'>) => void,
+  prepareAnswer: () => (offer: Omit<NativeChatRestartOffer, 'available'>) => void,
   unavailable: () => void
 ): (current?: () => boolean) => Promise<HostOfferRead> {
   return (current = () => true) =>
-    readNativeChatResumeHostOffer({ target, current, answer, unavailable })
+    readNativeChatResumeHostOffer({ target, current, answer: prepareAnswer(), unavailable })
 }

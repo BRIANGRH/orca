@@ -1,9 +1,10 @@
 import type { ResumeCandidate, ResumeFailure } from './native-chat-resume-on-restart-grouping'
 import type { RestartContinuationOutcome } from './native-chat-restart-action-notifications'
+import type { AgentJournalCursor } from '../../../shared/agent-session-journal-types'
 import type {
-  AgentJournalCursor,
-  AgentJournalSubmission
-} from '../../../shared/agent-session-journal-types'
+  StructuredSessionUserAction,
+  UserRequestSubmission
+} from './native-chat/structured-agent-session-user-actions'
 import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
 
 export type ResumeRunHostStatus = Pick<
@@ -30,9 +31,11 @@ export type ResumeRun = Readonly<{
     observedStatus?: ResumeRunHostStatus
     sourceCursor?: AgentJournalCursor
     originalFailure?: ResumeFailure
+    localAction?: StructuredSessionUserAction
     userRequest?: {
       epoch: string
-      submission: AgentJournalSubmission
+      submission: UserRequestSubmission
+      action?: StructuredSessionUserAction
       /** The per-chat rows of the confirmed host answer, kept as source history. */
       offer?: { listedAt: number; candidate?: ResumeCandidate; failure?: ResumeFailure }
     }
@@ -116,20 +119,25 @@ export function finishResumeRun(
 export function resumeRunOrderedUserRequest(
   entry: ResumeRun['entries'][number],
   epoch: string,
-  submission: AgentJournalSubmission
+  submission: UserRequestSubmission,
+  action: StructuredSessionUserAction | undefined = entry.localAction
 ): boolean {
   const source = entry.sourceCursor
-  const cut = entry.dismissal?.cursor ?? source
+  const userSource =
+    submission.source?.kind === 'user' ||
+    (submission.origin === 'client' && submission.queuedMessageId !== undefined)
+  if (!userSource) {
+    return false
+  }
+  if (action?.target?.kind === 'local' && action.clientMessageId === submission.clientMessageId) {
+    return true
+  }
   return !!(
     source &&
-    cut &&
     epoch === source.epoch &&
-    epoch === cut.epoch &&
-    (!entry.dismissal || entry.dismissal.cursor) &&
+    !entry.dismissal &&
     submission.submittedSequence !== undefined &&
-    submission.submittedSequence > Math.max(source.sequence, cut.sequence) &&
-    submission.clientMessageId !== entry.dismissal?.previousRequestId &&
-    submission.source?.kind === 'user'
+    submission.submittedSequence > source.sequence
   )
 }
 
@@ -138,7 +146,7 @@ export function resumeRunUserRequestConfirmed(entry: ResumeRun['entries'][number
   const witness = entry.userRequest
   return !!(
     witness &&
-    resumeRunOrderedUserRequest(entry, witness.epoch, witness.submission) &&
+    resumeRunOrderedUserRequest(entry, witness.epoch, witness.submission, witness.action) &&
     witness.submission.dispatchState === 'accepted' &&
     witness.submission.providerItemId &&
     witness.offer &&

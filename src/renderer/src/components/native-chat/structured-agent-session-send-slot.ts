@@ -7,6 +7,7 @@ import {
   type StructuredAgentSessionAttachment
 } from '../../../../shared/structured-agent-session-send-mutation'
 import { createBrowserUuid } from '@/lib/browser-uuid'
+import { observeStructuredSessionUserAction } from './structured-agent-session-user-actions'
 import {
   getStructuredAgentSessionPendingSends,
   publishStructuredAgentSessionSends,
@@ -54,6 +55,10 @@ export function takeStructuredAgentSessionSendSlot(
     entries: [...getStructuredAgentSessionPendingSends(input.sessionId), entry],
     // The notice explains text given back to this chat's composer; only its own sends replace it.
     ...(input.callerKeepsText ? {} : { notice: null })
+  })
+  observeStructuredSessionUserAction({
+    kind: 'admitted',
+    action: { sessionId: entry.sessionId, clientMessageId: entry.clientMessageId, kind: 'send' }
   })
   return entry
 }

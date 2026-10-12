@@ -9,6 +9,7 @@ import { dispatchWasWithdrawn } from '../../../../shared/structured-agent-sessio
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { agentSessionWriteNoticeText } from './agent-session-write-notice-text'
 import { nativeChatRewindReasonCopy } from './native-chat-rewind-copy'
+import { observeStructuredSessionUserAction } from './structured-agent-session-user-actions'
 import { handBackStructuredAgentSessionMessage } from './structured-agent-session-message-hand-back'
 import {
   findStructuredAgentSessionPendingSend,
@@ -138,6 +139,10 @@ export function beginSend(
   budgetMs = STRUCTURED_AGENT_SESSION_SEND_BUDGET_MS
 ): StructuredAgentSessionSent {
   const { clientMessageId, sessionId } = entry
+  observeStructuredSessionUserAction({
+    kind: 'issued',
+    action: { sessionId, clientMessageId, kind: 'send', target }
+  })
   const outcome = new Promise<StructuredAgentSessionSendOutcome>((resolve) => {
     runtimes.set(clientMessageId, {
       target,
