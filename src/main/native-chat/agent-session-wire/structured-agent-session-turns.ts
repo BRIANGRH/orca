@@ -202,7 +202,10 @@ export async function performSend(
   }
 }
 
-export type AgentSessionHandoverContext = StructuredAgentSessionCommandHandoverContext
+/** A message's handover also writes the stopped messages owed, logging what came of them. */
+export type AgentSessionHandoverContext = StructuredAgentSessionCommandHandoverContext & {
+  logger: StructuredAgentSessionLogger
+}
 
 /**
  * Hands one queued submission to the provider. The `dispatch{pending}` row goes first: a crash

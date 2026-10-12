@@ -226,8 +226,11 @@ describe("stopped messages go into the agent's own log ahead of the next send", 
   it('appends them again at the next send when the agent proved it refused them', async () => {
     await start()
     await stopWhileStarting('first')
-    // As a Codex without `thread/inject_items` answers.
-    rig.appendStoppedMessages.mockResolvedValueOnce({ outcome: 'refused', reason: '-32601' })
+    // As Codex answers when its child ended while the append read its images: nothing written.
+    rig.appendStoppedMessages.mockResolvedValueOnce({
+      outcome: 'refused',
+      reason: 'Codex ended before the append'
+    })
     const carrier = await nextSend('carrier')
     await rig.settleAccepted(carrier, 'carrier')
     await nextSend('after')

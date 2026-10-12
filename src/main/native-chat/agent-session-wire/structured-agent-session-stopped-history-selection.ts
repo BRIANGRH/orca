@@ -10,7 +10,7 @@ import type {
 } from '../../../shared/agent-session-journal-types'
 import { agentJournalSubmissionKey } from '../../../shared/agent-session-journal-item-key'
 import {
-  agentSessionCanCarryStoppedHistory,
+  agentSessionSendDeliversStoppedHistory,
   agentSessionStoppedHistoryOwed,
   type OwedStoppedMessage
 } from '../../../shared/agent-session-stopped-history'
@@ -38,7 +38,7 @@ export function owedStoppedHistory(
   body: AgentJournalMessageItem,
   turnScope: AgentJournalTurnScope
 ): OwedStoppedMessage[] {
-  if (turnScope.kind !== 'thread' || !agentSessionCanCarryStoppedHistory(submission, body)) {
+  if (turnScope.kind !== 'thread' || !agentSessionSendDeliversStoppedHistory(submission, body)) {
     return []
   }
   return agentSessionStoppedHistoryOwed({

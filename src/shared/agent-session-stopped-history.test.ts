@@ -7,7 +7,7 @@ import type {
   AgentJournalSubmission
 } from './agent-session-journal-types'
 import {
-  agentSessionCanCarryStoppedHistory,
+  agentSessionSendDeliversStoppedHistory,
   agentSessionStoppedHistoryOwed,
   type StoppedHistoryJournal
 } from './agent-session-stopped-history'
@@ -232,25 +232,25 @@ describe('which sends carry stopped history', () => {
   const user = { source: { kind: 'user' } }
 
   it("a person's ordinary send carries it, a queued card's hand-off too", () => {
-    expect(agentSessionCanCarryStoppedHistory(user, message('next'))).toBe(true)
-    expect(agentSessionCanCarryStoppedHistory({ queuedMessageId: 'card' }, message('card'))).toBe(
-      true
-    )
+    expect(agentSessionSendDeliversStoppedHistory(user, message('next'))).toBe(true)
+    expect(
+      agentSessionSendDeliversStoppedHistory({ queuedMessageId: 'card' }, message('card'))
+    ).toBe(true)
   })
 
   it('a slash command, a command, mail or an orchestration preamble does not', () => {
-    expect(agentSessionCanCarryStoppedHistory(user, message('/review'))).toBe(false)
+    expect(agentSessionSendDeliversStoppedHistory(user, message('/review'))).toBe(false)
     expect(
-      agentSessionCanCarryStoppedHistory(
+      agentSessionSendDeliversStoppedHistory(
         user,
         message('/compact', { command: { name: 'compact' } })
       )
     ).toBe(false)
-    expect(agentSessionCanCarryStoppedHistory({ source: { kind: 'agent' } }, message('mail'))).toBe(
-      false
-    )
-    expect(agentSessionCanCarryStoppedHistory({}, message('preamble'))).toBe(false)
+    expect(
+      agentSessionSendDeliversStoppedHistory({ source: { kind: 'agent' } }, message('mail'))
+    ).toBe(false)
+    expect(agentSessionSendDeliversStoppedHistory({}, message('preamble'))).toBe(false)
     const mail = message('task', { from: { kind: 'agent', senders: [], orchestration: null } })
-    expect(agentSessionCanCarryStoppedHistory({ queuedMessageId: 'card' }, mail)).toBe(false)
+    expect(agentSessionSendDeliversStoppedHistory({ queuedMessageId: 'card' }, mail)).toBe(false)
   })
 })

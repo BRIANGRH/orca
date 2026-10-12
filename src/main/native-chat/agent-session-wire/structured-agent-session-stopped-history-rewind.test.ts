@@ -280,8 +280,11 @@ describe.each([
   it('one still owed stays owed through the rewind', async () => {
     await begin()
     const stopped = await stopWhileStarting('A')
-    // A Codex without `thread/inject_items` refuses each append.
-    rig.appendStoppedMessages.mockResolvedValue({ outcome: 'refused', reason: '-32601' })
+    // A turn starts each time while the append reads its images, so none is written.
+    rig.appendStoppedMessages.mockResolvedValue({
+      outcome: 'refused',
+      reason: 'Codex is running a turn'
+    })
     const next = await nextSend('B')
     await accepted(next, 'B', 'B')
     const later = await nextSend('C')

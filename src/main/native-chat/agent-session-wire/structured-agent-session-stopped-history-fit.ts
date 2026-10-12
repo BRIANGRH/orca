@@ -3,10 +3,11 @@
 // ahead of the send's own words, with its images ahead of the send's. Only the agent's own admission
 // limits bound them; the first that does not fit waits, with every later one, for a send with room.
 
-import type { OwedStoppedMessage } from '../../../shared/agent-session-stopped-history'
+import {
+  STOPPED_MESSAGE_INTERRUPTED_MARKER,
+  type OwedStoppedMessage
+} from '../../../shared/agent-session-stopped-history'
 import type { NativeChatImageRefBlock } from '../../../shared/native-chat-types'
-
-export const STOPPED_MESSAGE_INTERRUPTED_MARKER = '[Request interrupted by user]'
 
 /** An amount per admission limit, keyed by the adapter's own names; a missing key costs nothing. */
 export type StoppedHistoryCost = Readonly<Record<string, number>>

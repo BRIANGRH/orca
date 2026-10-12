@@ -7,14 +7,16 @@
 
 import { randomUUID } from 'node:crypto'
 import type { AgentSessionStoppedMessageAppendOutcome } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-adapter'
-import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
+import {
+  STOPPED_MESSAGE_INTERRUPTED_MARKER,
+  type OwedStoppedMessage
+} from '../../shared/agent-session-stopped-history'
 import { withTimeout } from '../../shared/promise-timeout-fallback'
 import { claudeUserMessageWasProvablyUnwritten } from './claude-agent-sdk-user-message-queue'
 import { claudeStoppedMessageContent } from './claude-structured-dispatch-content'
 import { readClaudeFrameString } from './claude-structured-init-proof'
 import type { ClaudeSession } from './claude-structured-session-state'
 
-export const CLAUDE_INTERRUPTED_MARKER = '[Request interrupted by user]'
 // Each bound alone keeps a send queued behind the append waiting at most a few seconds.
 const CLAUDE_STOPPED_MESSAGE_PREPARE_TIMEOUT_MS = 2_000
 const CLAUDE_STOPPED_MESSAGE_APPEND_TIMEOUT_MS = 2_000
@@ -116,7 +118,7 @@ export async function appendClaudeStoppedMessages(
     content
       ? [
           frame(session, content),
-          frame(session, [{ type: 'text', text: CLAUDE_INTERRUPTED_MARKER }])
+          frame(session, [{ type: 'text', text: STOPPED_MESSAGE_INTERRUPTED_MARKER }])
         ]
       : []
   )

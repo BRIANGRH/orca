@@ -13,6 +13,10 @@ import {
   dispatchWasWithdrawn
 } from './structured-agent-session-dispatch-rejection'
 
+/** The record Claude writes for its own Stop: written after each stopped message appended to
+ *  Claude's log, and carried after each one in an ACP or Pi send. */
+export const STOPPED_MESSAGE_INTERRUPTED_MARKER = '[Request interrupted by user]'
+
 export type StoppedHistoryJournal = {
   submissions: readonly AgentJournalSubmission[]
   /** Each handed-over send's carried history, by its client message id. */
@@ -113,9 +117,9 @@ export function agentSessionStoppedHistoryOwed(
     )
 }
 
-/** Whether this send's handover may append or carry stopped history: a person's ordinary message, a
- *  queued card's hand-off included. */
-export function agentSessionCanCarryStoppedHistory(
+/** Whether this send's handover delivers the stopped messages owed, appended or carried: a person's
+ *  ordinary message, a queued card's hand-off included. */
+export function agentSessionSendDeliversStoppedHistory(
   submission: Pick<AgentJournalSubmission, 'source' | 'queuedMessageId'>,
   body: AgentJournalItemBody | null | undefined
 ): body is AgentJournalMessageItem {

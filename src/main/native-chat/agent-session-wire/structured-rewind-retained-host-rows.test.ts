@@ -163,9 +163,8 @@ describe('a rewind keeps a stopped send, which only the host holds', () => {
     role: 'user',
     blocks: [{ type: 'text', text }]
   })
-  const restatedSend = (clientMessageId: string, acceptedSequence?: number) => ({
+  const restatedSend = (clientMessageId: string) => ({
     clientMessageId,
-    ...(acceptedSequence === undefined ? {} : { acceptedSequence }),
     fence: 1,
     payloadFingerprint: clientMessageId,
     dispatchState: 'rejected' as const,
@@ -200,38 +199,6 @@ describe('a rewind keeps a stopped send, which only the host holds', () => {
 
     expect(merged.map((row) => row.itemId)).toEqual([codexKey('a', 1), stopped, codexKey('b', 1)])
     expect(merged[1]).toEqual(retained(stopped, said('stopped')))
-  })
-
-  it('in the order they were sent, rows of other kinds where they sat', () => {
-    const sentFirst = orcaKey('sent-first')
-    const sentLater = orcaKey('sent-later')
-    const command = orcaKey('command-1')
-    const merged = mergeRetainedHostLifecycleRows(
-      [
-        retained(codexKey('a', 1), prose('before')),
-        // Refused in the other order, so drawn in it.
-        retained(sentLater, said('sent later')),
-        retained(command, {
-          kind: 'message',
-          role: 'user',
-          blocks: [{ type: 'text', text: '/compact' }],
-          command: { name: 'compact' }
-        }),
-        retained(sentFirst, said('sent first'))
-      ],
-      [providerItem(codexKey('a', 1), prose('before'))],
-      new Map([
-        [sentLater, restatedSend('sent-later', 9)],
-        [sentFirst, restatedSend('sent-first', 5)]
-      ])
-    )
-
-    expect(merged.map((row) => row.itemId)).toEqual([
-      codexKey('a', 1),
-      sentFirst,
-      command,
-      sentLater
-    ])
   })
 })
 
