@@ -11,13 +11,27 @@ export async function readPairedRetentionSample(
   page: Page,
   tabIds: string[]
 ): Promise<PairedRetentionSample> {
+  let cdpUsed: number | null = null
   try {
     const session = await page.context().newCDPSession(page)
     await session.send('HeapProfiler.collectGarbage')
+    cdpUsed = (await session.send('Runtime.getHeapUsage')).usedSize
     await session.detach()
   } catch {
     // GC only improves measurement fidelity.
   }
+  const perf = await page.evaluate(() => (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize ?? null)
+  const dom = await page.evaluate(() => {
+    const store = window.__store?.getState()
+    return {
+      xterms: document.querySelectorAll('.xterm').length,
+      managers: window.__paneManagers?.size ?? 0,
+      managerIds: [...(window.__paneManagers?.keys() ?? [])].map((id) => id.slice(-8)),
+      tabs: Object.values(store?.tabsByWorktree ?? {}).reduce((n, tabs) => n + tabs.length, 0),
+      unified: Object.values(store?.unifiedTabsByWorktree ?? {}).reduce((n, tabs) => n + tabs.length, 0)
+    }
+  })
+  console.log(`[heap-diag2] performance.memory=${perf} cdpUsedAfterGc=${cdpUsed} ${JSON.stringify(dom)}`)
   return page.evaluate((targets) => {
     let bufferCells = 0
     let mountedTargetManagers = 0
