@@ -16,6 +16,7 @@ import {
 import type { WslOrcadLaunch } from './wsl-orcad-deploy'
 import { createWslOrcadHostTransport } from './wsl-orcad-host-transport'
 import { listenWslOrcadStdioBridge } from './wsl-orcad-stdio-bridge'
+import { wslOrcadHostDistro } from './wsl-orcad-host-environments'
 
 let first: { server: Server; port: number }
 let second: { server: Server; port: number }
@@ -290,5 +291,13 @@ describe('WslOrcadConnectionManager', () => {
     expect(manager.get('Ubuntu')).toBeNull()
     expect(onChange).toHaveBeenLastCalledWith('Ubuntu', null, { state: 'closed' })
     await expect(dial(connection.localPort)).rejects.toThrow()
+  })
+
+  it('lists its environment as a WSL host only while the connection is open', async () => {
+    const { manager } = setup()
+    const connection = await manager.ensure('Ubuntu')
+    expect(wslOrcadHostDistro(connection.environmentId)).toBe('Ubuntu')
+    await connection.close()
+    expect(wslOrcadHostDistro(connection.environmentId)).toBeNull()
   })
 })

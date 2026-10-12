@@ -34,6 +34,7 @@ import {
   getRuntimeEnvironmentStatus
 } from './runtime-environment-transport-routing'
 import { publicRuntimeEnvironmentWithHostKey } from './runtime-environment-host-key'
+import { withWslOrcadAccountEnv } from '../wsl/wsl-orcad-account-env'
 
 function manuallyDisconnectedResponse(
   environment: ReturnType<typeof resolveEnvironment>
@@ -224,13 +225,23 @@ function registerPassiveCallHandler(getUserDataPath: () => string): void {
       if (isRuntimeEnvironmentManuallyDisconnected(environment.id)) {
         return manuallyDisconnectedResponse(environment)
       }
+      // Why here: every renderer call to a paired host passes this one handler.
+      const accounts = await withWslOrcadAccountEnv(environment.id, args.method, args.params)
+      if (!accounts.ok) {
+        return {
+          id: args.method,
+          ok: false,
+          error: { code: 'account_preparation_failed', message: accounts.message },
+          _meta: { runtimeId: environment.runtimeId }
+        }
+      }
       let response: RuntimeRpcResponse<unknown>
       try {
         response = await callRuntimeEnvironment(
           getUserDataPath(),
           environment.id,
           args.method,
-          args.params,
+          accounts.params,
           args.timeoutMs,
           args.expectedEnvironmentPairingRevision,
           undefined,
