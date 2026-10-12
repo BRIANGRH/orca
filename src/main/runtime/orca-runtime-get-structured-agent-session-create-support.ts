@@ -27,7 +27,6 @@ import {
   type AgentSessionAccountHome
 } from '../../shared/agent-session-account-home'
 import type { StructuredAgentId } from '../../shared/agent-session-provider-handle'
-import { agentSessionWireProviderHandle } from '../../shared/agent-session-provider-handle-encoding'
 
 export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaRuntimeWithGetWorktreePs {
   async getStructuredAgentSessionCreateSupport(
@@ -271,11 +270,11 @@ export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaR
             // `providerHandle` alone must not: `agentSession.ensure` already passes one today
             // without adopting anything.
             adopt: {
-              providerHandle: agentSessionWireProviderHandle({
+              providerHandle: {
                 transport: definition.handleTransport,
                 agent: definition.agent,
                 nativeId: input.resumeFrom.providerSessionId
-              }),
+              },
               transcriptPath: adoption.transcriptPath
             }
           }

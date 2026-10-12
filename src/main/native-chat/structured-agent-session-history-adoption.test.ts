@@ -117,7 +117,7 @@ describe('findCommittedStructuredAgentSessionAdoptionReplay', () => {
   it('returns the record-pinned account and adopted handle for the exact committed operation', () => {
     expect(committedReplay()).toMatchObject({
       record: { accountHome: { path: '/home/dev/.codex-original' } },
-      providerHandle: { kind: 'codex', threadId: 'thread-1' }
+      providerHandle: codexProviderHandle('thread-1')
     })
   })
 
@@ -156,11 +156,7 @@ describe('findCommittedStructuredAgentSessionAdoptionReplay', () => {
         ]
       })
     ).toMatchObject({
-      providerHandle: {
-        kind: 'claude',
-        sessionId: 'provider-session-alpha-1',
-        leafUuid: 'leaf-1'
-      }
+      providerHandle: claudeProviderHandle('provider-session-alpha-1', 'leaf-1')
     })
   })
 })

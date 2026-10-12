@@ -227,7 +227,7 @@ function acpRegistration(spec: AcpLaunchSpec): StructuredAgentRuntimeRegistratio
       : {}),
     resolveAccountHome: ({ launchEnv }) => spec.account.resolve({ launchEnv }),
     modelCatalog: (context) => acpModelCatalogDiscovery(spec, context),
-    transcriptImport: null,
+    transcriptImport: spec.transcriptImport,
     sessionHistory: spec.sessionHistory,
     createAdapter: (context) => {
       const { deps, followUps } = context
