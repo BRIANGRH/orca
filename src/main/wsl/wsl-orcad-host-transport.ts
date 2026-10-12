@@ -21,6 +21,11 @@ type WslOrcadHostTransportOptions = {
   target: WslOrcadHostTarget
   /** Test seam; production spawns through process-host. */
   spawn?: PipedProcessSpawner
+  /**
+   * Tar over stdin by default: on win-lowspec it beat the guest's `/mnt` copy (0.97 s vs 1.6 s for
+   * 20 MB). `guest-mount` copies from `/mnt/<drive>` when the guest can see the source.
+   */
+  uploadSource?: 'tar' | 'guest-mount'
 }
 
 /**
@@ -63,6 +68,8 @@ export function createWslOrcadHostTransport(
       }
       return channel
     },
+    // MEASURED: `nohup … &` dies when its `wsl.exe --exec` exits on a distro without systemd.
+    orcadLaunchDetach: 'setsid',
     usesSystemSshTransport: () => false,
     // One transport, one wsl.exe lane: nothing underneath is ever replaced.
     getConnectGeneration: () => 0,
@@ -73,7 +80,7 @@ export function createWslOrcadHostTransport(
       uploadDirectoryIntoWsl(
         transport,
         localDir,
-        wslGuestSourcePath(localDir, target.distro),
+        options.uploadSource === 'guest-mount' ? wslGuestSourcePath(localDir, target.distro) : null,
         remoteDir,
         { signal: fileOptions?.signal }
       )

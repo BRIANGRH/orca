@@ -172,4 +172,9 @@ describe('createWslOrcadHostTransport', () => {
     expect(transport.usesSystemSshTransport()).toBe(false)
     expect(transport.getConnectGeneration()).toBe(transport.getConnectGeneration())
   })
+
+  // Regression: `nohup … &` dies with its `wsl.exe --exec` on a distro without systemd.
+  it('asks orcad launches to start in their own session', () => {
+    expect(transportWith([]).transport.orcadLaunchDetach).toBe('setsid')
+  })
 })

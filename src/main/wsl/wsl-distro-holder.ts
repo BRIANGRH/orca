@@ -272,10 +272,11 @@ export function createWslDistroHolder(dependencies: WslDistroHolderDependencies)
       const distros = await listWslDistroHolderRecordDistros(userDataPath)
       return Promise.all(
         distros.map((distro) =>
-          serialize(distro, async () => ({
-            distro,
-            state: (await recordedHolderState(distro)).state
-          }))
+          serialize(distro, async () => {
+            const { state, record } = await recordedHolderState(distro)
+            // The file name is the lowercase key; the record keeps the distro's own casing.
+            return { distro: record?.distro ?? distro, state }
+          })
         )
       )
     },

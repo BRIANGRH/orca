@@ -152,7 +152,7 @@ describe('createWslDistroHolder', () => {
     host.processes.set(77, { commandLine: HOLDER_COMMAND('Alpine'), startedAtMs: 5_000 })
     await writeRecord(record())
     const holder = makeHolder()
-    expect(await holder.adoptHolders()).toEqual([{ distro: 'alpine', state: 'live' }])
+    expect(await holder.adoptHolders()).toEqual([{ distro: 'Alpine', state: 'live' }])
     expect((await holder.ensureHeld('Alpine')).outcome).toBe('adopted')
     expect(host.spawned).toEqual([])
   })
@@ -161,7 +161,7 @@ describe('createWslDistroHolder', () => {
     host.processes.set(77, { commandLine: HOLDER_COMMAND('Alpine'), startedAtMs: 9_999 })
     await writeRecord(record())
     const holder = makeHolder()
-    expect(await holder.adoptHolders()).toEqual([{ distro: 'alpine', state: 'exited' }])
+    expect(await holder.adoptHolders()).toEqual([{ distro: 'Alpine', state: 'exited' }])
     expect(await recordFiles()).toEqual([])
     expect(host.killed).toEqual([])
   })
@@ -169,7 +169,7 @@ describe('createWslDistroHolder', () => {
   it('rejects a pid whose command line is not our holder for that distro', async () => {
     host.processes.set(77, { commandLine: HOLDER_COMMAND('Ubuntu'), startedAtMs: 5_000 })
     await writeRecord(record())
-    expect(await makeHolder().adoptHolders()).toEqual([{ distro: 'alpine', state: 'exited' }])
+    expect(await makeHolder().adoptHolders()).toEqual([{ distro: 'Alpine', state: 'exited' }])
     expect(await recordFiles()).toEqual([])
   })
 
@@ -181,7 +181,7 @@ describe('createWslDistroHolder', () => {
     const adopted = await holder.adoptHolders()
     expect(adopted.sort((a, b) => a.distro.localeCompare(b.distro))).toEqual([
       { distro: 'broken', state: 'exited' },
-      { distro: 'gone', state: 'exited' }
+      { distro: 'Gone', state: 'exited' }
     ])
     expect(await recordFiles()).toEqual([])
   })
@@ -191,7 +191,7 @@ describe('createWslDistroHolder', () => {
     await writeRecord(record())
     host.tableFails = true
     const holder = makeHolder()
-    expect(await holder.adoptHolders()).toEqual([{ distro: 'alpine', state: 'unverifiable' }])
+    expect(await holder.adoptHolders()).toEqual([{ distro: 'Alpine', state: 'unverifiable' }])
     expect(await holder.holderState('Alpine')).toBe('unverifiable')
     expect((await holder.ensureHeld('Alpine')).outcome).toBe('unverifiable')
     expect(await holder.release('Alpine')).toBe('unverifiable')
