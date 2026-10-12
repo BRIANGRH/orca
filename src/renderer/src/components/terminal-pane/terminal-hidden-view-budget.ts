@@ -74,9 +74,9 @@ export type HiddenViewSize = { hiddenSinceMs: number; bytes: number }
 
 /**
  * One worktree's hidden views that parking could release. Unrestorable views
- * stay out (no budget can release them), and so do views the hot-retain clock
- * already parks. Size is the largest measured in the current hidden episode
- * and is remembered after the view parks, so neither parking nor a remount
+ * stay out (no budget can release them), as do clock-parked views unless another
+ * owner keeps them mounted. Size is the largest measured in the current hidden
+ * episode and is remembered after the view parks, so neither parking nor a remount
  * mid-restore makes a view look small and flip it back in.
  */
 export function buildHiddenTerminalViews(
@@ -95,9 +95,13 @@ export function buildHiddenTerminalViews(
       tab.isVisible ||
       tab.hasActivityTerminalPortal ||
       tab.hiddenSinceMs === null ||
-      input.clockParkedTabIds.has(tab.id) ||
       !isParkRestorableTerminalPty(tab.ptyId, input.worktreeId, input.restorePolicy)
     ) {
+      continue
+    }
+    // A sleeping record or split lease alone does not prove a view is allocated.
+    const held = input.isHeldMounted?.(tab) === true && mountedViewsByTabId.has(tab.id)
+    if (input.clockParkedTabIds.has(tab.id) && !held) {
       continue
     }
     const known = sizeByTabId.get(tab.id)
@@ -115,7 +119,7 @@ export function buildHiddenTerminalViews(
       ...(tab.lastActivatedSeq !== undefined ? { activationSeq: tab.lastActivatedSeq } : {}),
       bytes: sizeByTabId.get(tab.id)?.bytes ?? Number.POSITIVE_INFINITY,
       parkable: input.parkableTabIds.has(tab.id),
-      held: input.isHeldMounted?.(tab) === true
+      held
     })
   }
   return views
@@ -132,18 +136,21 @@ function compareHiddenViewRecencyDesc(a: HiddenTerminalView, b: HiddenTerminalVi
 /**
  * Most recently hidden first, each view stays loaded while it still fits; the
  * last-hidden view is spared only while it fits on its own. A held view always
- * uses budget. A view that does not fit but cannot park yet (cold-park delay)
- * uses none: it parks once it can, so older views stay put meanwhile.
+ * reserves budget before ordinary admission. A view that does not fit but cannot
+ * park yet (cold-park delay) uses none: it parks once it can, so older views stay put meanwhile.
  */
 export function selectHiddenTerminalViewsOverBudget(
   views: readonly HiddenTerminalView[],
   budgetBytes: number
 ): Set<string> {
   const overBudget = new Set<string>()
-  let retainedBytes = 0
+  let retainedBytes = views.reduce((bytes, view) => bytes + (view.held ? view.bytes : 0), 0)
   for (const view of [...views].sort(compareHiddenViewRecencyDesc)) {
-    if (view.held || retainedBytes + view.bytes <= budgetBytes) {
-      retainedBytes += Number.isFinite(view.bytes) ? view.bytes : 0
+    if (view.held) {
+      continue
+    }
+    if (retainedBytes + view.bytes <= budgetBytes) {
+      retainedBytes += view.bytes
     } else if (view.parkable) {
       overBudget.add(view.tabId)
     }
