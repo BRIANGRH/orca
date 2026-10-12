@@ -124,7 +124,10 @@ function rewriteValue(
       return rewritePtySessionId(value, rewriter)
     case 'editor-file-id':
       return rewriteEditorFileId(value, rewriter)
-    default:
+    case 'absolute':
+    case 'maybe-absolute':
+    case 'relative':
+    case 'url':
       return rewriter.path(value, kind)
   }
 }

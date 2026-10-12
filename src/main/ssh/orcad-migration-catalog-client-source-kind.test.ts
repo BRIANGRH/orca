@@ -12,7 +12,7 @@ import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../shared/pairing'
 import { computeOrcadMigrationManifestSha256 } from '../orcad/orcad-migration-manifest-digest'
 
 const sendRequest = vi.hoisted(() => vi.fn())
-const status = vi.hoisted(() => ({ capabilities: [] as string[] }))
+const status = vi.hoisted((): { capabilities: string[] } => ({ capabilities: [] }))
 vi.mock('../../shared/remote-runtime-client', () => ({
   sendRemoteRuntimeRequestWithStatusPreflight: async (
     pairing: unknown,
