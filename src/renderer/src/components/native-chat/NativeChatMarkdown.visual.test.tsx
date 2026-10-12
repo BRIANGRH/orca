@@ -14,6 +14,15 @@ const openNativeChatVisualFile = vi.fn()
 vi.mock('./native-chat-visual-open', () => ({
   openNativeChatVisualFile: (...args: unknown[]) => openNativeChatVisualFile(...args)
 }))
+const callRuntimeRpc = vi.fn()
+vi.mock('@/runtime/runtime-rpc-client', () => ({
+  callRuntimeRpc: (...args: unknown[]) => callRuntimeRpc(...args)
+}))
+vi.mock('@/components/artifacts/artifact-published-link-client', () => ({
+  getPublishedArtifactLink: () => Promise.resolve(null)
+}))
+const toastError = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({ toast: { error: toastError, success: vi.fn() } }))
 const FILE_LINK_CONTEXT = {
   worktreeId: 'wt-1',
   worktreePath: '/repo',
@@ -313,6 +322,79 @@ describe('NativeChatMarkdown visuals', () => {
       withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
     )
     await waitFor(() => expect(container).toHaveTextContent('Visualization unavailable'))
+  })
+
+  describe('Share', () => {
+    const SHARE = { name: 'Share as artifact' }
+
+    beforeEach(() => {
+      useAppStore.setState({
+        orcaProfileAuthStatus: { configured: true, state: 'connected' },
+        settings: { ...getDefaultSettings('/tmp'), artifactSharingEnabled: true }
+      })
+      callRuntimeRpc.mockReset()
+      callRuntimeRpc.mockResolvedValue({
+        status: 'ok',
+        value: { change: 'updated', item: { shareUrl: 'https://example.test/a' } }
+      })
+      toastError.mockReset()
+    })
+
+    /** Shows the page, lets `changeFile` act on the file (unseen by any watch), then shares. */
+    async function shareShownVisual(changeFile: () => void): Promise<HTMLElement> {
+      const { container } = render(
+        withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
+      )
+      await waitFor(() => expect(frameDocument(container)).toContain('<p>v</p>'))
+      changeFile()
+      fireEvent.click(screen.getByRole('button', SHARE))
+      fireEvent.click(await screen.findByRole('button', { name: 'Generate link' }))
+      return container
+    }
+
+    it('publishes the file as saved since it was shown, once, and shows it in the frame', async () => {
+      const container = await shareShownVisual(() =>
+        readRuntimeFilePreview.mockResolvedValue({ content: '<p>saved</p>', isBinary: false })
+      )
+
+      await waitFor(() => expect(callRuntimeRpc).toHaveBeenCalledOnce())
+      expect(callRuntimeRpc).toHaveBeenCalledWith({ kind: 'local' }, 'artifacts.publish', {
+        sourceKey: PAGE_PATH,
+        content: '<p>saved</p>',
+        contentType: 'text/html',
+        fileName: 'usage.html'
+      })
+      expect(readRuntimeFilePreview).toHaveBeenCalledTimes(2)
+      await waitFor(() => expect(frameDocument(container)).toContain('<p>saved</p>'))
+    })
+
+    it('keeps the shown page and reports unreadable when the file cannot be read', async () => {
+      const container = await shareShownVisual(() =>
+        readRuntimeFilePreview.mockRejectedValue(new Error('ENOENT: no such file or directory'))
+      )
+
+      await waitFor(() => expect(toastError).toHaveBeenCalledOnce())
+      expect(toastError).toHaveBeenCalledWith('Could not share artifact', {
+        description: "Orca couldn't read this file. Open it from a workspace and try again."
+      })
+      expect(callRuntimeRpc).not.toHaveBeenCalled()
+      expect(frameDocument(container)).toContain('<p>v</p>')
+    })
+
+    it('is not offered for an unavailable visual or before a floating chat is pinned', async () => {
+      fileLink.hostResolved = false
+      const { container } = render(
+        withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
+      )
+      await waitFor(() => expect(container).toHaveTextContent('Visualization unavailable'))
+      expect(screen.queryByRole('button', SHARE)).toBeNull()
+      cleanup()
+
+      fileLink.context = null
+      render(withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />))
+      expect(screen.getByRole('status', { name: 'Loading visualization' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', SHARE)).toBeNull()
+    })
   })
 
   it('holds back an unfinished directive at the end of a streaming reply', () => {

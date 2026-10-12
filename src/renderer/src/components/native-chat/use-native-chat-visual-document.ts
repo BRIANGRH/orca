@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   isPathInsideOrEqual,
   normalizeRuntimePathForComparison
@@ -65,21 +65,37 @@ function useVisualFileChangeCount(file: NativeChatVisualFile | null, enabled: bo
   return count
 }
 
+function showChanged(
+  shown: NativeChatVisualDocumentState,
+  document: NativeChatVisualDocument
+): NativeChatVisualDocumentState {
+  return shown.status === 'ready' && shown.document.html === document.html
+    ? shown
+    : { status: 'ready', document }
+}
+
 /**
  * The visual's current page. Starts from the cached copy when there is one, reads the file once
  * `enabled`, and again whenever `refreshKey` changes or the file changes under a watch. An
  * unchanged page keeps its frame; an unreachable host keeps the page already shown.
+ * `showDocument` shows a page read elsewhere (Share's read).
  */
 export function useNativeChatVisualDocument(
   file: NativeChatVisualFile | null,
   enabled: boolean,
   refreshKey: unknown
-): NativeChatVisualDocumentState {
+): {
+  state: NativeChatVisualDocumentState
+  showDocument: (document: NativeChatVisualDocument) => void
+} {
   const [state, setState] = useState<NativeChatVisualDocumentState>(() => {
     const cached = file ? peekNativeChatVisualFile(file) : null
     return cached ? { status: 'ready', document: cached } : { status: 'loading' }
   })
   const changes = useVisualFileChangeCount(file, enabled)
+  const showDocument = useCallback((document: NativeChatVisualDocument) => {
+    setState((shown) => showChanged(shown, document))
+  }, [])
 
   useEffect(() => {
     if (!enabled) {
@@ -96,9 +112,7 @@ export function useNativeChatVisualDocument(
       }
       setState((shown) => {
         if (outcome.kind === 'ready') {
-          return shown.status === 'ready' && shown.document.html === outcome.document.html
-            ? shown
-            : { status: 'ready', document: outcome.document }
+          return showChanged(shown, outcome.document)
         }
         return outcome.kind === 'unreachable' && shown.status === 'ready'
           ? shown
@@ -110,5 +124,5 @@ export function useNativeChatVisualDocument(
     }
   }, [enabled, file, refreshKey, changes])
 
-  return state
+  return { state, showDocument }
 }

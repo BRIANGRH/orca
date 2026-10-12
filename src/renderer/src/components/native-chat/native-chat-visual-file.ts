@@ -135,17 +135,23 @@ async function readOnce(
   }
 }
 
-/** Reads the file now; visuals of the same file asking at once share one read. */
+/**
+ * Reads the file now; visuals of the same file asking at once share one read. `fresh` never joins
+ * an earlier read, so Share publishes the file as it is at the click.
+ */
 export function readNativeChatVisualFile(
-  file: NativeChatVisualFile
+  file: NativeChatVisualFile,
+  { fresh = false }: { fresh?: boolean } = {}
 ): Promise<NativeChatVisualReadOutcome> {
   const key = cacheKey(file)
   const pending = inFlight.get(key)
-  if (pending) {
+  if (pending && !fresh) {
     return pending
   }
   const read = readOnce(key, file).finally(() => {
-    inFlight.delete(key)
+    if (inFlight.get(key) === read) {
+      inFlight.delete(key)
+    }
   })
   inFlight.set(key, read)
   return read

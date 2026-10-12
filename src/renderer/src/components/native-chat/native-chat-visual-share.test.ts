@@ -1,85 +1,141 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ArtifactPublishPreparationError } from '@/components/artifacts/artifact-publish-flow'
-import { docPreviewArtifactSourceKey } from '@/components/browser-pane/workspace-doc/doc-preview-artifact-share'
+import { editorArtifactSourceKey } from '@/components/editor/editor-artifact-upload'
+import {
+  browserTabKey,
+  editorTab,
+  localRoute,
+  pairedOwner,
+  pairedRoute,
+  previewKey
+} from '@/lib/file-artifact-source-key.test-support'
+
+const mocks = vi.hoisted(() => {
+  const state: { environmentId: string | null; read: ReturnType<typeof vi.fn> } = {
+    environmentId: null,
+    read: vi.fn()
+  }
+  return state
+})
+
+vi.mock('@/store', () => ({ useAppStore: { getState: () => ({ editorDrafts: {} }) } }))
+vi.mock('@/runtime/runtime-file-read-client', () => ({ readRuntimeFilePreview: mocks.read }))
+vi.mock('@/components/terminal-pane/terminal-file-path-mapping', () => ({
+  getTerminalFileContext: (worktreeId: string, worktreePath: string) => ({
+    target: mocks.environmentId
+      ? { kind: 'environment', environmentId: mocks.environmentId }
+      : { kind: 'local' },
+    worktreeId,
+    worktreePath,
+    sourceHostResolved: true
+  })
+}))
+vi.mock('@/components/terminal-pane/terminal-worktree-path-link', () => ({
+  terminalFileSourceHost: () => (mocks.environmentId ? `runtime:${mocks.environmentId}` : 'local')
+}))
+
+import {
+  clearNativeChatVisualFileCacheForTests,
+  readNativeChatVisualFile,
+  resolveNativeChatVisualFile,
+  type NativeChatVisualFile
+} from './native-chat-visual-file'
 import {
   nativeChatVisualArtifactSourceKey,
   readNativeChatVisualArtifactRequest
 } from './native-chat-visual-share'
-import type { NativeChatVisualIdentity } from './native-chat-visual-read-client'
 
-const mocks = vi.hoisted(() => {
-  const state: {
-    route: { executionHostId: string; runtimeEnvironmentId: string | null } | null
-    read: ReturnType<typeof vi.fn>
-  } = { route: null, read: vi.fn() }
-  return state
-})
+const PATH = 'reports/latency.html'
 
-vi.mock('@/store', () => ({ useAppStore: { getState: () => ({}) } }))
-vi.mock('@/lib/worktree-operation-route', () => ({
-  resolveWorktreeOperationRoute: () => mocks.route
-}))
-vi.mock('./native-chat-visual-read-client', () => ({
-  readNativeChatVisual: mocks.read
-}))
+function chatVisual(worktreePath: string, environmentId: string | null): NativeChatVisualFile {
+  mocks.environmentId = environmentId
+  const file = resolveNativeChatVisualFile(
+    { worktreeId: 'repo::/srv/repo', worktreePath, runtimeEnvironmentId: environmentId },
+    PATH
+  )
+  if (!file) {
+    throw new Error('unresolved')
+  }
+  return file
+}
 
-const IDENTITY: NativeChatVisualIdentity = {
-  target: { kind: 'local' },
-  sessionId: 'session-alpha',
-  path: 'reports/latency.html',
-  legacy: false
+function chatKey(worktreePath: string, environmentId: string | null): string {
+  return nativeChatVisualArtifactSourceKey(chatVisual(worktreePath, environmentId))
 }
 
 beforeEach(() => {
-  mocks.route = { executionHostId: 'local', runtimeEnvironmentId: null }
   mocks.read.mockReset()
+  clearNativeChatVisualFileCacheForTests()
 })
 
-describe('sharing a chat visual', () => {
-  it("keys a local page by its absolute path, like the file's browser tab", () => {
-    expect(
-      nativeChatVisualArtifactSourceKey('reports/latency.html', {
-        worktreeId: 'repo::/srv/repo',
-        worktreePath: '/srv/repo',
-        runtimeEnvironmentId: null
-      })
-    ).toBe('/srv/repo/reports/latency.html')
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('chat visual share key', () => {
+  it("matches the file's editor tab and browser tab on this machine", async () => {
+    const key = chatKey('/srv/repo', null)
+    expect(key).toBe('/srv/repo/reports/latency.html')
+    expect(editorArtifactSourceKey(editorTab('/srv/repo/reports/latency.html', localRoute))).toBe(
+      key
+    )
+    expect(await browserTabKey('file:///srv/repo/reports/latency.html')).toBe(key)
   })
 
-  it('keys a page on a paired host exactly as the file preview does', () => {
-    mocks.route = { executionHostId: 'runtime:server-1', runtimeEnvironmentId: 'server-1' }
-    expect(
-      nativeChatVisualArtifactSourceKey('reports/latency.html', {
-        worktreeId: 'repo::/srv/repo',
-        worktreePath: '/srv/repo',
-        runtimeEnvironmentId: 'server-1'
-      })
-    ).toBe(
-      docPreviewArtifactSourceKey({
-        filePath: '/srv/repo/reports/latency.html',
-        relativePath: 'reports/latency.html',
-        worktreeId: 'repo::/srv/repo',
-        runtimeEnvironmentId: 'server-1',
-        externalSshTargetId: null
-      })
+  it("matches the file's editor tab and preview on a paired host", () => {
+    const key = chatKey('/srv/repo', 'server-1')
+    expect(previewKey(pairedOwner, '/srv/repo/reports/latency.html')).toBe(key)
+    expect(editorArtifactSourceKey(editorTab('/srv/repo/reports/latency.html', pairedRoute))).toBe(
+      key
     )
   })
 
-  it("publishes the page as the chat's host reads it now", async () => {
-    mocks.read.mockResolvedValue({ ok: true, document: { revision: 'r2', html: '<p>new</p>' } })
-    await expect(readNativeChatVisualArtifactRequest(IDENTITY, 'key')).resolves.toEqual({
-      sourceKey: 'key',
-      content: '<p>new</p>',
+  it('spells a Windows path one way across surfaces, local and paired', async () => {
+    const local = chatKey('C:\\repo', null)
+    expect(local).toBe('C:\\repo\\reports\\latency.html')
+    expect(await browserTabKey('file:///C:/repo/reports/latency.html')).toBe(local)
+    expect(editorArtifactSourceKey(editorTab('C:/repo/reports/latency.html', localRoute))).toBe(
+      local
+    )
+
+    const paired = chatKey('C:\\srv\\repo', 'server-1')
+    expect(previewKey(pairedOwner, 'C:\\srv\\repo\\reports\\latency.html')).toBe(paired)
+    expect(
+      editorArtifactSourceKey(editorTab('C:/srv/repo/reports/latency.html', pairedRoute))
+    ).toBe(paired)
+  })
+})
+
+describe('chat visual share request', () => {
+  it('reads the file afresh at the click, not by joining a read already under way', async () => {
+    const file = chatVisual('/srv/repo', 'server-1')
+    let finishOlder: (value: unknown) => void = () => {}
+    mocks.read.mockReturnValueOnce(new Promise((resolve) => (finishOlder = resolve)))
+    mocks.read.mockResolvedValueOnce({ content: '<p>saved</p>', isBinary: false })
+    const older = readNativeChatVisualFile(file)
+    const show = vi.fn()
+
+    await expect(readNativeChatVisualArtifactRequest(file, show)).resolves.toEqual({
+      sourceKey: nativeChatVisualArtifactSourceKey(file),
+      content: '<p>saved</p>',
       contentType: 'text/html',
       fileName: 'latency.html'
     })
-    expect(mocks.read).toHaveBeenCalledWith(IDENTITY)
+    expect(show).toHaveBeenCalledWith({ html: '<p>saved</p>' })
+    expect(mocks.read).toHaveBeenCalledTimes(2)
+    finishOlder({ content: '<p>old</p>', isBinary: false })
+    await older
   })
 
-  it('reports a page the host can no longer read as unreadable', async () => {
-    mocks.read.mockResolvedValue({ ok: false, reason: 'not_found' })
-    await expect(readNativeChatVisualArtifactRequest(IDENTITY, 'key')).rejects.toEqual(
-      new ArtifactPublishPreparationError('unreadable')
-    )
+  it.each([
+    ['unreachable', new Error('Runtime environment is not connected')],
+    ['missing', new Error('ENOENT: no such file or directory')]
+  ])('reports an %s file as unreadable and shows nothing new', async (_name, error) => {
+    mocks.read.mockRejectedValue(error)
+    const show = vi.fn()
+    await expect(
+      readNativeChatVisualArtifactRequest(chatVisual('/srv/repo', null), show)
+    ).rejects.toEqual(new ArtifactPublishPreparationError('unreadable'))
+    expect(show).not.toHaveBeenCalled()
   })
 })

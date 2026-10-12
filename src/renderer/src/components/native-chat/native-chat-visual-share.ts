@@ -3,44 +3,32 @@
 
 import type { ArtifactWriteRequest } from '../../../../shared/artifacts'
 import { ArtifactPublishPreparationError } from '@/components/artifacts/artifact-publish-flow'
-import { fileArtifactSourceKey } from '@/components/editor/editor-artifact-upload'
-import { resolveExplicitFileLinkTargetPath } from '@/lib/explicit-file-link-target'
+import { fileArtifactSourceKey } from '@/lib/file-artifact-source-key'
 import { basename } from '@/lib/path'
-import { resolveWorktreeOperationRoute } from '@/lib/worktree-operation-route'
-import { useAppStore } from '@/store'
-import type { NativeChatFileLinkContext } from './native-chat-file-link'
 import {
-  readNativeChatVisual,
-  type NativeChatVisualIdentity
-} from './native-chat-visual-read-client'
+  readNativeChatVisualFile,
+  type NativeChatVisualDocument,
+  type NativeChatVisualFile
+} from './native-chat-visual-file'
 
-export function nativeChatVisualArtifactSourceKey(
-  path: string,
-  context: NativeChatFileLinkContext
-): string | null {
-  const filePath = resolveExplicitFileLinkTargetPath(path, context.worktreePath)
-  if (!filePath) {
-    return null
-  }
-  return fileArtifactSourceKey(
-    { filePath, runtimeEnvironmentId: context.runtimeEnvironmentId },
-    resolveWorktreeOperationRoute(useAppStore.getState(), context.worktreeId)
-  )
+export function nativeChatVisualArtifactSourceKey(file: NativeChatVisualFile): string {
+  return fileArtifactSourceKey(file.owner, file.absolutePath)
 }
 
-/** Re-reads through the chat's host, so Share publishes the file as it is now. */
+/** One fresh read at the click: the frame shows and Share publishes the same page. */
 export async function readNativeChatVisualArtifactRequest(
-  identity: NativeChatVisualIdentity,
-  sourceKey: string
+  file: NativeChatVisualFile,
+  showDocument: (document: NativeChatVisualDocument) => void
 ): Promise<ArtifactWriteRequest> {
-  const outcome = await readNativeChatVisual(identity)
-  if (!outcome.ok) {
+  const outcome = await readNativeChatVisualFile(file, { fresh: true })
+  if (outcome.kind !== 'ready') {
     throw new ArtifactPublishPreparationError('unreadable')
   }
+  showDocument(outcome.document)
   return {
-    sourceKey,
+    sourceKey: nativeChatVisualArtifactSourceKey(file),
     content: outcome.document.html,
     contentType: 'text/html',
-    fileName: basename(identity.path)
+    fileName: basename(file.absolutePath)
   }
 }

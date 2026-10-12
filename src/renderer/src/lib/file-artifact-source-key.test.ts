@@ -1,76 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { DocPreviewGrantOwner } from '../../../preload/api/doc-preview-api'
-import type { OpenFile } from '@/store/slices/editor'
-import {
-  getShareableBrowserArtifactFile,
-  readBrowserHtmlArtifactRequest
-} from '@/components/browser-pane/describe-page/browser-artifact-upload'
-import { docPreviewGrantFileOwner } from '@/components/browser-pane/workspace-doc/doc-preview-artifact-share'
 import { editorArtifactSourceKey } from '@/components/editor/editor-artifact-upload'
-import { canonicalArtifactFilePath, fileArtifactSourceKey } from './file-artifact-source-key'
+import { canonicalArtifactFilePath } from './file-artifact-source-key'
+import {
+  browserTabKey,
+  editorTab,
+  localRoute,
+  pairedOwner,
+  pairedRoute,
+  previewKey,
+  type Route
+} from './file-artifact-source-key.test-support'
 
 vi.mock('@/store', () => ({ useAppStore: { getState: () => ({ editorDrafts: {} }) } }))
-
-type Route = {
-  executionHostId: 'local' | `runtime:${string}` | `ssh:${string}`
-  runtimeEnvironmentId: string | null
-}
-
-function editorTab(filePath: string, route: Route | null): OpenFile {
-  return {
-    id: filePath,
-    filePath,
-    relativePath: 'report.html',
-    worktreeId: 'repo::/srv/repo',
-    language: 'html',
-    isDirty: false,
-    mode: 'edit',
-    runtimeEnvironmentId: route?.runtimeEnvironmentId ?? undefined,
-    ...(route
-      ? {
-          operationProvenance: {
-            ownershipProjection: 'explicit',
-            generation: {
-              route,
-              runtimeConnectionGeneration: 1,
-              runtimePairingRevision: 1,
-              runtimeSshGeneration: null,
-              nestedSshGeneration: null,
-              directSshGeneration: null
-            }
-          }
-        }
-      : {})
-  }
-}
-
-/** The key a browser tab publishes under, checked against the one its Share button looks up. */
-async function browserTabKey(url: string): Promise<string> {
-  vi.stubGlobal('window', {
-    api: {
-      fs: {
-        stat: () => Promise.resolve({ size: 1, isDirectory: false }),
-        readFile: () => Promise.resolve({ content: '<p>x</p>', isBinary: false })
-      }
-    }
-  })
-  const { sourceKey } = await readBrowserHtmlArtifactRequest(url)
-  expect(getShareableBrowserArtifactFile(url)?.filePath).toBe(sourceKey)
-  return sourceKey
-}
-
-function previewKey(owner: DocPreviewGrantOwner, filePath: string): string {
-  return fileArtifactSourceKey(docPreviewGrantFileOwner(owner), filePath)
-}
-
-const pairedOwner: DocPreviewGrantOwner = {
-  kind: 'runtime',
-  environmentId: 'server-1',
-  worktreeSelector: 'id:repo::/srv/repo',
-  worktreeRoot: '/srv/repo'
-}
-const pairedRoute: Route = { executionHostId: 'runtime:server-1', runtimeEnvironmentId: 'server-1' }
-const localRoute: Route = { executionHostId: 'local', runtimeEnvironmentId: null }
 
 describe('file artifact source key', () => {
   it('gives a local file one key from the editor and a browser tab, whatever its slashes', async () => {

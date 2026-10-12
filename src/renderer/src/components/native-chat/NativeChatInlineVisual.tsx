@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SquareArrowOutUpRight } from 'lucide-react'
+import { ArtifactPublishButton } from '@/components/artifacts/ArtifactPublishButton'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { translate } from '@/i18n/i18n'
@@ -12,6 +13,10 @@ import { openNativeChatVisualFile } from './native-chat-visual-open'
 import { useNativeChatFileLinkContext } from './use-native-chat-file-link-context'
 import { useNativeChatFileLinkRecheckGeneration } from './use-native-chat-file-link-existence'
 import { resolveNativeChatVisualFile } from './native-chat-visual-file'
+import {
+  nativeChatVisualArtifactSourceKey,
+  readNativeChatVisualArtifactRequest
+} from './native-chat-visual-share'
 import { useNativeChatVisualDocument } from './use-native-chat-visual-document'
 
 export function NativeChatVisualUnavailable(): React.JSX.Element {
@@ -50,7 +55,7 @@ export function NativeChatInlineVisual({
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- connectionId re-resolves the file's host.
     [fileLinkContext, path, connectionId]
   )
-  const state = useNativeChatVisualDocument(
+  const { state, showDocument } = useNativeChatVisualDocument(
     file,
     near && fileLinkContext !== null,
     useNativeChatFileLinkRecheckGeneration()
@@ -86,12 +91,12 @@ export function NativeChatInlineVisual({
             onRetired={() => setRetired(true)}
           />
           {fileLinkContext ? (
-            <div className="absolute top-2 right-2 transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100">
+            <div className="absolute top-2 right-2 flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5 shadow-xs transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant="outline"
-                    size="icon-xs"
+                    variant="ghost"
+                    size="icon-sm"
                     aria-label={openLabel}
                     onClick={() => openNativeChatVisualFile(path, fileLinkContext)}
                   >
@@ -102,6 +107,12 @@ export function NativeChatInlineVisual({
                   {openLabel}
                 </TooltipContent>
               </Tooltip>
+              {file ? (
+                <ArtifactPublishButton
+                  sourceKey={nativeChatVisualArtifactSourceKey(file)}
+                  createRequest={() => readNativeChatVisualArtifactRequest(file, showDocument)}
+                />
+              ) : null}
             </div>
           ) : null}
         </>
