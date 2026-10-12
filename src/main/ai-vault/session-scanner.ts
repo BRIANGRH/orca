@@ -142,8 +142,6 @@ async function scanAiVaultSessionStores(options: AiVaultScanOptions): Promise<Ai
         span.setAttribute('bytesRead', parseStats.bytesRead)
         span.setAttribute('issues', issues.length)
 
-        scheduleSessionParseCachePersist(parseStats)
-
         return {
           sessions: mergeSessions(cappedSessions, scopeSessions),
           issues: issues.map((issue) => ({ executionHostId, ...issue })),
@@ -261,6 +259,10 @@ async function parseSessionCandidates(args: {
         )
       )
     )
+
+    // Checkpoint as the scan goes: saved only at its end, a scan that times out
+    // or is cancelled loses every file it already finished.
+    scheduleSessionParseCachePersist(args.parseStats)
 
     for (const result of results) {
       if (result.issue) {

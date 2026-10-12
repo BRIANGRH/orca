@@ -27,6 +27,9 @@ import type { SessionSidecarObservation } from './session-sidecar-stat'
 const SCHEMA_VERSION = SESSION_PARSE_CACHE_SCHEMA_VERSION
 // Debounce so back-to-back scans (desktop IPC + runtime RPC) collapse into one write.
 const SAVE_DEBOUNCE_MS = 1_500
+// A scan re-arms the debounce after every parsed batch; the cap turns a long scan's
+// work into a checkpoint every ~15 s, so a scan killed at its deadline keeps it.
+const SAVE_MAX_WAIT_MS = 15_000
 // The payload contains transcript-derived preview text; keep it user-only
 // (mode bits are inert on Windows — the userData ACL grant is the boundary there).
 const PRIVATE_DIRECTORY_MODE = 0o700
@@ -40,6 +43,7 @@ export type SessionParseCachePersistenceOptions = {
 let options: SessionParseCachePersistenceOptions | null = null
 let loadPromise: Promise<void> | null = null
 let saveTimer: NodeJS.Timeout | null = null
+let savePendingSince: number | null = null
 let lastSave: Promise<void> = Promise.resolve()
 
 /** Enable persistence. Called only from the composition root; every export is a no-op until then. */
@@ -58,6 +62,7 @@ export function resetSessionParseCachePersistenceForTests(): void {
     clearTimeout(saveTimer)
     saveTimer = null
   }
+  savePendingSince = null
   lastSave = Promise.resolve()
 }
 
@@ -84,15 +89,19 @@ export function scheduleSessionParseCachePersist(stats: SessionParseStats): void
     return
   }
   const current = options
+  const now = Date.now()
+  savePendingSince ??= now
   if (saveTimer) {
     clearTimeout(saveTimer)
   }
+  const delayMs = Math.max(0, Math.min(SAVE_DEBOUNCE_MS, savePendingSince + SAVE_MAX_WAIT_MS - now))
   saveTimer = setTimeout(() => {
     saveTimer = null
+    savePendingSince = null
     // Chained so a slow write and a rescheduled save can't rename out of order
     // (an older snapshot landing last); persistSnapshot never rejects.
     lastSave = lastSave.then(() => persistSnapshot(current))
-  }, SAVE_DEBOUNCE_MS)
+  }, delayMs)
   // Why: a pending cache save must not keep a quitting process alive.
   if (typeof saveTimer.unref === 'function') {
     saveTimer.unref()
@@ -104,6 +113,7 @@ export async function flushSessionParseCachePersist(): Promise<void> {
   if (saveTimer) {
     clearTimeout(saveTimer)
     saveTimer = null
+    savePendingSince = null
     if (options !== null) {
       const current = options
       lastSave = lastSave.then(() => persistSnapshot(current))
