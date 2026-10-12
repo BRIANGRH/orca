@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   collectMountedHiddenTerminalViewCounts,
+  hasMountedTerminalTabView,
   readMountedTerminalTabViewBytes,
   registerMountedTerminalTabView,
   resetMountedTerminalViewsForTest
@@ -11,6 +12,24 @@ const MB = 1024 * 1024
 afterEach(resetMountedTerminalViewsForTest)
 
 describe('mounted hidden terminal view census', () => {
+  it('derives mount presence without measuring or treating a failed getter as absence', () => {
+    const measure = vi.fn(() => {
+      throw new Error('estimate unavailable')
+    })
+    expect(hasMountedTerminalTabView('held')).toBe(false)
+    const unregister = registerMountedTerminalTabView('held', {
+      getRetainedBytes: measure,
+      getHiddenState: () => ({ restorable: true })
+    })
+    expect(hasMountedTerminalTabView('held')).toBe(true)
+    expect(measure).not.toHaveBeenCalled()
+    expect(readMountedTerminalTabViewBytes('held')).toBeNull()
+    expect(hasMountedTerminalTabView('held')).toBe(true)
+    unregister()
+    expect(hasMountedTerminalTabView('held')).toBe(false)
+    expect(measure).toHaveBeenCalledTimes(1)
+  })
+
   it('reads current visibility, restoration and bytes without any policy report', () => {
     let visible = false
     let restorable = false
@@ -61,6 +80,7 @@ describe('mounted hidden terminal view census', () => {
       getHiddenState: () => ({ restorable: true })
     })
     unregister()
+    expect(hasMountedTerminalTabView('tab')).toBe(true)
     expect(readMountedTerminalTabViewBytes('tab')).toBe(MB)
     expect(collectMountedHiddenTerminalViewCounts([])).toMatchObject({ keptViews: 1, keptKB: 1024 })
   })

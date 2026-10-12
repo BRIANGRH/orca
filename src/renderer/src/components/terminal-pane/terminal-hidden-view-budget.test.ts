@@ -87,6 +87,72 @@ describe('selectHiddenTerminalViewsOverBudget', () => {
     expect(over).toEqual(new Set(['before']))
   })
 
+  it('reserves older held memory before admitting newer ordinary views', () => {
+    expect(
+      selectHiddenTerminalViewsOverBudget(
+        [view('newer', 2, 200 * MB), { ...view('held', 1, 300 * MB), held: true }],
+        384 * MB
+      )
+    ).toEqual(new Set(['newer']))
+  })
+
+  it('reserves every held view before spending the remainder in recency order', () => {
+    expect(
+      selectHiddenTerminalViewsOverBudget(
+        [
+          view('old', 2, 40 * MB),
+          view('new', 4, 40 * MB),
+          { ...view('held-a', 1, 20 * MB), held: true },
+          { ...view('held-b', 3, 30 * MB), held: true }
+        ],
+        100 * MB
+      )
+    ).toEqual(new Set(['old']))
+  })
+
+  it('parks ordinary views when held memory alone exceeds the allowance', () => {
+    expect(
+      selectHiddenTerminalViewsOverBudget(
+        [view('new', 2, 10 * MB), { ...view('held', 1, 500 * MB), held: true }],
+        384 * MB
+      )
+    ).toEqual(new Set(['new']))
+  })
+
+  it('reserves unknown held memory without bypassing the cold-park delay', () => {
+    expect(
+      selectHiddenTerminalViewsOverBudget(
+        [
+          view('in-delay', 3, 10 * MB, false),
+          view('ordinary', 2, 10 * MB),
+          { ...view('held', 1, Number.POSITIVE_INFINITY), held: true }
+        ],
+        384 * MB
+      )
+    ).toEqual(new Set(['ordinary']))
+  })
+
+  it.each([
+    { laterMB: 40, selected: ['before'] },
+    { laterMB: 70, selected: ['before', 'after'] }
+  ])(
+    'keeps held reservation and pressure ordering with a $laterMB MB later view',
+    ({ laterMB, selected }) => {
+      expect(
+        selectHiddenTerminalViewsOverBudget(
+          [
+            { ...view('held', 1, 50 * MB), held: true },
+            view('before', 2, 10 * MB),
+            view('in-delay', 3, MB, false),
+            view('after', 11, laterMB * MB)
+          ],
+          100 * MB,
+          10
+        )
+      ).toEqual(new Set(selected))
+    }
+  )
+
   it('breaks a hidden-time tie by the later activation', () => {
     const over = selectHiddenTerminalViewsOverBudget(
       [
@@ -213,6 +279,74 @@ describe('buildHiddenTerminalViews', () => {
     expect(buildHiddenTerminalViews(input(20), sizes)[0].bytes).toBe(5 * MB)
   })
 
+  it('reports clock-expired held views only while their mounted source exists', () => {
+    const sizes = new Map<string, { hiddenSinceMs: number; bytes: number }>()
+    const input = {
+      worktreeId: 'wt-1',
+      terminalTabs: [tab('held')],
+      parkableTabIds: new Set(['held']),
+      clockParkedTabIds: new Set(['held']),
+      isHeldMounted: () => true
+    }
+    const unregister = registerMountedTerminalTabView('held', {
+      getRetainedBytes: () => 300 * MB,
+      getHiddenState: () => ({ restorable: true })
+    })
+    expect(buildHiddenTerminalViews(input, sizes)).toEqual([
+      { tabId: 'held', hiddenSinceMs: 10, bytes: 300 * MB, parkable: true, held: true }
+    ])
+    unregister()
+    expect(buildHiddenTerminalViews(input, sizes)).toEqual([])
+  })
+
+  it('charges a registered held view even when its size getter fails', () => {
+    registerMountedTerminalTabView('held', {
+      getRetainedBytes: () => {
+        throw new Error('estimate unavailable')
+      },
+      getHiddenState: () => ({ restorable: true })
+    })
+    const views = buildHiddenTerminalViews(
+      {
+        worktreeId: 'wt-1',
+        terminalTabs: [tab('held')],
+        parkableTabIds: new Set(['held']),
+        clockParkedTabIds: new Set(['held']),
+        isHeldMounted: () => true
+      },
+      new Map()
+    )
+    expect(views).toEqual([
+      {
+        tabId: 'held',
+        hiddenSinceMs: 10,
+        bytes: Number.POSITIVE_INFINITY,
+        parkable: true,
+        held: true
+      }
+    ])
+    expect(
+      selectHiddenTerminalViewsOverBudget([...views, view('ordinary', 20, MB)], 384 * MB)
+    ).toEqual(new Set(['ordinary']))
+  })
+
+  it('does not turn an unmounted sleeping owner into a held memory reservation', () => {
+    const views = buildHiddenTerminalViews(
+      {
+        worktreeId: 'wt-1',
+        terminalTabs: [tab('unmounted')],
+        parkableTabIds: new Set(['unmounted']),
+        clockParkedTabIds: new Set<string>(),
+        isHeldMounted: () => true
+      },
+      new Map()
+    )
+    expect(views[0].held).toBe(false)
+    expect(
+      selectHiddenTerminalViewsOverBudget([...views, view('ordinary', 20, MB)], 384 * MB)
+    ).toEqual(new Set(['unmounted']))
+  })
+
   it('measures a mounted view and remembers its size after it parks', () => {
     const lastKnown = new Map<string, { hiddenSinceMs: number; bytes: number }>()
     const input = {
@@ -234,12 +368,23 @@ describe('buildHiddenTerminalViews', () => {
   })
 
   it.each([
-    { name: 'local fallback', ptyId: 'local-pty', restorePolicy: {} },
-    { name: 'disabled SSH parking', ptyId: 'ssh:ssh-1@@pty-1', restorePolicy: {} },
-    { name: 'older paired host', ptyId: 'remote:env-1@@terminal-1', restorePolicy: {} }
+    { name: 'local fallback', ptyId: 'local-pty', restorePolicy: {}, held: false },
+    { name: 'disabled SSH parking', ptyId: 'ssh:ssh-1@@pty-1', restorePolicy: {}, held: false },
+    {
+      name: 'older paired host',
+      ptyId: 'remote:env-1@@terminal-1',
+      restorePolicy: {},
+      held: false
+    },
+    {
+      name: 'clock-selected held older paired host',
+      ptyId: 'remote:env-1@@terminal-1',
+      restorePolicy: {},
+      held: true
+    }
   ])(
     'does no policy measurement for $name while the census counts its mount',
-    ({ ptyId, restorePolicy }) => {
+    ({ ptyId, restorePolicy, held }) => {
       const measure = vi.fn(() => 10 * MB)
       registerMountedTerminalTabView('unrestorable', {
         getRetainedBytes: measure,
@@ -250,7 +395,8 @@ describe('buildHiddenTerminalViews', () => {
         worktreeId: 'wt-1',
         terminalTabs: [tab('unrestorable', { ptyId })],
         parkableTabIds: new Set<string>(),
-        clockParkedTabIds: new Set<string>(),
+        clockParkedTabIds: new Set(held ? ['unrestorable'] : []),
+        isHeldMounted: () => held,
         restorePolicy
       }
       for (let pass = 0; pass < 3; pass += 1) {
@@ -407,7 +553,7 @@ describe('memory pressure and the hidden-view census', () => {
     )
   })
 
-  it('counts a clock-selected held view without changing its historical parking decision', () => {
+  it('counts a mounted held view after the hot-retain clock selects it', () => {
     const nowMs = 1_000_000
     registerMountedTerminalTabView('held', {
       getRetainedBytes: () => 10 * MB,

@@ -12,6 +12,7 @@ import { registerRendererMemoryProfileContributor } from '@/lib/renderer-memory-
 import { onRendererMemoryPressure } from '@/lib/renderer-memory-pressure'
 import {
   collectMountedHiddenTerminalViewCounts,
+  hasMountedTerminalTabView,
   readMountedTerminalTabViewBytes,
   resetMountedTerminalViewsForTest
 } from './mounted-terminal-view-census'
@@ -50,9 +51,9 @@ export type HiddenTerminalView = {
 export type HiddenViewSize = { hiddenSinceMs: number; bytes: number }
 
 /**
- * One worktree's hidden restorable views, excluding clock-selected parks.
- * Size is the largest measured in the current hidden episode and is remembered
- * after parking, so neither parking nor a remount mid-restore flips it back in.
+ * One worktree's hidden restorable views. Clock-selected parks stay out unless
+ * another owner holds the view mounted. Size keeps the hidden episode's maximum
+ * after parking, so a remount mid-restore cannot flip it back into the budget.
  */
 export function buildHiddenTerminalViews(
   input: HiddenViewBudgetInput,
@@ -70,9 +71,13 @@ export function buildHiddenTerminalViews(
       tab.isVisible ||
       tab.hasActivityTerminalPortal ||
       tab.hiddenSinceMs === null ||
-      input.clockParkedTabIds.has(tab.id) ||
       !isParkRestorableTerminalPty(tab.ptyId, input.worktreeId, input.restorePolicy)
     ) {
+      continue
+    }
+    // A sleeping record or split lease alone does not prove a view is allocated.
+    const held = input.isHeldMounted?.(tab) === true && hasMountedTerminalTabView(tab.id)
+    if (input.clockParkedTabIds.has(tab.id) && !held) {
       continue
     }
     const known = sizeByTabId.get(tab.id)
@@ -90,7 +95,7 @@ export function buildHiddenTerminalViews(
       ...(tab.lastActivatedSeq !== undefined ? { activationSeq: tab.lastActivatedSeq } : {}),
       bytes: sizeByTabId.get(tab.id)?.bytes ?? Number.POSITIVE_INFINITY,
       parkable: input.parkableTabIds.has(tab.id),
-      held: input.isHeldMounted?.(tab) === true
+      held
     })
   }
   return views
@@ -107,9 +112,9 @@ function compareHiddenViewRecencyDesc(a: HiddenTerminalView, b: HiddenTerminalVi
 /**
  * Most recently hidden first, each view stays loaded while it still fits; the
  * last-hidden view is spared only while it fits on its own. A held view always
- * uses budget. A view that does not fit but cannot park yet (cold-park delay)
- * uses none: it parks once it can, so older views stay put meanwhile. Views
- * hidden before a memory-pressure release park regardless of fit.
+ * reserves budget before ordinary admission. A view that cannot fit but cannot
+ * park yet uses none: it parks once eligible, so older views stay put meanwhile.
+ * Views hidden before a memory-pressure release park regardless of fit.
  */
 export function selectHiddenTerminalViewsOverBudget(
   views: readonly HiddenTerminalView[],
@@ -117,14 +122,17 @@ export function selectHiddenTerminalViewsOverBudget(
   pressureReleaseAtMs: number | null = null
 ): Set<string> {
   const overBudget = new Set<string>()
-  let retainedBytes = 0
+  let retainedBytes = views.reduce((bytes, view) => bytes + (view.held ? view.bytes : 0), 0)
   for (const view of [...views].sort(compareHiddenViewRecencyDesc)) {
-    if (!view.held && pressureReleaseAtMs !== null && view.hiddenSinceMs <= pressureReleaseAtMs) {
+    if (view.held) {
+      continue
+    }
+    if (pressureReleaseAtMs !== null && view.hiddenSinceMs <= pressureReleaseAtMs) {
       if (view.parkable) {
         overBudget.add(view.tabId)
       }
-    } else if (view.held || retainedBytes + view.bytes <= budgetBytes) {
-      retainedBytes += Number.isFinite(view.bytes) ? view.bytes : 0
+    } else if (retainedBytes + view.bytes <= budgetBytes) {
+      retainedBytes += view.bytes
     } else if (view.parkable) {
       overBudget.add(view.tabId)
     }

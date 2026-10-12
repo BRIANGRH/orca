@@ -6,6 +6,10 @@ export type MountedTerminalViewSource = {
 
 const mountedViewsByTabId = new Map<string, MountedTerminalViewSource>()
 
+export function hasMountedTerminalTabView(tabId: string): boolean {
+  return mountedViewsByTabId.has(tabId)
+}
+
 export function registerMountedTerminalTabView(
   tabId: string,
   source: MountedTerminalViewSource
