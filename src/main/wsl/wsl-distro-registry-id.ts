@@ -5,7 +5,7 @@
 import { runProcess } from '@orca/process-host'
 import { windowsSystem32Binary } from '@orca/process-host/windows-system-binary'
 
-const LXSS_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss'
+export const LXSS_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss'
 const REG_QUERY_TIMEOUT_MS = 5_000
 const GUID_SUBKEY = /\\(\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\})\s*$/i
 const DISTRIBUTION_NAME_VALUE = /^\s+DistributionName\s+REG_\w+\s+(.+?)\s*$/
@@ -33,7 +33,7 @@ export function parseWslDistroRegistrations(output: string): WslDistroRegistrati
 
 export type RegQuery = (args: string[]) => Promise<{ code: number | null; stdout: string }>
 
-const defaultRegQuery: RegQuery = (args) =>
+export const defaultRegQuery: RegQuery = (args) =>
   // One reg.exe per lookup, as `openssh-default-shell` reads the registry; never powershell.exe.
   runProcess({
     program: windowsSystem32Binary('reg.exe'),

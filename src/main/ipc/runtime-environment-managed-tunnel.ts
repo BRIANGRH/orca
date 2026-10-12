@@ -20,6 +20,7 @@ import {
 import { getSshHostServerStatus, setSshHostServerStatus } from '../ssh/ssh-host-server-status'
 import { getSshTargetRegistryStore } from '../ssh/ssh-target-registry'
 import { connectionManager, getCurrentMainWindow } from './ssh-ipc-context'
+import { getWslHostService } from '../wsl/wsl-host-service-instance'
 import { broadcastSshState } from './ssh-renderer-broadcast'
 
 export async function resolveManagedRuntimeEnvironment(
@@ -27,6 +28,11 @@ export async function resolveManagedRuntimeEnvironment(
   selector: string
 ): Promise<ReturnType<typeof resolveEnvironment>> {
   const environment = resolveEnvironment(userDataPath, selector)
+  if (environment.orcadDeployment?.kind === 'wsl') {
+    // Reached over the wsl.exe bridge; connects only when an open project or terminal needs it.
+    await getWslHostService()?.ensureForRuntimeCall(environment.id)
+    return resolveEnvironment(userDataPath, environment.id)
+  }
   await ensureOrcadManagedTunnel(userDataPath, environment.id)
   // Why: a server that stopped (idle, killed, host rebooted) starts before the call that needs it.
   const serving = await verifyOrcadManagedServing(userDataPath, environment.id)
