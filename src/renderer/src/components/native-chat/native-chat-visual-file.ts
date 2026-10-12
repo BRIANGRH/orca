@@ -7,7 +7,7 @@ import { resolveExplicitFileLinkTargetPath } from '@/lib/explicit-file-link-targ
 import { chatHtmlAccess } from '@/lib/local-file-access'
 import { useAppStore } from '@/store'
 import { readRuntimeFilePreview } from '@/runtime/runtime-file-read-client'
-import { isMissingRuntimePathError } from '@/runtime/runtime-file-client'
+import { isMissingRuntimePathError } from '@/runtime/runtime-file-metadata-client'
 import { runtimeTargetEnvironmentId } from '@/runtime/runtime-client-target'
 import {
   getTerminalFileContext,
