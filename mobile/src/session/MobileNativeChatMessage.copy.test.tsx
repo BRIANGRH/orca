@@ -162,8 +162,8 @@ describe('iOS whole-message copy', () => {
   })
 
   it.each([
-    'Please repair this chart:\n::orca-visual{file="usage.html"}\nKeep this text.',
-    '::orca-visual{file="usage.html"}'
+    'Please repair this chart:\n::orca-visual{path="usage.html"}\nKeep this text.',
+    '::orca-visual{path="usage.html"}'
   ])('copies the entire visible own source %j', async (text) => {
     render({ ...message, role: 'user', blocks: [{ type: 'text', text }] })
     expect(nodes('Text').some((node) => node.props.children === text)).toBe(true)
@@ -175,11 +175,11 @@ describe('iOS whole-message copy', () => {
 
   it('omits assistant visual directives while retaining literal fenced code', async () => {
     const text =
-      'Chart:\n::orca-visual{file="usage.html"}\nDone.\n```text\n::orca-visual{file="example.html"}\n```'
+      'Chart:\n::orca-visual{path="usage.html"}\nDone.\n```text\n::orca-visual{path="example.html"}\n```'
     render({ ...message, blocks: [{ type: 'text', text }] })
     await act(async () => copyButton().props.onPress())
     expect(writeText.mock.calls).toEqual([
-      ['Chart:\nDone.\n```text\n::orca-visual{file="example.html"}\n```']
+      ['Chart:\nDone.\n```text\n::orca-visual{path="example.html"}\n```']
     ])
     expect(nodes('Check')).toHaveLength(1)
   })
