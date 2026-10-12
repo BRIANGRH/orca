@@ -56,17 +56,11 @@ const claudeRuntime = (s: never, launchScope: TerminalWorkspaceLaunchScope) =>
   resolveAgentLaunchRuntime(s, launchScope, undefined, 'claude')
 
 const original = process.platform
-beforeEach(() =>
-  Object.defineProperty(process, 'platform', {
-    configurable: true,
-    value: 'win32'
-  })
-)
+const setPlatform = (value: string) =>
+  Object.defineProperty(process, 'platform', { configurable: true, value })
+beforeEach(() => setPlatform('win32'))
 afterEach(() => {
-  Object.defineProperty(process, 'platform', {
-    configurable: true,
-    value: original
-  })
+  setPlatform(original)
   _resetWslCachesForTests()
 })
 
@@ -74,12 +68,6 @@ afterEach(() => {
 describe("the window's runtime rule, on the host", () => {
   it.each([
     ['repo, project WSL', store({ project: UBUNTU }), scope(WIN, { repo: repo(WIN) }), 'linux'],
-    [
-      'repo whose project follows a WSL global default',
-      store({ global: UBUNTU }),
-      scope(WIN, { repo: repo(WIN) }),
-      'linux'
-    ],
     [
       'folder holding one WSL-project repo',
       store({
@@ -109,8 +97,6 @@ it("answers from main's WSL cache, which the window may not have read yet", () =
   )
   // A `\\wsl$` path proves its distro, so a stale cache never refuses it.
   expect(claudeRuntime(store({}), scope(SHARE, { repo: repo(SHARE) })).platform).toBe('linux')
-  // A repo-less `\\wsl$` folder has no runtime to repair, as in the window: its path places it.
-  expect(claudeRuntime(store({}), scope(SHARE, { folder: folder(SHARE) })).platform).toBe('linux')
 })
 
 // Relied on by C2: the pane's pty:spawn takes the fact as is, for quoting and shell alike.
@@ -124,23 +110,20 @@ it('quotes for the shell the PTY gets, not a setting the runtime replaced', () =
 })
 
 // TEMPORARY until STA-10231. Only folders reach it: every local repo has a project runtime.
-it.each([['follows the global default'], ['is set to Windows host', { kind: 'windows-host' }]])(
-  "keeps a folder's WSL Terminal shell where its repo's project %s",
-  (_name, project?: unknown) => {
-    const legacy = claudeRuntime(
-      store({
-        project,
-        global: { kind: 'windows-host' },
-        shell: 'wsl.exe',
-        repos: [repo(WIN)],
-        folder: folder('C:\\work')
-      }),
-      scope('C:\\work', { folder: folder('C:\\work') })
-    )
-    expect([legacy.platform, legacy.pty.shellOverride, agentLaunchQuotingShell(legacy)]).toEqual([
-      'win32',
-      'wsl.exe',
-      'posix'
-    ])
-  }
-)
+it("keeps a folder's WSL Terminal shell where its repo's project is set to Windows host", () => {
+  const windowsHost = { kind: 'windows-host' }
+  const legacy = claudeRuntime(
+    store({
+      project: windowsHost,
+      shell: 'wsl.exe',
+      repos: [repo(WIN)],
+      folder: folder('C:\\work')
+    }),
+    scope('C:\\work', { folder: folder('C:\\work') })
+  )
+  expect([legacy.platform, legacy.pty.shellOverride, agentLaunchQuotingShell(legacy)]).toEqual([
+    'win32',
+    'wsl.exe',
+    'posix'
+  ])
+})

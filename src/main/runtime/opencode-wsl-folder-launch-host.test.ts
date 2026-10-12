@@ -15,42 +15,39 @@ vi.mock('../opencode/opencode-model-availability', () => ({
 
 const repo = { id: 'r', path: 'C:\\repo', kind: 'git', projectGroupId: 'g' }
 const folder = { id: 'f', projectGroupId: 'g', folderPath: 'C:\\work' }
-const wslProject = {
-  id: 'p',
-  sourceRepoIds: ['r'],
-  localWindowsRuntimePreference: { kind: 'wsl', distro: 'Ubuntu' }
-}
+const wsl = { kind: 'wsl', distro: 'Ubuntu' }
 const store = {
-  getSettings: () => ({ disabledTuiAgents: [] }),
-  getProjects: () => [wslProject],
+  // A WSL Terminal shell must not move the model check into WSL, as it did once.
+  getSettings: () => ({
+    disabledTuiAgents: [],
+    terminalWindowsShell: 'wsl.exe',
+    terminalWindowsWslDistro: 'Ubuntu'
+  }),
+  getProjects: () => [{ id: 'p', sourceRepoIds: ['r'], localWindowsRuntimePreference: wsl }],
   getRepo: (id: string) => (id === 'r' ? repo : undefined),
   getRepos: () => [repo],
   getFolderWorkspaces: () => [folder],
   getProjectGroups: () => [{ id: 'g' }]
 }
-const folderScope = {
-  id: 'f',
-  path: 'C:\\work',
-  connectionId: null,
-  repo: null,
-  folderWorkspace: folder
-}
+const scope = { id: 'f', path: 'C:\\work', connectionId: null, repo: null, folderWorkspace: folder }
 let runtime: OrcaRuntimeService
 let spawned: () => (string | undefined)[]
 const original = process.platform
+const setPlatform = (value: string) =>
+  Object.defineProperty(process, 'platform', { configurable: true, value })
 beforeEach(() => {
-  Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+  setPlatform('win32')
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: these paths read only the members above.
   runtime = new OrcaRuntimeService(store as never)
   Object.assign(runtime, {
-    resolveTerminalWorkspaceLaunchScope: async () => folderScope,
+    resolveTerminalWorkspaceLaunchScope: async () => scope,
     executionOwnerSupportsAgentSessionOperation: async () => true
   })
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: callers read only the handle.
   const create = vi.spyOn(runtime, 'createTerminal').mockResolvedValue({ handle: 't' } as never)
   spawned = () => create.mock.calls.map(([, opts]) => opts?.launchRuntime?.platform)
 })
-afterEach(() => Object.defineProperty(process, 'platform', { configurable: true, value: original }))
+afterEach(() => setPlatform(original))
 
 // TEMPORARY until STA-10251: in a folder whose repo runs in WSL, OpenCode keeps main's Windows
 // runtime at every entry point, so they agree.

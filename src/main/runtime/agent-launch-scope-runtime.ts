@@ -40,12 +40,9 @@ export function agentLaunchPlatformForScope(
 }
 
 /**
- * The runtime an agent launched here runs in: the window's rule, except where main's host had no
- * runtime for this scope (only folders) and the rule answers "Windows host", or the agent is
- * OpenCode. There it keeps main's answer: the Terminal shell, since an explicit Windows-host default
- * can't be told from the shipped one, and Windows for OpenCode, whose models Orca can't yet verify
- * inside WSL. TEMPORARY: removed by the WSL-shell default decision (STA-10231) and by verifying
- * OpenCode models inside WSL (STA-10251).
+ * The runtime an agent launched here runs in: the window's rule, except where one of the terms
+ * below holds. There the answer is no runtime, so the path places the agent and the Terminal shell
+ * is its PTY, as on main. Only the first term is permanent; the other two are temporary parity.
  */
 export function agentLaunchProjectRuntime(
   store: LaunchScopeRuntimeStore,
@@ -54,14 +51,17 @@ export function agentLaunchProjectRuntime(
 ): ProjectExecutionRuntimeResolution | undefined {
   const runtime = resolveLocalLaunchScopeRuntime(store, scope)
   const onWindowsHost = runtime?.status === 'resolved' && runtime.runtime.kind === 'windows-host'
-  // A `\\wsl$` cwd runs in its distro whatever the runtime says, so its path places the agent.
-  if (onWindowsHost && agent !== 'opencode' && isWslUncPath(scope.path)) {
-    return undefined
-  }
-  return (agent === 'opencode' || onWindowsHost) &&
-    !resolveLocalProjectRuntimeForWorktreeId(store, scope.id)
-    ? undefined
-    : runtime
+  // Main had no runtime here: only folders, since every local repo has a project.
+  const mainHadNone = !resolveLocalProjectRuntimeForWorktreeId(store, scope.id)
+  const pathDecides =
+    // PERMANENT fix, not parity: a `\\wsl$` cwd runs in WSL whatever the setting says. Keep it
+    // when the temporary terms go; the window adopts it in C2.
+    (onWindowsHost && isWslUncPath(scope.path)) ||
+    // TEMPORARY (STA-10231): an explicit Windows host can't be told from the shipped default.
+    (onWindowsHost && mainHadNone) ||
+    // TEMPORARY (STA-10251): OpenCode models can't yet be verified inside WSL.
+    (agent === 'opencode' && mainHadNone)
+  return pathDecides ? undefined : runtime
 }
 
 /** The one runtime fact for an agent launched into this workspace. Throws, as the spawn would,

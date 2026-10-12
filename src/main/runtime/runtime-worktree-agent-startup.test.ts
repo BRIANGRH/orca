@@ -121,24 +121,18 @@ describe('buildWorktreeStartupForAgent host resolution', () => {
 
 // Relied on by C2/C4: a host-built startup is typed into the shell it was quoted for.
 it('quotes a worktree startup for its fact, not the Settings shell, and hands the fact on', () => {
-  const powershell: AgentLaunchRuntime = {
-    platform: 'win32',
-    pty: { shellOverride: 'powershell.exe', terminalWindowsWslDistro: null }
-  }
+  const pty = { shellOverride: 'powershell.exe', terminalWindowsWslDistro: null }
+  const launchRuntime: AgentLaunchRuntime = { platform: 'win32', pty }
   const result = buildWorktreeStartupForAgent({
     repo: makeRepo({ path: 'C:\\repo' }),
     settings: { ...settings, terminalWindowsShell: 'wsl.exe' },
     agent: 'claude',
     prompt: "fix Bob's bug",
-    getLaunchRuntime: () => ({
-      platform: 'win32' as const,
-      shell: 'powershell' as const,
-      launchRuntime: powershell
-    }),
+    getLaunchRuntime: () => ({ platform: 'win32', shell: 'powershell', launchRuntime }),
     toSessionOptions: () => undefined
   })
   expect(result.startup.command).toContain("'fix Bob''s bug'")
-  expect(result.launchRuntime).toBe(powershell)
+  expect(result.launchRuntime).toBe(launchRuntime)
 })
 
 describe('buildWorktreeStartupForAgent prompt carry', () => {

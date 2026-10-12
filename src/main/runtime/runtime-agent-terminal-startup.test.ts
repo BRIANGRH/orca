@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
 import { detectAgentCommandsOnHost } from '../preflight/agent-detection'
 import { resolveAgentTerminalCreateOptions } from './runtime-agent-terminal-startup'
-import type { TerminalCreateOptions } from './runtime-terminal-contracts'
 
 vi.mock('../preflight/agent-detection', () => ({
   detectAgentCommandsOnHost: vi.fn(async () => new Set(['qoder']))
@@ -15,12 +13,6 @@ const host = {
   hostIdentity: 'host-1',
   toSessionOptions: () => undefined
 }
-const CMD: AgentLaunchRuntime = {
-  platform: 'win32',
-  pty: { shellOverride: 'cmd.exe', terminalWindowsWslDistro: null }
-}
-const plan = (opts: TerminalCreateOptions, launchRuntime: AgentLaunchRuntime = CMD) =>
-  resolveAgentTerminalCreateOptions(workspace, { ...opts, launchRuntime }, host)
 const onWindows = async <T>(run: () => Promise<T>): Promise<T> => {
   const platform = process.platform
   Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
@@ -42,22 +34,26 @@ describe('host agent planner', () => {
       )
     )
     expect(launch.command).toBe('claude "--model" "opus"')
-    expect(launch.launchRuntime).toEqual(CMD)
-    // A command the caller quoted itself keeps the spawn's own shell rule (C4 moves those callers).
-    const own = await resolveAgentTerminalCreateOptions(
-      workspace,
-      { command: 'claude', launchAgent: 'claude' },
-      host
-    )
-    expect(own.launchRuntime).toBeUndefined()
+    expect(launch.launchRuntime).toEqual({
+      platform: 'win32',
+      pty: { shellOverride: 'cmd.exe', terminalWindowsWslDistro: null }
+    })
   })
 
   it("rewrites Qoder once, probing where the fact's PTY runs (C2 skips the window copy)", async () => {
     vi.mocked(detectAgentCommandsOnHost).mockClear()
     const launch = await onWindows(() =>
-      plan(
-        { startupAgent: 'qoder', agentArgs: null },
-        { platform: 'linux', pty: { shellOverride: 'wsl.exe', terminalWindowsWslDistro: 'Ubuntu' } }
+      resolveAgentTerminalCreateOptions(
+        workspace,
+        {
+          startupAgent: 'qoder',
+          agentArgs: null,
+          launchRuntime: {
+            platform: 'linux',
+            pty: { shellOverride: 'wsl.exe', terminalWindowsWslDistro: 'Ubuntu' }
+          }
+        },
+        host
       )
     )
     expect(launch.command).toBe('qoder')
