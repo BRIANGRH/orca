@@ -4,6 +4,7 @@
  * (`--complete-managed-stop` with `retireIdleDaemon`). The terminal census proves nothing is left
  * before the daemon is asked to retire, since a busy daemon keeps its sessions by design.
  */
+import { z } from 'zod'
 import type { OrcadDecommissionResult } from '../../shared/orcad-decommission'
 import { ORCAD_MANAGED_REMOTE_PORT } from '../../shared/orcad-managed-runtime'
 import type { OrcadTerminalCensus } from '../../shared/orcad-terminal-census'
@@ -72,11 +73,12 @@ export type WslHostRuntimeAccess = {
   census: (environmentId: string) => Promise<OrcadTerminalCensus>
 }
 
-function isTerminalList(value: unknown): value is Pick<RuntimeTerminalListResult, 'terminals'> {
-  return (
-    typeof value === 'object' && value !== null && Array.isArray(Reflect.get(value, 'terminals'))
-  )
-}
+// Only what removal reads: each live terminal's workspace.
+const TerminalOwnersSchema = z.object({
+  terminals: z.array(z.object({ worktreeId: z.string().min(1) }))
+}) satisfies z.ZodType<{
+  terminals: Pick<RuntimeTerminalListResult['terminals'][number], 'worktreeId'>[]
+}>
 
 /** Ending terminals and counting what is left, both through the host's own orcad. */
 export function wslHostRuntimeStopSteps(
@@ -85,10 +87,9 @@ export function wslHostRuntimeStopSteps(
 ): Pick<WslHostServerStopSteps, 'endTerminals' | 'census'> {
   return {
     endTerminals: async () => {
-      const list = await access.call(environmentId, 'terminal.list', { limit: 1000 })
-      if (!isTerminalList(list)) {
-        throw new Error('The host answered its terminal list in an unknown shape.')
-      }
+      const list = TerminalOwnersSchema.parse(
+        await access.call(environmentId, 'terminal.list', { limit: 1000 })
+      )
       for (const owner of new Set(list.terminals.map((terminal) => terminal.worktreeId))) {
         await access.call(environmentId, 'terminal.stop', { worktree: `id:${owner}` })
       }

@@ -2,7 +2,7 @@
  * E2E only (`ORCA_E2E_FAKE_WSL_HOSTS`): stands in for wsl.exe so CI on any OS drives the WSL host
  * UI against a headless Orca server. Each "distro" connects straight to that server's pairing.
  */
-import { readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { z } from 'zod'
 import { parsePairingCode } from '../../shared/pairing'
 import type { WslHostConnector } from './wsl-host-service'
@@ -27,6 +27,8 @@ const FakeWslHostsSchema = z.object({
   /** Re-read on every listing, so a test can register a distro while the app runs. */
   distrosFile: z.string().optional(),
   pairingCode: z.string().min(1),
+  /** Each distro the fake is asked to start, one per line, so e2e can prove nothing respawns. */
+  connectLogFile: z.string().optional(),
   /** `missing` stands in for a build shipped without the orcad template. */
   serverFiles: z.enum(['present', 'missing']).optional()
 })
@@ -40,16 +42,11 @@ export function readFakeWslHostsConfig(
   return FakeWslHostsSchema.parse(JSON.parse(raw))
 }
 
-/** Every distro the fake was asked to start, in order, for e2e to prove nothing respawns. */
-export const FAKE_WSL_CONNECT_LOG_GLOBAL = '__orcaE2EWslFakeConnects'
-
 export function createFakeWslHostConnector(
   config: z.infer<typeof FakeWslHostsSchema>,
   onChange: NonNullable<WslOrcadConnectionDependencies['onChange']>,
   options: { isKnownDistro: (distro: string) => boolean; runtime: WslHostRuntimeAccess }
 ): WslHostConnector {
-  const connectLog: string[] = []
-  Reflect.set(globalThis, FAKE_WSL_CONNECT_LOG_GLOBAL, connectLog)
   const offer = parsePairingCode(config.pairingCode)
   const port = offer ? Number(new URL(offer.endpoint).port) : 0
   const active = new Map<string, WslOrcadConnection>()
@@ -69,7 +66,9 @@ export function createFakeWslHostConnector(
       if (!options.isKnownDistro(distro)) {
         throw new Error(`${distro} is no longer a WSL host; Orca will not start anything for it.`)
       }
-      connectLog.push(distro)
+      if (config.connectLogFile) {
+        appendFileSync(config.connectLogFile, `${distro}\n`)
+      }
       onChange(distro, null, { state: 'connecting' })
       const connection: WslOrcadConnection = {
         distro,
