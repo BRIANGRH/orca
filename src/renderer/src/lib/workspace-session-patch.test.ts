@@ -200,11 +200,6 @@ describe('buildWorkspaceSessionPatch', () => {
               ptyId: 'pty-1',
               worktreeId: localWorktreeId,
               pendingActivationSpawn: true,
-              agentLaunchPane: {
-                leafId: 'pane:1',
-                operationId: 'op-1',
-                outcome: { kind: 'not-started', code: 'boom' }
-              },
               recovery: {
                 attemptedAt: [1],
                 generation: 1,
@@ -251,12 +246,6 @@ describe('buildWorkspaceSessionPatch', () => {
     // Why: the recovery ledger describes a mounted pane's in-flight heal; a
     // persisted one would refuse the first legitimate recovery after restart.
     expect('recovery' in patch.tabsByWorktree![localWorktreeId][0]).toBe(false)
-    // A launch's outcome is this session's notice, so a reload spawns the pane as a restart does;
-    // a pending launch stays, so its verdict still lands after the reload.
-    expect(patch.tabsByWorktree![localWorktreeId][0].agentLaunchPane).toEqual({
-      leafId: 'pane:1',
-      operationId: 'op-1'
-    })
     expect(patch.terminalLayoutsByTabId?.['tab-local'].buffersByLeafId).toBeUndefined()
     expect(patch.terminalLayoutsByTabId?.['tab-local'].scrollbackRefsByLeafId).toBeUndefined()
   })

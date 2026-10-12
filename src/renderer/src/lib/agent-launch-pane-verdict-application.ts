@@ -18,7 +18,8 @@ export function isAgentLaunchPaneOver(
   const tab = worktreeId
     ? useAppStore.getState().tabsByWorktree[worktreeId]?.find((candidate) => candidate.id === tabId)
     : undefined
-  return tab?.agentLaunchPane?.leafId === leafId && tab.agentLaunchPane.outcome !== undefined
+  const pane = tab?.agentLaunchPane
+  return pane !== undefined && pane.leafId === leafId && pane.outcome !== undefined
 }
 
 export function applyAgentLaunchPaneVerdict(event: AgentLaunchPaneVerdictEvent): void {
