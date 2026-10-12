@@ -30,8 +30,7 @@ import {
   extractMessageText,
   extractString,
   normalizeTitleText,
-  parseJsonObject,
-  withoutStoppedHistoryPrompt
+  parseJsonObject
 } from './session-scanner-values'
 
 type ParserSessionOptions = {
@@ -128,7 +127,7 @@ export function consumeClaudeSessionLine(state: ClaudeSessionParseState, line: s
   }
 
   if (record.type === 'last-prompt') {
-    const prompt = normalizePromptField(withoutStoppedHistoryPrompt(record.lastPrompt))
+    const prompt = normalizePromptField(record.lastPrompt)
     if (prompt) {
       accumulator.lastUserPrompt = prompt
     }

@@ -4,8 +4,6 @@ import { stripGrokUserQueryEnvelope } from './session-scanner-grok-user-text'
 // Direct import: session-scanner-values re-exports this module, so going through
 // it here would close an import cycle.
 import { sliceAtCodeUnitLimit } from './session-scanner-text-normalization'
-import { withoutStoppedHistoryFrame } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
-import { withoutCarriedHistoryImages } from './session-scanner-carried-history-images'
 
 // Why: safety only for pathological multi-MB pastes. Copy path must not use the
 // 220-char list preview cap.
@@ -40,7 +38,7 @@ export function extractFullFirstUserPromptText(value: unknown): string | null {
   }
 
   const parts: string[] = []
-  for (const item of withoutCarriedHistoryImages(value)) {
+  for (const item of value) {
     const text = firstUserPromptContentItemText(item)
     if (text != null) {
       parts.push(text)
@@ -59,9 +57,7 @@ export function normalizeFullFirstUserPromptText(value: string): string | null {
 function finalizeFullFirstUserPrompt(value: string): string | null {
   // Why: Grok (and some pasted transcripts) wrap the real ask in <user_query>;
   // strip that before copy so the clipboard is the typed prompt, not user_info.
-  const unwrapped = stripGrokUserQueryEnvelope(
-    withoutStoppedHistoryFrame(value.replace(/^\uFEFF/, ''))
-  )
+  const unwrapped = stripGrokUserQueryEnvelope(value.replace(/^\uFEFF/, ''))
   const trimmed = unwrapped.trim()
   if (!trimmed) {
     return null

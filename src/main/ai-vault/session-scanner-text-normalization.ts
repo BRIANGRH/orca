@@ -1,7 +1,5 @@
 import { sliceAtCodeUnitLimit } from '../../shared/surrogate-safe-text-slice'
 import { withoutNativeChatVisualDirectiveLines } from '../../shared/native-chat-visual-directive'
-import { withoutStoppedHistoryFrame } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
-import { withoutCarriedHistoryImages } from './session-scanner-carried-history-images'
 
 export { sliceAtCodeUnitLimit }
 
@@ -38,9 +36,7 @@ export function extractContentText(value: unknown): string | null {
 }
 
 export function normalizeTitleText(value: string): string | null {
-  return finalizeNormalizedText(
-    normalizeStringText(withoutStoppedHistoryFrame(value), SESSION_TITLE_TEXT_LIMIT)
-  )
+  return finalizeNormalizedText(normalizeStringText(value, SESSION_TITLE_TEXT_LIMIT))
 }
 
 /**
@@ -57,16 +53,8 @@ export function normalizePreviewText(value: string, role?: string): string | nul
   )
 }
 
-/** A raw prompt field without the stopped messages a native chat's send carried ahead of it. */
-export function withoutStoppedHistoryPrompt(value: unknown): unknown {
-  return typeof value === 'string' ? withoutStoppedHistoryFrame(value) : value
-}
-
-/** Stopped messages a native chat's send carried ahead of the person's own words are hidden whole,
- *  however long, before any scan budget applies. */
 function previewSource(text: string, dropVisualLines: boolean): string {
-  const own = withoutStoppedHistoryFrame(text)
-  return dropVisualLines ? withoutNativeChatVisualDirectiveLines(own) : own
+  return dropVisualLines ? withoutNativeChatVisualDirectiveLines(text) : text
 }
 
 function normalizeContentText(
@@ -82,7 +70,7 @@ function normalizeContentText(
   }
 
   const builder = createTextBuilder(limit)
-  for (const item of withoutCarriedHistoryImages(value)) {
+  for (const item of value) {
     const text = contentItemText(item)
     if (text === null) {
       continue

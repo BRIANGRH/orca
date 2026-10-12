@@ -1,4 +1,3 @@
-import { withoutStoppedHistoryFrame } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 import { openTranscriptReadStream, wslGatedReadFile } from '../native-chat/wsl-transcript-fs-access'
 import { WslTranscriptFsError } from '../native-chat/wsl-transcript-fs-gate'
 import { dirname, join } from 'node:path'
@@ -137,9 +136,8 @@ export function extractGrokContentText(value: unknown): string | null {
   return extractPreviewContentText(value)
 }
 
-// Strip a carried-history frame before capping, or the cap cuts its close and hides the new message.
 function capGrokPreviewSource(text: string): string {
-  return sliceAtCodeUnitLimit(withoutStoppedHistoryFrame(text), GROK_USER_QUERY_PREVIEW_SCAN_LIMIT)
+  return sliceAtCodeUnitLimit(text, GROK_USER_QUERY_PREVIEW_SCAN_LIMIT)
 }
 
 function extractGrokStringContentText(text: string): string | null {
