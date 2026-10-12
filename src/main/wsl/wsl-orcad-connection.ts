@@ -26,10 +26,7 @@ import {
 } from './wsl-orcad-deploy'
 import type { WslOrcadHostTarget } from './wsl-orcad-host-target'
 import { createWslOrcadHostTransport } from './wsl-orcad-host-transport'
-import {
-  registerWslOrcadHostEnvironment,
-  unregisterWslOrcadHostEnvironment
-} from './wsl-orcad-host-environments'
+import { trackWslOrcadHostEnvironment } from './wsl-orcad-host-environments'
 import {
   listenWslOrcadStdioBridge,
   type WslOrcadStdioBridgeOptions
@@ -170,7 +167,7 @@ export class WslOrcadConnectionManager {
     }
     this.active.delete(key)
     await entry.forward.close()
-    this.trackHostEnvironment(entry.connection, null)
+    trackWslOrcadHostEnvironment(entry.connection, null)
     this.dependencies.onChange?.(entry.connection.distro, null, { state: 'closed' })
   }
 
@@ -226,7 +223,7 @@ export class WslOrcadConnectionManager {
     if (current) {
       this.active.delete(key)
       await current.forward.close()
-      this.trackHostEnvironment(current.connection, null)
+      trackWslOrcadHostEnvironment(current.connection, null)
       this.dependencies.onChange?.(distro, null, status.pending)
     }
     const forward = await this.listen(transport, {
@@ -268,7 +265,7 @@ export class WslOrcadConnectionManager {
         }
       }
       this.active.set(key, entry)
-      this.trackHostEnvironment(entry.connection, entry.connection)
+      trackWslOrcadHostEnvironment(entry.connection, entry.connection)
       this.dependencies.onChange?.(distro, entry.connection, status.ready)
       return entry.connection
     } catch (error) {
@@ -294,22 +291,11 @@ export class WslOrcadConnectionManager {
       entry.connection = { ...entry.connection, pairingOffer, fullVersion, pid }
       this.active.set(key, entry)
     }
-    this.trackHostEnvironment(entry.connection, entry.connection)
+    trackWslOrcadHostEnvironment(entry.connection, entry.connection)
     if (changed || announce) {
       this.dependencies.onChange?.(entry.connection.distro, entry.connection, announce ?? READY)
     }
     return entry.connection
-  }
-
-  private trackHostEnvironment(
-    previous: WslOrcadConnection,
-    next: WslOrcadConnection | null
-  ): void {
-    if (next) {
-      registerWslOrcadHostEnvironment(next.environmentId, next.distro)
-    } else {
-      unregisterWslOrcadHostEnvironment(previous.environmentId, previous.distro)
-    }
   }
 
   /** A persisted local port may be taken by now; a free one beats no connection. */

@@ -18,3 +18,17 @@ export function unregisterWslOrcadHostEnvironment(environmentId: string, distro:
 export function wslOrcadHostDistro(environmentId: string): string | null {
   return distrosByEnvironment.get(environmentId) ?? null
 }
+
+type WslOrcadHostEnvironmentRef = { environmentId: string; distro: string }
+
+/** Lists `next` while open; a closed connection (`next` null) unlists `previous`. */
+export function trackWslOrcadHostEnvironment(
+  previous: WslOrcadHostEnvironmentRef,
+  next: WslOrcadHostEnvironmentRef | null
+): void {
+  if (next) {
+    registerWslOrcadHostEnvironment(next.environmentId, next.distro)
+  } else {
+    unregisterWslOrcadHostEnvironment(previous.environmentId, previous.distro)
+  }
+}
