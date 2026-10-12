@@ -4,7 +4,7 @@
  * host through the real add-host UI, adds a project on it, and runs a terminal there.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
@@ -138,6 +138,7 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     connectLogFile
   })
   const projectPath = createGitProject()
+  const cleanupDirs: string[] = []
   try {
     const { page } = desktop
     await setWslHostsEnabled(page, true)
@@ -241,6 +242,51 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     await waitForTerminalOutput(page, 'WSL_HOST_TERMINAL_ready', 30_000)
     await page.screenshot({ path: testInfo.outputPath('wsl-host-terminal.png') })
 
+    // The "distro's orcad" is the HUB, so what it still runs is what a real distro would.
+    const hubRuntime = new RuntimeClient(
+      await electronApp.evaluate(({ app }) => app.getPath('userData'))
+    )
+    const hubTerminalsIn = async (dir: string): Promise<number> => {
+      const listed = await hubRuntime.call<{ terminals: { worktreeId: string }[] }>('terminal.list')
+      return listed.result.terminals.filter((terminal) =>
+        terminal.worktreeId.includes(path.basename(dir))
+      ).length
+    }
+    const hubHasRepo = async (dir: string): Promise<boolean> => {
+      const listed = await hubRuntime.call<{ repos: { path: string }[] }>('repo.list')
+      return listed.result.repos.some((repo) => repo.path.endsWith(path.basename(dir)))
+    }
+
+    // Removing the project ends its shell on the host and drops it from the host's own catalog,
+    // so re-adding the host cannot bring it back.
+    expect(await hubTerminalsIn(projectPath)).toBeGreaterThan(0)
+    await page.evaluate(
+      async ({ repoPath, environmentId }) => {
+        const state = window.__store?.getState()
+        const repo = state?.repos.find((entry) => entry.path === repoPath)
+        if (state && repo) {
+          await state.removeProject(repo.id, {
+            hostId: `runtime:${encodeURIComponent(environmentId)}`,
+            errorFeedback: 'toast'
+          })
+        }
+      },
+      { repoPath: projectPath, environmentId: WSL_ENVIRONMENT_ID }
+    )
+    await expect.poll(() => hubTerminalsIn(projectPath), { timeout: 30_000 }).toBe(0)
+    await expect.poll(() => hubHasRepo(projectPath), { timeout: 30_000 }).toBe(false)
+
+    // An orphan: a terminal whose project the host already forgot (left by older builds).
+    // realpath: the host reports workspace paths resolved (/private/var on macOS).
+    const orphanPath = realpathSync(createGitProject())
+    cleanupDirs.push(orphanPath)
+    const orphanRepo = await hubRuntime.call<{ repo: { id: string } }>('repo.add', {
+      path: orphanPath
+    })
+    await hubRuntime.call('terminal.create', { worktree: `path:${orphanPath}` })
+    await hubRuntime.call('repo.rm', { repo: orphanRepo.result.repo.id })
+    expect(await hubTerminalsIn(orphanPath)).toBeGreaterThan(0)
+
     // Experiment off: the host stays listed so its projects never seem to vanish, but turned off.
     await setWslHostsEnabled(page, false)
     await openSidebarProjectDialog(page)
@@ -284,20 +330,10 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     await expect(confirm).toContainText('Files in the distro are untouched.')
     await settleAnimations(page)
     await page.screenshot({ path: testInfo.outputPath('wsl-host-remove-confirm.png') })
-    // The "distro's orcad" is the HUB: its terminal for the WSL project must exist until Remove.
-    const hubRuntime = new RuntimeClient(
-      await electronApp.evaluate(({ app }) => app.getPath('userData'))
-    )
-    const projectTerminals = async (): Promise<number> => {
-      const listed = await hubRuntime.call<{ terminals: { worktreeId: string }[] }>('terminal.list')
-      return listed.result.terminals.filter((terminal) =>
-        terminal.worktreeId.includes(path.basename(projectPath))
-      ).length
-    }
-    expect(await projectTerminals()).toBeGreaterThan(0)
     await confirm.getByRole('button', { name: 'Remove host' }).click()
     await expect(confirm).toBeHidden({ timeout: 30_000 })
-    await expect.poll(projectTerminals, { timeout: 30_000 }).toBe(0)
+    // Closed by handle, so the orphan ends too, and nothing is reported left running.
+    await expect.poll(() => hubTerminalsIn(orphanPath), { timeout: 30_000 }).toBe(0)
     await expect(page.getByText(/something in the distro is still running/)).toHaveCount(0)
     await expect
       .poll(() =>
@@ -323,6 +359,9 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     await desktop.dispose()
     rmSync(projectPath, { recursive: true, force: true })
     rmSync(distrosDir, { recursive: true, force: true })
+    for (const dir of cleanupDirs) {
+      rmSync(dir, { recursive: true, force: true })
+    }
   }
 })
 
