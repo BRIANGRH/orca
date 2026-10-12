@@ -35,11 +35,12 @@ export function executionRuntimePlatform(
   workspacePath: string | null | undefined,
   hostPlatform: NodeJS.Platform
 ): NodeJS.Platform {
-  if (projectRuntime?.status === 'repair-required') {
-    return projectRuntime.repair.preferredRuntime.kind === 'wsl' ? 'linux' : hostPlatform
-  }
-  if (projectRuntime?.status === 'resolved') {
-    return projectRuntime.runtime.kind === 'wsl' ? 'linux' : hostPlatform
+  const kind =
+    projectRuntime?.status === 'repair-required'
+      ? projectRuntime.repair.preferredRuntime.kind
+      : projectRuntime?.runtime.kind
+  if (kind) {
+    return kind === 'wsl' ? 'linux' : hostPlatform
   }
   return workspacePath && isWslUncPath(workspacePath) ? 'linux' : hostPlatform
 }

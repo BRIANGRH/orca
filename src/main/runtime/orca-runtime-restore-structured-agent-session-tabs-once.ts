@@ -4,7 +4,7 @@ import { OrcaRuntimeWithGetStructuredAgentSessionCreateSupport } from './orca-ru
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import { collectSavedStructuredAgentSessionIds } from './saved-structured-agent-session-restoration'
 import { seedStructuredAgentSessionTabIndex } from './structured-agent-session-tab-index-seed'
-import { getRepoSshConnectionId, LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
+import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 import type {
   RuntimeMobileSessionAgentTab,
   RuntimeMobileSessionTabsSnapshot,
@@ -20,9 +20,11 @@ import {
 } from '../project-runtime-git-options'
 import {
   agentLaunchPlatformForScope,
+  newWorktreeLaunchScope,
   resolveAgentLaunchRuntime,
   resolveStartupAgentLaunchRuntime
 } from './agent-launch-scope-runtime'
+import type { TuiAgent } from '../../shared/tui-agent'
 import type { AgentLaunchRuntime } from '../../shared/agent-launch-runtime'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
 import { parseAppSshPtyId } from '../../shared/ssh-pty-id'
@@ -274,25 +276,22 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
 
   protected resolveAgentLaunchRuntime(
     scope: TerminalWorkspaceLaunchScope,
-    openCodeModelPick = false
+    agent: TuiAgent | undefined
   ): AgentLaunchRuntime {
-    return resolveAgentLaunchRuntime(this.requireStore(), scope, undefined, openCodeModelPick)
+    return resolveAgentLaunchRuntime(this.requireStore(), scope, undefined, agent)
   }
 
-  /** A startup's fact: the workspace it starts in, else (a create, before it exists) the repo. */
+  /** A startup's fact: the workspace it starts in, else the new worktree a create is making. */
   protected resolveStartupAgentLaunchRuntime(
     repo: Repo,
+    agent: TuiAgent,
     scope?: TerminalWorkspaceLaunchScope
   ): ReturnType<typeof resolveStartupAgentLaunchRuntime> {
+    const store = this.requireStore()
     return resolveStartupAgentLaunchRuntime(
-      this.requireStore(),
-      scope ?? {
-        id: repo.id,
-        path: repo.path,
-        connectionId: getRepoSshConnectionId(repo),
-        repo,
-        folderWorkspace: null
-      }
+      store,
+      scope ?? newWorktreeLaunchScope(repo, store.getSettings()),
+      agent
     )
   }
 }

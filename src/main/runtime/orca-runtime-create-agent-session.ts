@@ -14,7 +14,6 @@ import { createHash } from 'node:crypto'
 import { isTuiAgentEnabled } from '../../shared/tui-agent-selection'
 import { resolveAgentStartupPlanInputs } from '../../shared/agent-startup-plan-inputs'
 import { agentLaunchQuotingShell } from '../../shared/agent-launch-runtime'
-import { isOpenCodeModelPick } from './agent-launch-scope-runtime'
 import { buildExecutionHostAgentStartupPlan } from '../opencode/opencode-model-startup-plan'
 import type { RuntimeTerminalCreate } from '../../shared/runtime-types'
 import type {
@@ -132,11 +131,7 @@ export class OrcaRuntimeWithCreateAgentSession extends OrcaRuntimeWithGetAgentSe
       if (!isTuiAgentEnabled(request.agent, settings.disabledTuiAgents)) {
         throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
       }
-      const sessionOptions = this.toAgentSessionOptions(request.launchPreferences)
-      const launchRuntime = this.resolveAgentLaunchRuntime(
-        workspace,
-        isOpenCodeModelPick(request.agent, sessionOptions)
-      )
+      const launchRuntime = this.resolveAgentLaunchRuntime(workspace, request.agent)
       const startupArgs = resolveAgentStartupPlanInputs({
         agent: request.agent,
         settings,
@@ -146,7 +141,7 @@ export class OrcaRuntimeWithCreateAgentSession extends OrcaRuntimeWithGetAgentSe
         // shape must match the PTY route this scope already resolved.
         isRemote: Boolean(workspace.connectionId),
         ...(request.agentArgs !== undefined ? { agentArgs: request.agentArgs } : {}),
-        sessionOptions
+        sessionOptions: this.toAgentSessionOptions(request.launchPreferences)
       })
       const startup = await buildExecutionHostAgentStartupPlan({
         inputs: startupArgs,

@@ -20,7 +20,7 @@ import { resolveStartupShell, type AgentStartupShell } from '../../shared/tui-ag
 import { isTuiAgent } from '../../shared/tui-agent-config'
 import { resolveConfiguredWorkerAgent } from './orchestration/configured-worker-agent-selector'
 import { resolveAgentLaunchRuntime } from './agent-launch-scope-runtime'
-import { resolveWslSessionContext } from '../daemon/wsl-session-context'
+import { parseWslUncPath } from '../../shared/wsl-paths'
 
 import { prepareOpenCodeModelStartupInputs } from '../opencode/opencode-model-startup-plan'
 import { resolveAgentStartupPlanInputs } from '../../shared/agent-startup-plan-inputs'
@@ -248,14 +248,13 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
     if (!path) {
       return false
     }
-    // The launch's own runtime, so the probe checks the machine the agent will run on.
+    // The launch's own platform, and `isWsl` from the path alone, as main read it.
     let launchRuntime
     try {
-      launchRuntime = resolveAgentLaunchRuntime(store, workspace, undefined, true)
+      launchRuntime = resolveAgentLaunchRuntime(store, workspace, undefined, 'opencode')
     } catch {
       return false
     }
-    const wsl = resolveWslSessionContext({ cwd: path, ...launchRuntime.pty })
     try {
       await prepareOpenCodeModelStartupInputs({
         inputs: resolveAgentStartupPlanInputs({
@@ -268,7 +267,7 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
           sessionOptions: { model: target.model }
         }),
         cwd: path,
-        isWsl: Boolean(wsl),
+        isWsl: Boolean(parseWslUncPath(path)),
         hostIdentity: this.getRuntimeId()
       })
       return true

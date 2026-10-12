@@ -185,7 +185,7 @@ export class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh extends OrcaRu
             // untappable; fall back to the plain-shell materialize. A runtime that needs repair
             // rethrows its message here instead of leaving a plain shell under the agent icon.
             if (workspace) {
-              this.resolveAgentLaunchRuntime(workspace)
+              this.resolveAgentLaunchRuntime(workspace, tab.launchAgent)
             }
           }
         }

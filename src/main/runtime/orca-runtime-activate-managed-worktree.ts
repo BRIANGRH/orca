@@ -161,7 +161,7 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       ...(requestedAgent ? { requestedAgent } : {}),
       ...(launchSource ? { launchSource } : {}),
       settings: this.store.getSettings(),
-      getLaunchRuntime: () => this.resolveStartupAgentLaunchRuntime(repo)
+      getLaunchRuntime: (agent) => this.resolveStartupAgentLaunchRuntime(repo, agent)
     })
   }
 
@@ -192,8 +192,8 @@ export class OrcaRuntimeWithActivateManagedWorktree extends OrcaRuntimeWithListM
       ...(launchInputs?.launchSource ? { launchSource: launchInputs.launchSource } : {}),
       ...(launchInputs?.onPromptCarry ? { onPromptCarry: launchInputs.onPromptCarry } : {}),
       settings: this.store.getSettings(),
-      getLaunchRuntime: () =>
-        this.resolveStartupAgentLaunchRuntime(repo, launchInputs?.launchScope),
+      getLaunchRuntime: (agent) =>
+        this.resolveStartupAgentLaunchRuntime(repo, agent, launchInputs?.launchScope),
       toSessionOptions: (preferences) => this.toAgentSessionOptions(preferences)
     })
   }

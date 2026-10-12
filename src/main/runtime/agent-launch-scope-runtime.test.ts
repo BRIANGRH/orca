@@ -52,6 +52,9 @@ function store(args: {
   return fake as never
 }
 
+const claudeRuntime = (s: never, launchScope: TerminalWorkspaceLaunchScope) =>
+  resolveAgentLaunchRuntime(s, launchScope, undefined, 'claude')
+
 const original = process.platform
 beforeEach(() =>
   Object.defineProperty(process, 'platform', {
@@ -101,37 +104,30 @@ describe("the window's runtime rule, on the host", () => {
 // PLAN §7 UNVERIFIED 4. Relied on by C2, whose pane spawn takes the host's answer.
 it("answers from main's WSL cache, which the window may not have read yet", () => {
   _setWslCachesForTests({ available: true, distros: ['Debian'] })
-  expect(() =>
-    resolveAgentLaunchRuntime(
-      store({ project: UBUNTU }),
-      scope(WIN, { repo: repo(WIN) }),
-      undefined
-    )
-  ).toThrow('wsl-distro-missing')
+  expect(() => claudeRuntime(store({ project: UBUNTU }), scope(WIN, { repo: repo(WIN) }))).toThrow(
+    'wsl-distro-missing'
+  )
   // A `\\wsl$` path proves its distro, so a stale cache never refuses it.
-  expect(
-    resolveAgentLaunchRuntime(store({}), scope(SHARE, { repo: repo(SHARE) }), undefined).platform
-  ).toBe('linux')
+  expect(claudeRuntime(store({}), scope(SHARE, { repo: repo(SHARE) })).platform).toBe('linux')
   // A repo-less `\\wsl$` folder has no runtime to repair, as in the window: its path places it.
-  expect(
-    resolveAgentLaunchRuntime(store({}), scope(SHARE, { folder: folder(SHARE) }), undefined)
-      .platform
-  ).toBe('linux')
+  expect(claudeRuntime(store({}), scope(SHARE, { folder: folder(SHARE) })).platform).toBe('linux')
 })
 
 // Relied on by C2: the pane's pty:spawn takes the fact as is, for quoting and shell alike.
 it('quotes for the shell the PTY gets, not a setting the runtime replaced', () => {
   const windowsHost = store({ project: { kind: 'windows-host' }, shell: 'wsl.exe' })
-  const local = resolveAgentLaunchRuntime(windowsHost, scope(WIN, { repo: repo(WIN) }), undefined)
+  const local = claudeRuntime(windowsHost, scope(WIN, { repo: repo(WIN) }))
   expect(local.pty.shellOverride).toBe('powershell.exe')
   expect(agentLaunchQuotingShell(local)).toBe('powershell')
+  // A `\\wsl$` path runs in WSL whatever the setting says, so it is written for Linux there.
+  expect(claudeRuntime(windowsHost, scope(SHARE, { repo: repo(SHARE) })).platform).toBe('linux')
 })
 
 // TEMPORARY until STA-10231. Only folders reach it: every local repo has a project runtime.
 it.each([['follows the global default'], ['is set to Windows host', { kind: 'windows-host' }]])(
   "keeps a folder's WSL Terminal shell where its repo's project %s",
   (_name, project?: unknown) => {
-    const legacy = resolveAgentLaunchRuntime(
+    const legacy = claudeRuntime(
       store({
         project,
         global: { kind: 'windows-host' },
@@ -139,8 +135,7 @@ it.each([['follows the global default'], ['is set to Windows host', { kind: 'win
         repos: [repo(WIN)],
         folder: folder('C:\\work')
       }),
-      scope('C:\\work', { folder: folder('C:\\work') }),
-      undefined
+      scope('C:\\work', { folder: folder('C:\\work') })
     )
     expect([legacy.platform, legacy.pty.shellOverride, agentLaunchQuotingShell(legacy)]).toEqual([
       'win32',
@@ -149,16 +144,3 @@ it.each([['follows the global default'], ['is set to Windows host', { kind: 'win
     ])
   }
 )
-
-// TEMPORARY until OpenCode models are verified inside WSL: a model pick runs where main ran it.
-it('keeps an OpenCode model pick in a WSL folder on Windows, as main ran it', () => {
-  const wslFolder = store({ project: UBUNTU, repos: [repo(WIN)], folder: folder('C:\\work') })
-  const platform = (openCodeModelPick: boolean) =>
-    resolveAgentLaunchRuntime(
-      wslFolder,
-      scope('C:\\work', { folder: folder('C:\\work') }),
-      undefined,
-      openCodeModelPick
-    ).platform
-  expect([platform(true), platform(false)]).toEqual(['win32', 'linux'])
-})

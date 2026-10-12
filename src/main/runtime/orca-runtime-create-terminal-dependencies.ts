@@ -42,14 +42,13 @@ export const BACKGROUND_TERMINAL_SPAWN_FLAGS = {
 } as const
 
 /** The PTY's shell inputs: a requested shell, and an agent launch's runtime fact. */
-export function spawnShellInputs(
-  opts: Pick<TerminalCreateOptions, 'shellOverride' | 'launchRuntime'>
-): Pick<TerminalCreateOptions, 'shellOverride' | 'launchRuntime'> {
-  return {
-    ...(opts.shellOverride ? { shellOverride: opts.shellOverride } : {}),
-    ...(opts.launchRuntime ? { launchRuntime: opts.launchRuntime } : {})
-  }
-}
+export const spawnShellInputs = ({
+  shellOverride,
+  launchRuntime
+}: Pick<TerminalCreateOptions, 'shellOverride' | 'launchRuntime'>) => ({
+  ...(shellOverride ? { shellOverride } : {}),
+  ...(launchRuntime ? { launchRuntime } : {})
+})
 
 /** Caller-scoped spawn fields: abort when the caller disconnects; never wake a slept worktree;
  *  the caller's declared fork intent, which the host's gate validates. */

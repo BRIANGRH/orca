@@ -60,13 +60,8 @@ export async function prepareRuntimePtySpawn(
     await freshSpawnRecovery
   }
   ctx.isClaudeLaunch = !ctx.preAdoptedStablePane && isClaudeLaunchCommand(args.command)
-  // Why: runtime-created terminals carry no renderer-computed projectRuntime; resolve from worktreeId to honor the project's Windows runtime.
-  // `args.shellOverride` is the per-request pick (`terminal create --shell`), read here the way
-  // the renderer twin (ipc/spawn-preflight.ts) reads a tab's override. Without it a runtime create
-  // could only ever get the host default shell, so a caller asking for cmd/PowerShell got the
-  // default shell with the request typed into it. Still Windows-only: the override names a
-  // Windows shell, and spawn-options applies it under the same platform gate.
-  // An agent launch's shell is the one it was quoted for, resolved once by its plan.
+  // Why: runtime-created terminals carry no renderer projectRuntime. An agent launch brings the PTY
+  // its command was quoted for; anything else takes the project's runtime and `--shell` pick.
   ctx.terminalRuntimeOptions =
     args.launchRuntime?.pty ??
     resolvePlainTerminalPtyOptions(

@@ -6,6 +6,12 @@ import {
 } from '../../shared/agent-launch-runtime'
 import type { AgentStartupShell } from '../../shared/tui-agent-startup-shell'
 import type { TuiAgent } from '../../shared/tui-agent'
+import type { Repo } from '../../shared/repo-types'
+import type { GlobalSettings } from '../../shared/global-settings-types'
+import { getRepoSshConnectionId } from '../../shared/execution-host'
+import { isFolderRepo } from '../../shared/repo-kind'
+import { isWslUncPath } from '../../shared/wsl-paths'
+import { getWorktreePathSettings } from '../ipc/worktree-logic'
 import type { ProjectExecutionRuntimeResolution } from '../../shared/project-execution-runtime'
 import {
   resolveLocalLaunchScopeRuntime,
@@ -35,32 +41,27 @@ export function agentLaunchPlatformForScope(
 
 /**
  * The runtime an agent launched here runs in: the window's rule, except where main's host had no
- * runtime for this scope and the rule answers "Windows host", or the launch picks an OpenCode
- * model. There it keeps main's spawn: the Terminal shell, since an explicit Windows-host default
- * can't be told from the shipped one, and Windows for a model Orca can't yet verify inside WSL.
- * TEMPORARY (reachable only for folders): removed by the WSL-shell default decision (STA-10231)
- * and by verifying OpenCode models inside WSL.
+ * runtime for this scope (only folders) and the rule answers "Windows host", or the agent is
+ * OpenCode. There it keeps main's answer: the Terminal shell, since an explicit Windows-host default
+ * can't be told from the shipped one, and Windows for OpenCode, whose models Orca can't yet verify
+ * inside WSL. TEMPORARY: removed by the WSL-shell default decision (STA-10231) and by verifying
+ * OpenCode models inside WSL (STA-10251).
  */
 export function agentLaunchProjectRuntime(
   store: LaunchScopeRuntimeStore,
   scope: TerminalWorkspaceLaunchScope,
-  openCodeModelPick = false
+  agent: TuiAgent | undefined
 ): ProjectExecutionRuntimeResolution | undefined {
   const runtime = resolveLocalLaunchScopeRuntime(store, scope)
-  return (openCodeModelPick ||
-    (runtime?.status === 'resolved' && runtime.runtime.kind === 'windows-host')) &&
+  const onWindowsHost = runtime?.status === 'resolved' && runtime.runtime.kind === 'windows-host'
+  // A `\\wsl$` cwd runs in its distro whatever the runtime says, so its path places the agent.
+  if (onWindowsHost && agent !== 'opencode' && isWslUncPath(scope.path)) {
+    return undefined
+  }
+  return (agent === 'opencode' || onWindowsHost) &&
     !resolveLocalProjectRuntimeForWorktreeId(store, scope.id)
     ? undefined
     : runtime
-}
-
-/** Whether this launch picks an OpenCode model, which the host checks before it starts. */
-export function isOpenCodeModelPick(
-  agent: TuiAgent,
-  sessionOptions: Readonly<Record<string, unknown>> | undefined
-): boolean {
-  const model = sessionOptions?.model
-  return agent === 'opencode' && typeof model === 'string' && model.trim() !== ''
 }
 
 /** The one runtime fact for an agent launched into this workspace. Throws, as the spawn would,
@@ -69,7 +70,7 @@ export function resolveAgentLaunchRuntime(
   store: AgentLaunchRuntimeStore,
   scope: TerminalWorkspaceLaunchScope,
   requestedShellOverride: string | undefined,
-  openCodeModelPick = false
+  agent: TuiAgent | undefined
 ): AgentLaunchRuntime {
   if (scope.connectionId) {
     return {
@@ -77,10 +78,27 @@ export function resolveAgentLaunchRuntime(
       pty: { shellOverride: undefined, terminalWindowsWslDistro: null }
     }
   }
-  const projectRuntime = agentLaunchProjectRuntime(store, scope, openCodeModelPick)
+  const projectRuntime = agentLaunchProjectRuntime(store, scope, agent)
   return {
     platform: executionRuntimePlatform(projectRuntime, scope.path, process.platform),
     pty: resolveLocalPtyOptions(store.getSettings(), projectRuntime, requestedShellOverride)
+  }
+}
+
+/** A new worktree of this repo, before it exists: it lands under a `\\wsl$` base folder when one
+ *  is set, else on the repo's own filesystem. */
+export function newWorktreeLaunchScope(
+  repo: Repo,
+  settings: Pick<GlobalSettings, 'nestWorkspaces' | 'workspaceDir'>
+): TerminalWorkspaceLaunchScope {
+  const base = getWorktreePathSettings(repo, settings).workspaceDir
+  const connectionId = getRepoSshConnectionId(repo)
+  return {
+    id: repo.id,
+    path: !connectionId && !isFolderRepo(repo) && isWslUncPath(base) ? base : repo.path,
+    connectionId,
+    repo,
+    folderWorkspace: null
   }
 }
 
@@ -91,14 +109,15 @@ export function resolveAgentLaunchRuntime(
  */
 export function resolveStartupAgentLaunchRuntime(
   store: AgentLaunchRuntimeStore,
-  scope: TerminalWorkspaceLaunchScope
+  scope: TerminalWorkspaceLaunchScope,
+  agent: TuiAgent
 ): {
   platform: NodeJS.Platform
   shell: AgentStartupShell | undefined
   launchRuntime: AgentLaunchRuntime | Error
 } {
   try {
-    const launchRuntime = resolveAgentLaunchRuntime(store, scope, undefined)
+    const launchRuntime = resolveAgentLaunchRuntime(store, scope, undefined, agent)
     return {
       platform: launchRuntime.platform,
       shell: agentLaunchQuotingShell(launchRuntime),

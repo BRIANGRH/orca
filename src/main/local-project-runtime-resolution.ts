@@ -63,12 +63,14 @@ function canResolveProjectRuntimeForWorktreeId(
 function resolveLocalProjectRuntime(
   store: ResolvableStore,
   project: Pick<Project, 'id' | 'localWindowsRuntimePreference'>,
-  settings: ReturnType<ResolvableStore['getSettings']> = store.getSettings()
+  settings: ReturnType<ResolvableStore['getSettings']> = store.getSettings(),
+  checkWslCache = true
 ): ProjectExecutionRuntimeResolution {
-  const wslAvailable = hasCachedWslAvailability()
-    ? (getCachedWslAvailability() ?? undefined)
-    : undefined
-  const availableWslDistros = hasCachedWslDistros() ? getCachedWslDistros() : null
+  const wslAvailable =
+    checkWslCache && hasCachedWslAvailability()
+      ? (getCachedWslAvailability() ?? undefined)
+      : undefined
+  const availableWslDistros = checkWslCache && hasCachedWslDistros() ? getCachedWslDistros() : null
   return resolveProjectExecutionRuntime({
     appPlatform: process.platform,
     projectId: project.id,
@@ -116,17 +118,14 @@ export function resolveLocalWorkspaceRuntime(
     project?.localWindowsRuntimePreference,
     workspacePath
   )
-  const id = project?.id ?? repo.id
   // A `\\wsl$` path proves its distro exists, and main's distro cache can be stale; the window
   // checks such a path against no cache either.
-  return !project?.localWindowsRuntimePreference && preference.kind === 'wsl'
-    ? resolveProjectExecutionRuntime({
-        appPlatform: process.platform,
-        projectId: id,
-        projectRuntimePreference: preference,
-        globalWindowsRuntimeDefault: store.getSettings().localWindowsRuntimeDefault
-      })
-    : resolveLocalProjectRuntime(store, { id, localWindowsRuntimePreference: preference })
+  return resolveLocalProjectRuntime(
+    store,
+    { id: project?.id ?? repo.id, localWindowsRuntimePreference: preference },
+    undefined,
+    Boolean(project?.localWindowsRuntimePreference) || preference.kind !== 'wsl'
+  )
 }
 
 /** The one local repo whose project runs a folder workspace on this machine; none for a folder
@@ -236,16 +235,13 @@ export function resolveLocalProjectRuntimeForWorktreeId(
   return repo ? resolveLocalProjectRuntimeForRepo(store, repo) : undefined
 }
 
+type LocalPtySettings = Partial<
+  Pick<GlobalSettings, 'terminalWindowsShell' | 'terminalWindowsWslDistro' | 'terminalDefaultShell'>
+>
+
 /** A local PTY's shell and distro. Throws for a runtime that needs repair. */
 export function resolveLocalPtyOptions(
-  settings:
-    | Partial<
-        Pick<
-          GlobalSettings,
-          'terminalWindowsShell' | 'terminalWindowsWslDistro' | 'terminalDefaultShell'
-        >
-      >
-    | undefined,
+  settings: LocalPtySettings | undefined,
   projectRuntime: ProjectExecutionRuntimeResolution | undefined,
   requestedShellOverride: string | undefined,
   /** Replaces a `wsl.exe` setting on a Windows-host runtime; absent is `powershell.exe`. */
@@ -269,7 +265,7 @@ export function resolveLocalPtyOptions(
  *  agent plan brought its own. */
 export function resolvePlainTerminalPtyOptions(
   store: ProjectRuntimeResolutionStore | undefined,
-  settings: Parameters<typeof resolveLocalPtyOptions>[0],
+  settings: LocalPtySettings | undefined,
   worktreeId: string | undefined,
   requestedShellOverride: string | undefined
 ): LocalWindowsTerminalRuntimeOptions {

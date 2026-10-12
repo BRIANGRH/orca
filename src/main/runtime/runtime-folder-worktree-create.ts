@@ -51,8 +51,7 @@ export async function createRuntimeFolderWorktree(args: {
   repo: Repo
   startup?: WorktreeStartupLaunch
   startupFollowup?: WorktreeStartupFollowup
-  /** What a host-built startup was quoted for, or the repair error it fails with; absent keeps the
-   *  spawn's own shell rule. */
+  /** What a host-built startup was quoted for, or the repair error it fails with. */
   startupLaunchRuntime?: AgentLaunchRuntime | Error
   createdWithAgent?: TuiAgent
   draftPaste?: WorktreeStartupDraftPaste
