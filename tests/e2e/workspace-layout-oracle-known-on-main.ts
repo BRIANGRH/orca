@@ -24,13 +24,6 @@ type KnownOnMain = {
 const TRANSIENT = /\(transient\)$/
 
 export const LAYOUT_ORACLE_KNOWN_ON_MAIN: readonly KnownOnMain[] = [
-  // Three copies of tab order: a reorder moves the tab bar, not the saved rows.
-  {
-    scenario: 'client-reorder-tabs',
-    check: 'rules',
-    rule: 'tab_order_disagrees',
-    cause: 'one tab order'
-  },
   // After a cold relaunch the paired-client tab list stays empty while the window shows the tabs.
   {
     scenario: 'cold-daemon-restart',
@@ -121,14 +114,6 @@ export const LAYOUT_ORACLE_KNOWN_ON_MAIN: readonly KnownOnMain[] = [
     platform: 'linux',
     cause: 'title after restart'
   },
-  // A headless reorder saves rows through the session merge door, which keeps the stored row order,
-  // so rows and the group disagree. Fixed in PR 6, where rows follow the group's tab order.
-  ...(['orcad', 'electron'] as const).map((kind) => ({
-    scenario: `headless-${kind}-move-tab-between-groups`,
-    check: 'rules' as const,
-    rule: 'tab_order_disagrees',
-    cause: 'one tab order'
-  })),
   // After a headless move into an existing group, paired clients still see that group's previous
   // tab selected, not the moved one. A split into a new group selects the moved tab.
   ...(['orcad', 'electron'] as const).map((kind) => ({
