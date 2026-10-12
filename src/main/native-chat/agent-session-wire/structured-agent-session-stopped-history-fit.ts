@@ -26,7 +26,7 @@ export type StoppedHistoryFitInput<TImage> = {
   sendImages: number
   /** What text costs; additive, so a frame costs the sum of its parts. */
   textCost: (text: string) => StoppedHistoryCost
-  /** One stopped image as the agent's content; null or a throw leaves the message's images out. */
+  /** One stopped image as the agent's content; null or a throw leaves that image out. */
   image: (
     block: NativeChatImageRefBlock
   ) => Promise<{ content: TImage; cost: StoppedHistoryCost } | null>
@@ -72,19 +72,19 @@ function imagesOf(entry: OwedStoppedMessage): NativeChatImageRefBlock[] {
   )
 }
 
+/** Each image read on its own, so one the agent refuses leaves the others riding. */
 async function readImages<TImage>(
   blocks: readonly NativeChatImageRefBlock[],
   image: StoppedHistoryFitInput<TImage>['image']
-): Promise<{ content: TImage; cost: StoppedHistoryCost }[] | null> {
+): Promise<{ read: { content: TImage; cost: StoppedHistoryCost }[]; refused: number }> {
   const read: { content: TImage; cost: StoppedHistoryCost }[] = []
   for (const block of blocks) {
     const prepared = await image(block).catch(() => null)
-    if (!prepared) {
-      return null
+    if (prepared) {
+      read.push(prepared)
     }
-    read.push(prepared)
   }
-  return read
+  return { read, refused: blocks.length - read.length }
 }
 
 /** The longest start of `element.text` whose element fits `room`, keeping at least one character. */
@@ -158,24 +158,33 @@ export async function fitStoppedHistory<TImage>(
       omittedImages: blocks.length
     }
     let chosen: { text: string; cost: StoppedHistoryCost; images: TImage[] } | null = null
-    let refused = false
-    if (blocks.length > 0) {
+    const withAllImages = textCost(
+      stoppedHistoryElementSpan(
+        stoppedHistoryElement({
+          ...element,
+          images: { first: images.length + 1, count: blocks.length },
+          omittedImages: 0
+        })
+      )
+    )
+    // An image the agent refuses never rides, so without it a message is whole.
+    const read = fits(withAllImages, room) ? await readImages(blocks, input.image) : null
+    if (read) {
       const text = stoppedHistoryElement({
         ...element,
-        images: { first: images.length + 1, count: blocks.length },
-        omittedImages: 0
+        images: { first: images.length + 1, count: read.read.length },
+        omittedImages: read.refused
       })
-      const cost = textCost(stoppedHistoryElementSpan(text))
-      const read = fits(cost, room) ? await readImages(blocks, input.image) : undefined
-      refused = read === null
-      const whole = read ? read.reduce((sum, item) => plus(sum, item.cost), cost) : null
-      if (read && whole && fits(whole, room)) {
-        chosen = { text, cost: whole, images: read.map((item) => item.content) }
+      const cost = read.read.reduce(
+        (sum, item) => plus(sum, item.cost),
+        textCost(stoppedHistoryElementSpan(text))
+      )
+      if (fits(cost, room)) {
+        chosen = { text, cost, images: read.read.map((item) => item.content) }
       }
     }
-    // An image the agent refuses never rides, so without it a message is whole; leaving out images
-    // only for want of room is the oldest's alone.
-    if (!chosen && (blocks.length === 0 || refused || elements.length === 0)) {
+    // Leaving out images for want of room is the oldest's alone.
+    if (!chosen && blocks.length > 0 && elements.length === 0) {
       const text = stoppedHistoryElement(element)
       const cost = textCost(stoppedHistoryElementSpan(text))
       if (fits(cost, room)) {

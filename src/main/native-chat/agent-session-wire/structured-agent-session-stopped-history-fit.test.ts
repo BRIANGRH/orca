@@ -131,17 +131,32 @@ describe('what fits beside the send', () => {
     expect(read).toHaveBeenCalledTimes(1)
   })
 
-  it('leaves out the images of a message one of whose images cannot be read', async () => {
+  it('leaves out only the image that cannot be read', async () => {
     const fitted = await fit([owed('a', image('one.png'), image('gone.png'), text('look'))], {
       image: async (block) => {
         if (block.path === 'gone.png') {
           throw new Error('ENOENT')
         }
-        return { content: block.path ?? '', cost: {} }
+        return { content: block.path ?? '', cost: { images: 1 } }
       }
     }).result
-    expect(fitted?.images).toEqual([])
-    expect(fitted?.frame).toContain('omitted-images="2"')
+    expect(fitted?.images).toEqual(['one.png'])
+    expect(fitted?.frame).toContain(
+      '<stopped-message number="1" images="1" omitted-images="1">\nlook\n'
+    )
+  })
+
+  it('holds a later message back whole when its readable images do not fit, though one is refused', async () => {
+    const fitted = (await fit(
+      [owed('a', text('first')), owed('b', image('one.png'), image('gone.png'), text('look'))],
+      {
+        room: { images: 0 },
+        image: async (block) =>
+          block.path === 'gone.png' ? null : { content: block.path ?? '', cost: { images: 1 } }
+      }
+    ).result)!
+    expect(fitted.carries).toEqual(['a'])
+    expect(fitted.frame).toContain('1 earlier stopped message is not included')
   })
 
   it('reads each image once, even across the steps it is weighed in', async () => {

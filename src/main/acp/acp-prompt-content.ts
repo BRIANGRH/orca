@@ -204,7 +204,6 @@ export async function prepareAcpDispatch(
   if (!own) {
     return null
   }
-  const signal = AbortSignal.timeout(READ_TIMEOUT_MS)
   // The frame's own block around its text, and the comma before the next block.
   const frameBlock = Buffer.byteLength(JSON.stringify({ type: 'text', text: '' })) + 1
   const fit = await fitStoppedHistory({
@@ -220,7 +219,12 @@ export async function prepareAcpDispatch(
       if (!acceptsImages) {
         return null
       }
-      const image = await imageBlock(block, ACP_PROMPT_IMAGE_MAX_BYTES, signal)
+      // Each image gets its own read time, so a slow one never times out the rest.
+      const image = await imageBlock(
+        block,
+        ACP_PROMPT_IMAGE_MAX_BYTES,
+        AbortSignal.timeout(READ_TIMEOUT_MS)
+      )
       const line = Buffer.byteLength(JSON.stringify(image.block)) + 1
       return { content: image.block, cost: { line, images: 1, bytes: image.bytes } }
     }
