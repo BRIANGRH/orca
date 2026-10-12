@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { installFakeAppEnvironment } from '../../../config/scripts/vitest-host-ports-setup'
 import { runProcess, spawnProcess } from '@orca/process-host'
-import { structuredSessionChildIdentityEnv } from '../runtime/structured-session-child-identity-env'
+import { sealedChildEnv } from '../runtime/structured-session-child-env.test-support'
 import { resolveBundledOrcadRuntime } from './orcad-bundled-runtime'
 import { ORCAD_NODE_RUNTIME_MARKER_FILENAME } from '../../shared/orcad-artifacts'
 import { skipForMissingInputs } from './orcad-node-slot-fixture'
@@ -98,7 +98,7 @@ it.skipIf(skip)(
         isPackaged: () => true,
         getCliLauncherPath: () => launcher
       })
-      const childEnv = structuredSessionChildIdentityEnv('claude_test-session', {
+      const childEnv = sealedChildEnv('claude_test-session', {
         PATH: env.PATH ?? '',
         ORCA_ENVIRONMENT: 'stale-shell-selection',
         ORCA_PAIRING_CODE: 'stale-pairing',

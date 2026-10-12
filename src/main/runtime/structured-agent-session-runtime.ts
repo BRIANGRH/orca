@@ -13,7 +13,7 @@
 import type { AgentSessionAccountKind } from '../../shared/agent-session-availability'
 import type { PiRpcSessionDeps } from '../pi/rpc-session'
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk'
-import type { ClaudeStructuredLaunchResolverDeps } from '../claude/claude-structured-launch-resolution'
+import type { ClaudeStructuredLaunchPartDeps } from '../claude/claude-structured-launch-resolution'
 import { existsSync } from 'node:fs'
 import type { AgentSessionRecord } from '../../shared/agent-session-record'
 import type { AgentSessionResumeTrigger } from '../../shared/agent-session-resume-marker'
@@ -101,7 +101,7 @@ export type StructuredAgentSessionRuntimeDeps = {
   claimKeyId: string
   resolveWorkspacePath: (workspaceId: string) => Promise<string>
   resolveCodexCommand?: (options?: { pathEnv?: string | null; homePath?: string }) => string
-  resolveClaudeCommand?: ClaudeStructuredLaunchResolverDeps['resolveCommand']
+  resolveClaudeCommand?: ClaudeStructuredLaunchPartDeps['resolveCommand']
   openPiConnection?: PiRpcSessionDeps['openConnection']
   /** Which version-gated flags a Claude CLI takes; absent never passes one. */
   claudeCliFlags?: ClaudeCliFlagSupport
@@ -119,9 +119,6 @@ export type StructuredAgentSessionRuntimeDeps = {
   readProcessStartTime?: CodexStructuredSessionAdapterDeps['readProcessStartTime']
   /** Required, and asserted at install time — saved Arguments must never be silently omitted. */
   resolveLaunchArgs: (provider: AgentSessionRecord['provider']) => Promise<string[]> | string[]
-  resolveLaunchEnv?: () => Promise<NodeJS.ProcessEnv>
-  resolveLaunchEnvOverlay?: () => Promise<Record<string, string>> | Record<string, string>
-  resolveClaudeLaunchEnv?: () => Promise<Record<string, string>> | Record<string, string>
   /** Required, and asserted at install time — an absent policy must not degrade to a guess. */
   resolveClaudeAuthPolicy: () => Promise<ClaudeStructuredAuthPolicy> | ClaudeStructuredAuthPolicy
   /** The user's Agent Permissions setting for Claude; absent means prompting. */
@@ -130,14 +127,13 @@ export type StructuredAgentSessionRuntimeDeps = {
   resolveCodexPermissionPolicy?: () => CodexStructuredPermissionPolicy
   /** The same setting for a protocol-driven (ACP) agent: whether it runs with full access. */
   resolveAgentFullAccess?: (agent: string) => boolean
-  /** The user's per-agent environment overlay, for agents with no lane-specific resolver. */
+  /** The user's per-agent environment overlay from settings, laid over every agent's base env. */
   resolveAgentLaunchEnv?: (agent: string) => Record<string, string>
   /** The settings a per-agent Command override is read from, for the same agents. */
   resolveAgentCommandSettings?: () => StructuredAgentCommandSettings
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
   /** Which login-shell variables Codex and Claude children inherit; absent inherits all. */
   resolveShellEnvironmentPolicy?: () => NativeChatShellEnvironmentPolicy
-  resolveCodexOverrides?: () => NodeJS.ProcessEnv
   /** Where every failure the runtime and its host carry on past is reported. Required, so no path
    *  can drop one: the desktop and headless hosts both pass the trace-file logger. */
   logger: StructuredAgentSessionLogger

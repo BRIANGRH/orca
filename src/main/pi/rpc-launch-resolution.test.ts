@@ -1,3 +1,4 @@
+import { createPiRpcLaunchResolver } from '../runtime/structured-agent-launch-composition.test-support'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +10,7 @@ import { agentSessionProviderHandleKey } from '../../shared/agent-session-provid
 import { closeTestJournalHostDatabase } from '../native-chat/agent-session-journal/journal-host-database-test-support'
 import { openTestAgentSessionRecordStore } from '../runtime/agent-session-record-store-test-harness'
 import { buildPiRpcLaunch } from './rpc-launch'
-import { createPiRpcLaunchResolver, piRpcProviderLink } from './rpc-launch-resolution'
+import { piRpcProviderLink } from './rpc-launch-resolution'
 
 const probeVersion = vi.fn(async (..._input: unknown[]) => true)
 
@@ -128,7 +129,7 @@ describe('Pi host launch resolution', () => {
       store: h.store,
       resolveWorkspacePath: async () => h.workspace,
       resolveEnvironment: async () => ({ PATH: path, HOME: '/host/home' }),
-      refreshEnvironmentAfterMiss: refresh,
+      refreshAfterMissingProgram: refresh,
       resolveCommand: (name, options) => (options?.pathEnv === '/host/bin' ? '/host/bin/pi' : name),
       probeVersion
     })
@@ -258,7 +259,7 @@ describe('Pi host launch resolution', () => {
       ...record,
       location: { ...record.location, executionHostId: 'ssh:remote' }
     })
-    await expect(h.resolver(identity)).rejects.toThrow('another execution host')
+    await expect(h.resolver(identity)).rejects.toThrow('run on the local host')
     vi.spyOn(h.store, 'getRecord').mockReturnValue({
       ...record,
       accountHome: { variable: 'CODEX_HOME', path: '/wrong' }

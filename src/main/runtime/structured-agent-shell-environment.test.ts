@@ -406,7 +406,7 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
       try {
         const resolvers = createStructuredAgentEnvironmentResolvers({})
         expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/shell/A')
-        expect((await resolvers.resolveClaudeInheritedEnv()).PATH).toBe('/shell/A')
+        expect((await resolvers.resolveAgentEnvironment('claude')).PATH).toBe('/shell/A')
         expect(capture).toHaveBeenCalledOnce()
         // The first capture may share a startup reader's run; refreshes must run the shell again.
         expect(capture).toHaveBeenCalledWith(expect.objectContaining({ force: false }))
@@ -528,7 +528,7 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
         })
     )
     const first = resolvers.resolveBaseEnvironment()
-    const second = resolvers.resolveClaudeInheritedEnv()
+    const second = resolvers.resolveAgentEnvironment('claude')
     release({ PATH: '/repaired' })
     expect((await first).PATH).toBe('/repaired')
     expect((await second).PATH).toBe('/repaired')
@@ -541,31 +541,36 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
     const resolvers = createStructuredAgentEnvironmentResolvers({
       resolveEnvironment,
       resolveShellEnvironmentPolicy: () => INHERIT_ALL,
-      resolveLaunchEnvOverlay: () => ({ CURRENT_SETTING: overlay })
+      resolveAgentLaunchEnv: () => ({ CURRENT_SETTING: overlay })
     })
-    expect(await resolvers.resolveCodexEnvironment()).toEqual({
+    expect(await resolvers.resolveAgentEnvironment('codex')).toEqual({
       PATH: '/shell/A',
       CURRENT_SETTING: 'A'
     })
     overlay = 'B'
-    expect(await resolvers.resolveCodexEnvironment()).toEqual({
+    expect(await resolvers.resolveAgentEnvironment('codex')).toEqual({
       PATH: '/shell/A',
       CURRENT_SETTING: 'B'
     })
     expect(resolveEnvironment).toHaveBeenCalledOnce()
   })
 
-  it('gives Codex and Claude the same base, with overlays on Codex only', async () => {
+  it("gives every agent the same base, with each agent's own overlay on it", async () => {
     const resolvers = createStructuredAgentEnvironmentResolvers({
       resolveEnvironment: async () => ({ PATH: '/shell/bin', SHELL_ONLY: '1' }),
       resolveShellEnvironmentPolicy: () => INHERIT_ALL,
-      resolveCodexOverrides: () => ({ CODEX_PROFILE: 'p' })
+      resolveAgentLaunchEnv: (agent): Record<string, string> =>
+        agent === 'codex' ? { CODEX_PROFILE: 'p' } : {}
     })
-    expect(await resolvers.resolveClaudeInheritedEnv()).toEqual({
+    expect(await resolvers.resolveBaseEnvironment()).toEqual({
       PATH: '/shell/bin',
       SHELL_ONLY: '1'
     })
-    expect(await resolvers.resolveCodexEnvironment()).toEqual({
+    expect(await resolvers.resolveAgentEnvironment('claude')).toEqual({
+      PATH: '/shell/bin',
+      SHELL_ONLY: '1'
+    })
+    expect(await resolvers.resolveAgentEnvironment('codex')).toEqual({
       PATH: '/shell/bin',
       SHELL_ONLY: '1',
       CODEX_PROFILE: 'p'

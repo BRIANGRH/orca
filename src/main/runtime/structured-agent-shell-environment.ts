@@ -115,9 +115,8 @@ export function refreshHostAgentBaseEnvironmentAfterMiss(): Promise<void> {
 export type StructuredAgentEnvironmentSources = {
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
   resolveShellEnvironmentPolicy?: () => NativeChatShellEnvironmentPolicy
-  resolveLaunchEnv?: () => Promise<NodeJS.ProcessEnv>
-  resolveLaunchEnvOverlay?: () => Promise<Record<string, string>> | Record<string, string>
-  resolveCodexOverrides?: () => NodeJS.ProcessEnv
+  /** The user's per-agent environment overlay from settings. */
+  resolveAgentLaunchEnv?: (agent: string) => Record<string, string>
 }
 
 type ShellSnapshot = {
@@ -225,10 +224,10 @@ export function resetHostShellEnvironmentForTests(): void {
 export function createStructuredAgentEnvironmentResolvers(
   sources: StructuredAgentEnvironmentSources
 ): {
-  resolveCodexEnvironment: () => Promise<NodeJS.ProcessEnv>
-  resolveClaudeInheritedEnv: () => Promise<Record<string, string>>
   /** The shared base every agent's child env starts from, before its own overlay. */
   resolveBaseEnvironment: () => Promise<Record<string, string>>
+  /** The base with the user's overlay for `agent` laid over it. */
+  resolveAgentEnvironment: (agent: string) => Promise<Record<string, string>>
   refreshAfterMissingProgram: () => Promise<void>
 } {
   const injected = sources.resolveEnvironment
@@ -245,13 +244,10 @@ export function createStructuredAgentEnvironmentResolvers(
     })
   return {
     refreshAfterMissingProgram: shell.refreshAfterMissingProgram,
-    resolveCodexEnvironment: async () => ({
+    resolveBaseEnvironment: resolveBase,
+    resolveAgentEnvironment: async (agent) => ({
       ...(await resolveBase()),
-      ...(await sources.resolveLaunchEnv?.()),
-      ...(await sources.resolveLaunchEnvOverlay?.()),
-      ...sources.resolveCodexOverrides?.()
-    }),
-    resolveClaudeInheritedEnv: resolveBase,
-    resolveBaseEnvironment: resolveBase
+      ...sources.resolveAgentLaunchEnv?.(agent)
+    })
   }
 }
