@@ -368,6 +368,70 @@ describe('parseCodexSessionFile', () => {
     )
   })
 
+  it('titles a send by its own words when Codex could not read a carried history image', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-ai-vault-codex-stopped-unread-'))
+    tempRoots.push(root)
+    const sessionPath = join(root, 'sessions', '2026', '07', '21', 'rollout-stopped-unread.jsonl')
+    await mkdir(dirname(sessionPath), { recursive: true })
+    const stopped = stoppedHistoryFrame({
+      elements: [
+        stoppedHistoryElement({
+          number: 1,
+          text: 'what is in this screenshot',
+          images: { first: 1, count: 1 },
+          omittedImages: 0
+        })
+      ],
+      notIncluded: 0,
+      shortened: 0,
+      sendImages: { first: 2, count: 0 }
+    })
+    await writeFile(
+      sessionPath,
+      jsonLines([
+        {
+          timestamp: '2026-07-21T10:00:00.000Z',
+          type: 'session_meta',
+          payload: { id: 'stopped-unread-session', cwd: '/repo/app' }
+        },
+        {
+          timestamp: '2026-07-21T10:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              // What Codex writes in place of an image it cannot read.
+              {
+                type: 'input_text',
+                text: 'Codex could not read the local image at `/tmp/gone.png`: No such file or directory (os error 2)'
+              },
+              { type: 'input_text', text: stopped },
+              { type: 'input_text', text: 'Try again please' }
+            ]
+          }
+        }
+      ])
+    )
+
+    const sessionStat = await stat(sessionPath)
+    const session = await withFullFirstUserPromptCapture(() =>
+      parseCodexSessionFile(
+        {
+          path: sessionPath,
+          mtimeMs: sessionStat.mtimeMs,
+          modifiedAt: sessionStat.mtime.toISOString()
+        },
+        'darwin',
+        root
+      )
+    )
+
+    expect(session?.title).toBe('Try again please')
+    expect(session?.previewMessages[0]?.text).toBe('Try again please')
+    expect(session?.firstUserPrompt).toBe('Try again please')
+  })
+
   it('keeps image labels when no stopped-history frame follows them', async () => {
     const root = await mkdtemp(join(tmpdir(), 'orca-ai-vault-codex-plain-images-'))
     tempRoots.push(root)

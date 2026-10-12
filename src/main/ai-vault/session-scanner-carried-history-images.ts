@@ -1,39 +1,22 @@
+import { STOPPED_HISTORY_MAX_IMAGES } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
 import { withoutStoppedHistoryFrame } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
-// Codex records each local image as an `<image name=[Image #N] path="...">` text item, the image,
-// then a `</image>` text item, so a send's carried history images sit before its frame as text.
-const LOCAL_IMAGE_OPEN_PREFIX = '<image name='
-const LOCAL_IMAGE_CLOSE = '</image>'
+// An agent writes at most three items per carried image ahead of the frame (Codex: label, image,
+// close), so a frame is never later than this; looking no further keeps a scan bounded.
+export const CARRIED_HISTORY_MAX_LEADING_ITEMS = 3 * STOPPED_HISTORY_MAX_IMAGES
 
-/** `content` without the image-label items ahead of a leading stopped-history frame, so titles,
- *  previews and the copied prompt start at the frame; unchanged unless a real frame follows. */
-export function withoutCarriedHistoryImageLabels(content: readonly unknown[]): readonly unknown[] {
-  let index = 0
-  while (isLocalImageGroup(content, index)) {
-    index += 3
+/** `content` from its stopped-history frame on, so titles, previews and the copied prompt never show
+ *  what an agent wrote for the carried history's images ahead of it (Codex labels each with its path,
+ *  or says it could not read it). Only those images go before the frame; unchanged without one. */
+export function withoutCarriedHistoryImages(content: readonly unknown[]): readonly unknown[] {
+  const lookahead = Math.min(content.length, CARRIED_HISTORY_MAX_LEADING_ITEMS + 1)
+  for (let index = 1; index < lookahead; index += 1) {
+    const text = itemText(content[index])
+    if (text !== null && withoutStoppedHistoryFrame(text) !== text) {
+      return content.slice(index)
+    }
   }
-  if (index === 0) {
-    return content
-  }
-  const frame = itemText(content[index])
-  return frame !== null && withoutStoppedHistoryFrame(frame) !== frame
-    ? content.slice(index)
-    : content
-}
-
-function isLocalImageGroup(content: readonly unknown[], index: number): boolean {
-  const open = itemText(content[index])
-  return (
-    open !== null &&
-    open.startsWith(LOCAL_IMAGE_OPEN_PREFIX) &&
-    open.endsWith('>') &&
-    itemType(content[index + 1]) === 'input_image' &&
-    itemText(content[index + 2]) === LOCAL_IMAGE_CLOSE
-  )
-}
-
-function itemType(item: unknown): unknown {
-  return item && typeof item === 'object' && 'type' in item ? item.type : undefined
+  return content
 }
 
 function itemText(item: unknown): string | null {

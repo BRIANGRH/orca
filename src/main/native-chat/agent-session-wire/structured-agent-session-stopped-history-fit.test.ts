@@ -14,6 +14,7 @@ import type { NativeChatBlock } from '../../../shared/native-chat-types'
 import {
   fitStoppedHistory,
   STOPPED_HISTORY_MAX_CHARS,
+  STOPPED_HISTORY_MAX_IMAGES,
   type StoppedHistoryFitInput
 } from './structured-agent-session-stopped-history-fit'
 import {
@@ -300,6 +301,19 @@ describe('what fits beside the send', () => {
       '<stopped-message number="2" images="none" omitted-images="1">\nlook\n'
     )
     expect(fitted.frame).not.toContain('not included')
+  })
+
+  it('caps carried images for every agent, a later message over the cap waiting whole', async () => {
+    const images = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) => image(`${prefix}${index}.png`))
+    const half = STOPPED_HISTORY_MAX_IMAGES / 2 + 1
+    const fitted = (await fit([
+      owed('a', ...images('a', half), text('first')),
+      owed('b', ...images('b', half), text('second'))
+    ]).result)!
+    expect(fitted.carries).toEqual(['a'])
+    expect(fitted.images).toHaveLength(half)
+    expect(fitted.frame).toContain('1 earlier stopped message is not included')
   })
 
   it('carries nothing when the send leaves no room for the frame itself', async () => {

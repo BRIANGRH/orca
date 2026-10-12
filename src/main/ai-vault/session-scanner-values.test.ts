@@ -11,6 +11,7 @@ import {
   normalizePreviewText,
   normalizeTitleText
 } from './session-scanner-values'
+import { CARRIED_HISTORY_MAX_LEADING_ITEMS } from './session-scanner-carried-history-images'
 
 describe('AI Vault session scanner text values', () => {
   it('normalizes compact title text without surfacing hidden context blocks', () => {
@@ -54,7 +55,7 @@ describe('AI Vault session scanner text values', () => {
     expect(result?.endsWith('...')).toBe(true)
   })
 
-  it('stops reading preview array items after the bounded display text is settled', () => {
+  it('stops reading preview array items past the bounded frame lookahead once the display text is settled', () => {
     const unreadItem = {}
     Object.defineProperty(unreadItem, 'text', {
       get() {
@@ -64,6 +65,11 @@ describe('AI Vault session scanner text values', () => {
 
     const result = extractPreviewContentText([
       { type: 'text', text: 'Visible preview '.repeat(30) },
+      // The search for a carried-history frame reads this many leading items, and no more.
+      ...Array.from({ length: CARRIED_HISTORY_MAX_LEADING_ITEMS }, () => ({
+        type: 'text',
+        text: 'x'
+      })),
       unreadItem
     ])
     const normalizedPreview = Array.from({ length: 30 }, () => 'Visible preview').join(' ')

@@ -1,7 +1,7 @@
 import { sliceAtCodeUnitLimit } from '../../shared/surrogate-safe-text-slice'
 import { withoutNativeChatVisualDirectiveLines } from '../../shared/native-chat-visual-directive'
 import { withoutStoppedHistoryFrame } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
-import { withoutCarriedHistoryImageLabels } from './session-scanner-carried-history-images'
+import { withoutCarriedHistoryImages } from './session-scanner-carried-history-images'
 
 export { sliceAtCodeUnitLimit }
 
@@ -82,7 +82,7 @@ function normalizeContentText(
   }
 
   const builder = createTextBuilder(limit)
-  for (const item of withoutCarriedHistoryImageLabels(value)) {
+  for (const item of withoutCarriedHistoryImages(value)) {
     const text = contentItemText(item)
     if (text === null) {
       continue

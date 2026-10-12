@@ -14,6 +14,7 @@ import {
 
 // Carried history stays a small part of any model's context.
 export const STOPPED_HISTORY_MAX_CHARS = 64_000
+export const STOPPED_HISTORY_MAX_IMAGES = 20
 
 /** An amount per admission limit, keyed by the adapter's own names; a missing key costs nothing. */
 export type StoppedHistoryCost = Readonly<Record<string, number>>
@@ -132,7 +133,11 @@ export async function fitStoppedHistory<TImage>(
   const { owed } = input
   const textCost = (text: string): StoppedHistoryCost =>
     plus(input.textCost(text), { stoppedHistoryChars: text.length })
-  const startingRoom = { ...input.room, stoppedHistoryChars: STOPPED_HISTORY_MAX_CHARS }
+  const startingRoom = {
+    ...input.room,
+    stoppedHistoryChars: STOPPED_HISTORY_MAX_CHARS,
+    stoppedHistoryImages: STOPPED_HISTORY_MAX_IMAGES
+  }
   const historyImages = owed.reduce((sum, entry) => sum + imagesOf(entry).length, 0)
   // The frame around the elements at its longest: every count and image number at its widest.
   const skeleton = stoppedHistoryFrame({
@@ -176,7 +181,7 @@ export async function fitStoppedHistory<TImage>(
         omittedImages: read.refused
       })
       const cost = read.read.reduce(
-        (sum, item) => plus(sum, item.cost),
+        (sum, item) => plus(sum, plus(item.cost, { stoppedHistoryImages: 1 })),
         textCost(stoppedHistoryElementSpan(text))
       )
       if (fits(cost, room)) {
