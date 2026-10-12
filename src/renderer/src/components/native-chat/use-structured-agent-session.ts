@@ -63,6 +63,8 @@ export function useStructuredAgentSession(args: {
   queueFollowUps?: boolean
   /** The host says a person's Stop is still ending this session's work. */
   hostStopping?: boolean
+  /** The option values the host's status carries; a change re-reads the chat's options. */
+  hostOptionStamp?: string
   /** The host's rewind latch and what follows a message returned by a rewind. */
   rewind?: NativeChatRewindHost
 }) {
@@ -115,6 +117,7 @@ export function useStructuredAgentSession(args: {
     providerVisible,
     providerStarting,
     ...(args.providerRunning ? { providerRunning: true } : {}),
+    ...(args.hostOptionStamp ? { hostOptionStamp: args.hostOptionStamp } : {}),
     fence: state.fence,
     turnId: transportState.turnId,
     unloadedTurnRevisions: state.unloadedTurnRevisions,

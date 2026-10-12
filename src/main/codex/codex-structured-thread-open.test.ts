@@ -5,7 +5,7 @@ import {
   openCodexAppServerConnection,
   type CodexAppServerConnection
 } from './codex-app-server-connection'
-import { codexStructuredPermissionPolicyForSettings } from './codex-structured-permission-policy'
+import { codexStructuredPermissionPolicy } from './codex-structured-permission-policy'
 import { openCodexThread } from './codex-structured-thread-open'
 
 function connectionFor(
@@ -20,10 +20,7 @@ describe('openCodexThread', () => {
       thread: { id: method === 'thread/start' ? 'thread-created' : 'thread-existing' }
     }))
     const connection = connectionFor(request)
-    const permissionPolicy = {
-      approvalPolicy: 'never' as const,
-      sandbox: 'danger-full-access' as const
-    }
+    const permissionPolicy = codexStructuredPermissionPolicy('full-access')
 
     await openCodexThread(
       connection,
@@ -39,7 +36,12 @@ describe('openCodexThread', () => {
     expect(request).toHaveBeenNthCalledWith(
       1,
       'thread/start',
-      { cwd: '/workspace', approvalPolicy: 'never', sandbox: 'danger-full-access' },
+      {
+        cwd: '/workspace',
+        approvalPolicy: 'never',
+        sandbox: 'danger-full-access',
+        approvalsReviewer: 'user'
+      },
       { timeoutMs: 2_000 }
     )
     expect(request).toHaveBeenNthCalledWith(
@@ -50,23 +52,21 @@ describe('openCodexThread', () => {
         cwd: '/workspace',
         approvalPolicy: 'never',
         sandbox: 'danger-full-access',
+        approvalsReviewer: 'user',
         excludeTurns: true
       },
       { timeoutMs: 2_000 }
     )
   })
 
-  // The regression this pins: Manual used to resolve to no policy at all, and the params below
-  // spread it — so neither field was sent and app-server fell back to the config.toml of the
-  // home Orca mirrors from the user's ~/.codex. With `approval_policy = "never"` there, a Manual
-  // session never prompted; a resume separately inherits the policy it was last started with.
-  it('sends Manual as an explicit policy on resume, not as absent fields', async () => {
+  // The regression this pins: an omitted policy falls back to the config.toml of the home Orca
+  // mirrors from the user's ~/.codex, and a resume inherits the policy it last ran with. With
+  // `approval_policy = "never"` there, an Ask chat would never prompt.
+  it('sends Ask as an explicit policy on resume, not as absent fields', async () => {
     const request = vi.fn(async (_method: string, _params?: Record<string, unknown>) => ({
       thread: { id: 'thread-existing' }
     }))
-    const permissionPolicy = codexStructuredPermissionPolicyForSettings({
-      agentDefaultArgs: { codex: '' }
-    })
+    const permissionPolicy = codexStructuredPermissionPolicy('ask')
 
     await openCodexThread(
       connectionFor(request),
@@ -75,9 +75,16 @@ describe('openCodexThread', () => {
     )
 
     const params = request.mock.calls[0]?.[1] ?? {}
-    expect(params).toMatchObject({ approvalPolicy: 'on-request', sandbox: 'workspace-write' })
-    // Absence is the bug, so assert the keys are carried, not merely that they are not Yolo.
-    expect(Object.keys(params)).toEqual(expect.arrayContaining(['approvalPolicy', 'sandbox']))
+    expect(params).toMatchObject({
+      approvalPolicy: 'on-request',
+      sandbox: 'workspace-write',
+      approvalsReviewer: 'user'
+    })
+    // Absence is the bug, so assert the keys are carried, not merely that they are not Full access.
+    expect(Object.keys(params)).toEqual(
+      expect.arrayContaining(['approvalPolicy', 'sandbox', 'approvalsReviewer'])
+    )
+    expect(params).not.toHaveProperty('sandboxPolicy')
   })
 
   it('preserves an explicitly reported service tier, including Standard', async () => {

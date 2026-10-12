@@ -4,11 +4,12 @@ import { CodexAppServerRequestError } from './codex-app-server-request-error'
 import { CodexAppServerTimeoutError } from './codex-app-server-session'
 import { acquired, fakeCodex, THREAD_ID } from './codex-structured-session-adapter-fixture'
 import { CODEX_VISUALS_SETUP_BUDGET_MS, setUpCodexVisualsSkill } from './codex-structured-visuals'
+import { codexStructuredPermissionPolicy } from './codex-structured-permission-policy'
 
 const VISUALS: NativeChatVisualsLaunch = {
   skill: { pluginDir: '/app/native-chat-visuals', skillsRoot: '/app/native-chat-visuals/skills' }
 }
-const MANUAL = { approvalPolicy: 'on-request', sandbox: 'workspace-write' } as const
+const MANUAL = codexStructuredPermissionPolicy('ask')
 
 type Call = { method: string; params?: Record<string, unknown>; timeoutMs?: number }
 

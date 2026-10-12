@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDefaultSettings } from '../../../../shared/constants'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import { ChatSettingsSection } from './ChatSettingsSection'
+import { TooltipProvider } from '../ui/tooltip'
 import { ActiveSettingsSectionProvider } from './SettingsSection'
 import { getChatAppearanceSearchEntries } from './chat-appearance-search'
 import { getChatNamingSearchEntry } from './chat-naming-search'
@@ -72,7 +73,7 @@ function renderChat(
       />
     </ActiveSettingsSectionProvider>
   )
-  return { ...render(element()), element, updateSettings }
+  return { ...render(element(), { wrapper: TooltipProvider }), element, updateSettings }
 }
 
 describe('Chat settings page', () => {
