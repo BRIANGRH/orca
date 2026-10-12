@@ -3,16 +3,15 @@
 // A child is live from its `task_started` until its own terminal `task_updated` or
 // `task_notification`; nothing else ends it. A roster (`background_tasks_changed`), a turn ending
 // or a spawn call returning is the parent's view of the child, not the child's, and the CLI sends
-// every child its own terminal frame, so none of them settles one. When Orca ends the session and
-// proves the close, what is still live is stopped (`stopLive`); any other end leaves it for the
-// host to settle as unknown. A live child blocked on a permission request reads waiting; no task
+// every child its own terminal frame, so none of them settles one. When the session ends, however
+// it ends, the host settles what is still live as unknown. A live child blocked on a permission request reads waiting; no task
 // frame says so, so the caller hands over which children a request blocks. Edges wait here until
 // the frame is journaled, then take the host clock.
 
 import type {
   AgentChildWorkKind,
   AgentChildWorkOperation,
-  AgentChildWorkOutcomeBasis
+  AgentChildWorkOutcome
 } from '../../shared/agent-status-child-work'
 import type {
   AgentChildWorkEvidence,
@@ -86,8 +85,11 @@ function observation(
 
 export class ClaudeChildWorkDecoder {
   private readonly live = new Map<string, DecodedClaudeTask>()
-  /** Ended task ids, with the spawn call each ended under. */
-  private readonly ended = new Map<string, string | undefined>()
+  /** Ended task ids, with the spawn call each ended under and how. */
+  private readonly ended = new Map<
+    string,
+    { run: string | undefined; outcome: AgentChildWorkOutcome }
+  >()
   /** The children a pending permission request blocks, as the caller last derived them. */
   private waiting: ReadonlySet<string> = new Set()
   private pending: PendingEdge[] = []
@@ -133,14 +135,6 @@ export class ClaudeChildWorkDecoder {
     }
   }
 
-  /** Orca ended the session and proved the close: what still ran is stopped. The
-   *  ending is Orca's, not the child's, so a frame of the child's own still replaces it. */
-  stopLive(): void {
-    for (const id of this.live.keys()) {
-      this.end(id, 'stopped', { basis: 'stop-acknowledged' })
-    }
-  }
-
   /** The provider session is gone: the host settles what it still holds live. */
   clear(): void {
     this.live.clear()
@@ -162,9 +156,12 @@ export class ClaudeChildWorkDecoder {
     }
     const toolUseId = taskAliasId(message.tool_use_id)
     const existing = this.live.get(id)
-    const restart = !existing && this.ended.has(id)
-    // A start under the spawn call a run ended with is that run's late start, not a new run.
-    if (restart && toolUseId !== undefined && this.ended.get(id) === toolUseId) {
+    const ended = existing ? undefined : this.ended.get(id)
+    const restart = ended !== undefined
+    // Under the spawn call a run ended with, a start after it completed is that run waking (the
+    // CLI ends a helper's turn while work it started runs, then resumes it when that work ends);
+    // after any other ending it is the ended run's late start.
+    if (ended?.run !== undefined && ended.run === toolUseId && ended.outcome !== 'succeeded') {
       return
     }
     const kind = startedTaskKind(message)
@@ -264,20 +261,19 @@ export class ClaudeChildWorkDecoder {
       runId?: string
       lastMessage?: string
       totalTokens?: number
-      basis?: AgentChildWorkOutcomeBasis
     }
   ): void {
     const task = this.live.get(id)
     this.live.delete(id)
+    const outcome = claudeChildWorkOutcome(status)
     this.ended.delete(id)
-    this.ended.set(id, reported.runId ?? task?.toolUseId)
+    this.ended.set(id, { run: reported.runId ?? task?.toolUseId, outcome })
     if (this.ended.size > MAX_ENDED_TASKS) {
       const [oldest] = this.ended.keys()
       if (oldest !== undefined) {
         this.ended.delete(oldest)
       }
     }
-    const outcome = claudeChildWorkOutcome(status)
     this.pending.push((observedAt) => ({
       type: 'ended',
       observedAt,
@@ -287,7 +283,6 @@ export class ClaudeChildWorkDecoder {
         ...(reported.runId !== undefined ? { runId: reported.runId } : {})
       },
       outcome,
-      ...(reported.basis ? { basis: reported.basis } : {}),
       ...(reported.lastMessage ? { lastMessage: reported.lastMessage } : {}),
       ...(reported.totalTokens !== undefined ? { totalTokens: reported.totalTokens } : {})
     }))

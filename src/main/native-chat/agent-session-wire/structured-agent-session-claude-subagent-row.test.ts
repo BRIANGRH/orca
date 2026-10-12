@@ -14,6 +14,7 @@ import { isSubagentBlock } from '../../../shared/native-chat-types'
 import { activeStructuredAgentSessionTurnId } from '../../../shared/structured-agent-session-live-turn'
 import { acpChildWorkStatusSink } from '../../acp/acp-structured-child-work.test-support'
 import { RESUMED_BY_MESSAGE } from '../../claude/claude-captured-task-frames.test-fixture'
+import { WAKES_AFTER_ITS_SHELL } from '../../claude/claude-captured-wake-frames.test-fixture'
 import { ClaudeStructuredSessionAdapter } from '../../claude/claude-structured-session-adapter'
 import {
   claudeStartupSettled,
@@ -45,9 +46,12 @@ let adapter: ClaudeStructuredSessionAdapter
 let store: AgentSessionRecordStore
 let claude: ReturnType<typeof fakeClaude>
 let records: ReturnType<typeof acpChildWorkStatusSink>
+/** The host's clock, which stamps every child's start and end. */
+let clock = NOW
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'orca-claude-subagent-row-'))
+  clock = NOW
   resetHostTestOperationIds()
   const log = recordingStructuredAgentSessionLogger()
   claude = fakeClaude({ replayUuid: null })
@@ -75,7 +79,7 @@ beforeEach(async () => {
       host.publishChildWorkEvidence(sessionId, evidence),
     openConnection: claude.openConnection,
     readProcessStartTime: async () => 1_700_000_000_000,
-    now: () => NOW
+    now: () => clock
   })
   store = await openTestAgentSessionRecordStore(root)
   records = acpChildWorkStatusSink()
@@ -89,7 +93,7 @@ beforeEach(async () => {
     logger: log.logger,
     // The host's child records live in a real hook server's store, as in production.
     statusSink: records.sink,
-    now: () => NOW
+    now: () => clock
   })
   const params = hostTestAttachParams(null, {
     provider: 'claude',
@@ -234,4 +238,63 @@ it("ends the agent from the strip's Stop when the store had no room for its help
   await expect(stopStrip()).resolves.toMatchObject({ ok: true, value: { cancelled: true } })
   expect(connection.closed).toBe(true)
   await eventually(() => expect(strip()?.incomplete).toBeUndefined())
+})
+
+it('keeps a helper working while its own shell runs and through its wake-up, ending on its answer', async () => {
+  const connection = claude.connections[0]!
+  await sendAndEcho(connection, 'Sleep in the background.')
+  const start = clock
+  let next = 0
+  const replay = async (until: number) => {
+    for (; WAKES_AFTER_ITS_SHELL[next] && WAKES_AFTER_ITS_SHELL[next]!.at <= until; next++) {
+      const captured = WAKES_AFTER_ITS_SHELL[next]!
+      clock = start + captured.at
+      frame(connection, { uuid: `wake-${next}`, ...captured.frame })
+    }
+    await host.flushStreamedEvents(SESSION)
+  }
+  const helper = async () => (await savedRows()).find(({ id }) => id === 'agent-1')
+  const strip = () =>
+    host['backgroundTasks'].read(SESSION)?.children?.map((child) => child.providerId) ?? []
+
+  // The CLI calls the helper completed while the shell it started runs on.
+  await replay(11_913)
+  await eventually(async () => expect(await helper()).toMatchObject({ state: 'working' }))
+  expect(strip()).toEqual(['agent-1', 'shell-1'])
+
+  // The shell ends, and the CLI starts the same run again under its spawn call.
+  await replay(44_460)
+  await eventually(async () => expect(await helper()).toMatchObject({ state: 'working' }))
+  expect(strip()).toEqual(['agent-1'])
+
+  await replay(46_199)
+  await eventually(async () =>
+    expect(await helper()).toMatchObject({
+      state: 'completed',
+      tokens: 18_181,
+      startedAt: start + 15,
+      // Its own end, not its first turn's, sets how long it ran.
+      settledAt: start + 46_198
+    })
+  )
+  expect(strip()).toEqual([])
+  // One saved row for the helper, revised in place across both runs.
+  expect((await savedRows()).filter(({ id }) => id === 'agent-1')).toHaveLength(1)
+})
+
+it('settles a helper still running when its session closes as unverifiable, claiming no Stop', async () => {
+  const connection = claude.connections[0]!
+  await sendAndEcho(connection, 'Run it in the background.')
+  for (const [index, captured] of RESUMED_BY_MESSAGE.filter(({ at }) => at <= 4_765).entries()) {
+    frame(connection, { uuid: `launch-${index}`, ...captured.frame })
+  }
+  await eventually(async () =>
+    expect(await savedRows()).toEqual([expect.objectContaining({ state: 'working' })])
+  )
+  await adapter.closeSession(SESSION)
+  expect(connection.closed).toBe(true)
+  await eventually(async () =>
+    expect(await savedRows()).toEqual([expect.objectContaining({ state: 'unverifiable' })])
+  )
+  expect((await savedRows())[0]).not.toHaveProperty('outcomeBasis')
 })

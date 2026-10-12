@@ -147,6 +147,44 @@ describe("each subagent's saved row", () => {
     })
   })
 
+  it('reads a helper that finished while its own shell runs as working, as the strip does', async () => {
+    const r = await rig()
+    const finished = child({
+      membership: 'settled',
+      state: 'done',
+      outcome: 'succeeded',
+      settledAt: 150
+    })
+    const shell = (overrides: Partial<AgentChildWorkRowView>) =>
+      child({
+        id: 'record-shell',
+        providerId: 'shell-1',
+        kind: 'command',
+        parentChildWorkId: 'record-1',
+        ...overrides
+      })
+    const helper = () => r.saved().find(({ block }) => block.id === 'agent-1')?.block
+    await r.report([finished, shell({})])
+    expect(helper()).toMatchObject({ state: 'working' })
+    expect(helper()).not.toHaveProperty('settledAt')
+
+    // The shell ends and no wake-up follows: the helper reads its own ending again.
+    await r.report([
+      finished,
+      shell({ membership: 'settled', state: 'done', outcome: 'succeeded', settledAt: 400 })
+    ])
+    expect(helper()).toMatchObject({ state: 'completed', settledAt: 150 })
+
+    // The session ends while the shell runs: the shell's unknown ending is not the helper's.
+    await r.report([finished, shell({})])
+    expect(helper()).toMatchObject({ state: 'working' })
+    await r.report([
+      finished,
+      shell({ membership: 'settled', state: 'done', outcome: 'unknown', settledAt: 500 })
+    ])
+    expect(helper()).toMatchObject({ state: 'completed', settledAt: 150 })
+  })
+
   it('writes nothing for a record its row already says', async () => {
     const r = await rig()
     await r.report([child()])

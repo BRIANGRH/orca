@@ -67,12 +67,13 @@ async function droppedFromRoster() {
     )
     return outcome
   }
-  return { run, records, blocked, stopCalls, stop }
+  const basis = () => host.getStructuredChildWork(parent).map((record) => record.outcomeBasis)
+  return { run, records, blocked, stopCalls, stop, basis }
 }
 
 describe('a background Stop acts on the host child records', () => {
   it("stops the row's own task, which the records keep after the roster dropped it", async () => {
-    const { records, blocked, stopCalls, stop } = await droppedFromRoster()
+    const { records, blocked, stopCalls, stop, basis } = await droppedFromRoster()
 
     const outcome = await stop('agent-1')
 
@@ -80,17 +81,19 @@ describe('a background Stop acts on the host child records', () => {
     expect(stopCalls()).toEqual([{ subtype: 'stop_task', params: { taskId: 'agent-1' } }])
     // The CLI acknowledges a task it no longer runs with no frame: the acknowledgement ends it.
     expect(records()).toMatchObject([{ membership: 'settled', outcome: 'cancelled' }])
+    expect(basis()).toEqual(['stop-acknowledged'])
     expect(blocked()).toBeNull()
   })
 
   it('stops every task the strip offers a stop when none is named', async () => {
-    const { records, blocked, stopCalls, stop } = await droppedFromRoster()
+    const { records, blocked, stopCalls, stop, basis } = await droppedFromRoster()
 
     const outcome = await stop()
 
     expect(outcome).toMatchObject({ cancelled: true })
     expect(stopCalls()).toEqual([{ subtype: 'stop_task', params: { taskId: 'agent-1' } }])
     expect(records()).toMatchObject([{ membership: 'settled', outcome: 'cancelled' }])
+    expect(basis()).toEqual(['stop-acknowledged'])
     expect(blocked()).toBeNull()
   })
 

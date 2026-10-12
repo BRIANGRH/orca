@@ -18,6 +18,7 @@ import type {
   NativeChatSubagentBlock,
   NativeChatSubagentState
 } from '../../../shared/native-chat-types'
+import { structuredRunningChildWork } from '../../../shared/agent-child-work-listing'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import {
   journaledSubagent,
@@ -58,6 +59,8 @@ export class StructuredAgentSessionSubagentRows {
     }
     const queued = this.queued.get(sessionId) ?? new Map<string, Row>()
     const providerIds = new Map(children.map((child) => [child.id, child.providerId]))
+    // The strip's rule: a child that finished while work it started runs is still running.
+    const running = new Set(structuredRunningChildWork(children).map((child) => child.id))
     // A full journal pass, so read once, and only for a first row: a revision keeps the scope
     // its first write froze.
     let live: AgentJournalTurnScope | undefined
@@ -73,7 +76,7 @@ export class StructuredAgentSessionSubagentRows {
         (saved ? AGENT_JOURNAL_THREAD_SCOPE : (live ??= journal.liveTurnScope()))
       const parentId =
         child.parentChildWorkId === undefined ? undefined : providerIds.get(child.parentChildWorkId)
-      const block = subagentRowBlock(child, id, parentId, saved, turnScope)
+      const block = subagentRowBlock(child, id, parentId, saved, turnScope, running.has(child.id))
       if (!saved || rowText(saved) !== rowText(block)) {
         queued.set(id, { block, turnScope })
       }
@@ -127,10 +130,11 @@ function subagentRowBlock(
   id: string,
   parentId: string | undefined,
   saved: NativeChatSubagentBlock | null,
-  scope: AgentJournalTurnScope
+  scope: AgentJournalTurnScope,
+  running: boolean
 ): NativeChatSubagentBlock {
   const run = child.invocation.invocationId
-  const state = subagentState(child)
+  const state = running ? (child.state === 'idle' ? 'idle' : 'working') : subagentEnding(child)
   const tokens = child.totalTokens ?? saved?.tokens
   const parent = parentId ?? saved?.parentId
   // A new run starts its clock when the host first saw it; the first run when the child was.
@@ -151,17 +155,12 @@ function subagentRowBlock(
     groupId: saved?.groupId ?? (scope.kind === 'turn' ? scope.turnItemId : THREAD_GROUP),
     ...(parent !== undefined ? { parentId: parent } : {}),
     run,
-    ...(child.membership === 'settled' && child.outcomeBasis !== undefined
-      ? { outcomeBasis: child.outcomeBasis }
-      : {}),
+    ...(!running && child.outcomeBasis !== undefined ? { outcomeBasis: child.outcomeBasis } : {}),
     ...(child.residency === 'background' ? { background: true as const } : {})
   }
 }
 
-function subagentState(child: AgentChildWorkRowView): NativeChatSubagentState {
-  if (child.membership === 'live') {
-    return child.state === 'idle' ? 'idle' : 'working'
-  }
+function subagentEnding(child: AgentChildWorkRowView): NativeChatSubagentState {
   switch (child.outcome) {
     case 'succeeded':
       return 'completed'
