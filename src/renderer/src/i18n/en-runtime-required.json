@@ -1903,9 +1903,6 @@
           "noRepos": "Add a Git project under this folder to attach GitHub or GitLab tasks.",
           "sourceProject": "Task Source"
         },
-        "HostRemoveDialog": {
-          "wslHost": "Removes {{value0}} from Orca and stops Orca’s server in that distro. Files in the distro are untouched."
-        },
         "HostSectionHeaderMenu": {
           "63f36455cc": "Reconnect"
         },

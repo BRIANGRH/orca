@@ -171,7 +171,7 @@ export function HostRemoveDialog({
   const description =
     target.kind === 'wsl'
       ? translate(
-          'auto.components.sidebar.HostRemoveDialog.wslHost',
+          'auto.components.sidebar.HostRemoveDialog.wslHostEndsTerminals',
           'Removes {{value0}} from Orca, ends its open terminals and stops Orca’s server in that distro. Files in the distro are untouched.',
           { value0: label }
         )
