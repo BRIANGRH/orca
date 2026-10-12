@@ -5,6 +5,7 @@ import { stripGrokUserQueryEnvelope } from './session-scanner-grok-user-text'
 // it here would close an import cycle.
 import { sliceAtCodeUnitLimit } from './session-scanner-text-normalization'
 import { withoutStoppedHistoryFrame } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
+import { withoutCarriedHistoryImageLabels } from './session-scanner-carried-history-images'
 
 // Why: safety only for pathological multi-MB pastes. Copy path must not use the
 // 220-char list preview cap.
@@ -39,7 +40,7 @@ export function extractFullFirstUserPromptText(value: unknown): string | null {
   }
 
   const parts: string[] = []
-  for (const item of value) {
+  for (const item of withoutCarriedHistoryImageLabels(value)) {
     const text = firstUserPromptContentItemText(item)
     if (text != null) {
       parts.push(text)

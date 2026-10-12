@@ -6,6 +6,7 @@ import {
   createCodexSessionResumeState,
   parseCodexSessionFile
 } from './session-scanner-codex-parser'
+import { withFullFirstUserPromptCapture } from './session-scanner-first-user-prompt-capture'
 import type { TranscriptMessage } from './session-transcript-consumers'
 import {
   stoppedHistoryElement,
@@ -289,6 +290,131 @@ describe('parseCodexSessionFile', () => {
 
     expect(session?.title).toBe('What did I send?')
     expect(session?.lastUserPrompt).toBe('What did I send?')
+  })
+
+  it('titles a send whose carried history images Codex labeled before the frame by its own words', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-ai-vault-codex-stopped-images-'))
+    tempRoots.push(root)
+    const sessionPath = join(root, 'sessions', '2026', '07', '21', 'rollout-stopped-images.jsonl')
+    await mkdir(dirname(sessionPath), { recursive: true })
+    const stopped = stoppedHistoryFrame({
+      elements: [
+        stoppedHistoryElement({
+          number: 1,
+          text: 'compare these screenshots',
+          images: { first: 1, count: 2 },
+          omittedImages: 0
+        })
+      ],
+      notIncluded: 0,
+      shortened: 0,
+      sendImages: { first: 3, count: 1 }
+    })
+    const attachments = `/Users/example/Library/Application Support/Orca/attachments/${'session-0123456789abcdef/'.repeat(4)}`
+    // How Codex records each localImage input: a labeled opener with the path, the image, a closer.
+    const localImage = (number: number, name: string) => [
+      {
+        type: 'input_text',
+        text: `<image name=[Image #${number}] path="${attachments}${name}">`
+      },
+      { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+      { type: 'input_text', text: '</image>' }
+    ]
+    await writeFile(
+      sessionPath,
+      jsonLines([
+        {
+          timestamp: '2026-07-21T10:00:00.000Z',
+          type: 'session_meta',
+          payload: { id: 'stopped-images-session', cwd: '/repo/app' }
+        },
+        {
+          timestamp: '2026-07-21T10:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              ...localImage(1, 'before.png'),
+              ...localImage(2, 'after.png'),
+              { type: 'input_text', text: stopped },
+              { type: 'input_text', text: 'Which one is right?' },
+              ...localImage(3, 'mine.png')
+            ]
+          }
+        }
+      ])
+    )
+
+    const sessionStat = await stat(sessionPath)
+    const session = await withFullFirstUserPromptCapture(() =>
+      parseCodexSessionFile(
+        {
+          path: sessionPath,
+          mtimeMs: sessionStat.mtimeMs,
+          modifiedAt: sessionStat.mtime.toISOString()
+        },
+        'darwin',
+        root
+      )
+    )
+
+    // The send's own image keeps its label, as any image send's title and preview do.
+    const ownWords = /^Which one is right\? <image name=\[Image #3\]/
+    expect(session?.title).toMatch(ownWords)
+    expect(session?.previewMessages[0]?.text).toMatch(ownWords)
+    expect(session?.firstUserPrompt).toBe(
+      `Which one is right?\n<image name=[Image #3] path="${attachments}mine.png">\n</image>`
+    )
+  })
+
+  it('keeps image labels when no stopped-history frame follows them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-ai-vault-codex-plain-images-'))
+    tempRoots.push(root)
+    const sessionPath = join(root, 'sessions', '2026', '07', '21', 'rollout-plain-images.jsonl')
+    await mkdir(dirname(sessionPath), { recursive: true })
+    await writeFile(
+      sessionPath,
+      jsonLines([
+        {
+          timestamp: '2026-07-21T10:00:00.000Z',
+          type: 'session_meta',
+          payload: { id: 'plain-images-session', cwd: '/repo/app' }
+        },
+        {
+          timestamp: '2026-07-21T10:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: '<image name=[Image #1] path="/tmp/shot.png">'
+              },
+              { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+              { type: 'input_text', text: '</image>' },
+              { type: 'input_text', text: 'What is this?' }
+            ]
+          }
+        }
+      ])
+    )
+
+    const sessionStat = await stat(sessionPath)
+    const session = await parseCodexSessionFile(
+      {
+        path: sessionPath,
+        mtimeMs: sessionStat.mtimeMs,
+        modifiedAt: sessionStat.mtime.toISOString()
+      },
+      'darwin',
+      root
+    )
+
+    expect(session?.title).toBe(
+      '<image name=[Image #1] path="/tmp/shot.png"> </image> What is this?'
+    )
   })
 
   it('does not double-count usage when token count formats switch', async () => {
