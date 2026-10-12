@@ -272,8 +272,11 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
     return agentLaunchPlatformForScope(this.requireStore(), scope)
   }
 
-  protected resolveAgentLaunchRuntime(scope: TerminalWorkspaceLaunchScope): AgentLaunchRuntime {
-    return resolveAgentLaunchRuntime(this.requireStore(), scope, undefined)
+  protected resolveAgentLaunchRuntime(
+    scope: TerminalWorkspaceLaunchScope,
+    openCodeModelPick = false
+  ): AgentLaunchRuntime {
+    return resolveAgentLaunchRuntime(this.requireStore(), scope, undefined, openCodeModelPick)
   }
 
   /** A startup's fact: the workspace it starts in, else (a create, before it exists) the repo. */

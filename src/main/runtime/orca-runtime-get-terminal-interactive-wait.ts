@@ -251,7 +251,7 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
     // The launch's own runtime, so the probe checks the machine the agent will run on.
     let launchRuntime
     try {
-      launchRuntime = resolveAgentLaunchRuntime(store, workspace, undefined)
+      launchRuntime = resolveAgentLaunchRuntime(store, workspace, undefined, true)
     } catch {
       return false
     }

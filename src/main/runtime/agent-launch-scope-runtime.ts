@@ -5,6 +5,7 @@ import {
   type AgentLaunchRuntime
 } from '../../shared/agent-launch-runtime'
 import type { AgentStartupShell } from '../../shared/tui-agent-startup-shell'
+import type { TuiAgent } from '../../shared/tui-agent'
 import type { ProjectExecutionRuntimeResolution } from '../../shared/project-execution-runtime'
 import {
   resolveLocalLaunchScopeRuntime,
@@ -34,20 +35,32 @@ export function agentLaunchPlatformForScope(
 
 /**
  * The runtime an agent launched here runs in: the window's rule, except where main's host had no
- * runtime for this scope and the rule answers "Windows host". There it keeps main's spawn in the
- * Terminal shell, since an explicit Windows-host default can't be told from the shipped one.
- * TEMPORARY (reachable only for folders): removed by the WSL-shell default decision, STA-10231.
+ * runtime for this scope and the rule answers "Windows host", or the launch picks an OpenCode
+ * model. There it keeps main's spawn: the Terminal shell, since an explicit Windows-host default
+ * can't be told from the shipped one, and Windows for a model Orca can't yet verify inside WSL.
+ * TEMPORARY (reachable only for folders): removed by the WSL-shell default decision (STA-10231)
+ * and by verifying OpenCode models inside WSL.
  */
 export function agentLaunchProjectRuntime(
   store: LaunchScopeRuntimeStore,
-  scope: TerminalWorkspaceLaunchScope
+  scope: TerminalWorkspaceLaunchScope,
+  openCodeModelPick = false
 ): ProjectExecutionRuntimeResolution | undefined {
   const runtime = resolveLocalLaunchScopeRuntime(store, scope)
-  return runtime?.status === 'resolved' &&
-    runtime.runtime.kind === 'windows-host' &&
+  return (openCodeModelPick ||
+    (runtime?.status === 'resolved' && runtime.runtime.kind === 'windows-host')) &&
     !resolveLocalProjectRuntimeForWorktreeId(store, scope.id)
     ? undefined
     : runtime
+}
+
+/** Whether this launch picks an OpenCode model, which the host checks before it starts. */
+export function isOpenCodeModelPick(
+  agent: TuiAgent,
+  sessionOptions: Readonly<Record<string, unknown>> | undefined
+): boolean {
+  const model = sessionOptions?.model
+  return agent === 'opencode' && typeof model === 'string' && model.trim() !== ''
 }
 
 /** The one runtime fact for an agent launched into this workspace. Throws, as the spawn would,
@@ -55,7 +68,8 @@ export function agentLaunchProjectRuntime(
 export function resolveAgentLaunchRuntime(
   store: AgentLaunchRuntimeStore,
   scope: TerminalWorkspaceLaunchScope,
-  requestedShellOverride: string | undefined
+  requestedShellOverride: string | undefined,
+  openCodeModelPick = false
 ): AgentLaunchRuntime {
   if (scope.connectionId) {
     return {
@@ -63,7 +77,7 @@ export function resolveAgentLaunchRuntime(
       pty: { shellOverride: undefined, terminalWindowsWslDistro: null }
     }
   }
-  const projectRuntime = agentLaunchProjectRuntime(store, scope)
+  const projectRuntime = agentLaunchProjectRuntime(store, scope, openCodeModelPick)
   return {
     platform: executionRuntimePlatform(projectRuntime, scope.path, process.platform),
     pty: resolveLocalPtyOptions(store.getSettings(), projectRuntime, requestedShellOverride)

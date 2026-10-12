@@ -127,8 +127,7 @@ it('quotes for the shell the PTY gets, not a setting the runtime replaced', () =
   expect(agentLaunchQuotingShell(local)).toBe('powershell')
 })
 
-// TEMPORARY, removed by the WSL-shell default decision (STA-10231). Only folders reach it: main
-// finds no project runtime for a folder, while every local repo has a project.
+// TEMPORARY until STA-10231. Only folders reach it: every local repo has a project runtime.
 it.each([['follows the global default'], ['is set to Windows host', { kind: 'windows-host' }]])(
   "keeps a folder's WSL Terminal shell where its repo's project %s",
   (_name, project?: unknown) => {
@@ -150,3 +149,16 @@ it.each([['follows the global default'], ['is set to Windows host', { kind: 'win
     ])
   }
 )
+
+// TEMPORARY until OpenCode models are verified inside WSL: a model pick runs where main ran it.
+it('keeps an OpenCode model pick in a WSL folder on Windows, as main ran it', () => {
+  const wslFolder = store({ project: UBUNTU, repos: [repo(WIN)], folder: folder('C:\\work') })
+  const platform = (openCodeModelPick: boolean) =>
+    resolveAgentLaunchRuntime(
+      wslFolder,
+      scope('C:\\work', { folder: folder('C:\\work') }),
+      undefined,
+      openCodeModelPick
+    ).platform
+  expect([platform(true), platform(false)]).toEqual(['win32', 'linux'])
+})

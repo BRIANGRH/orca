@@ -27,6 +27,7 @@ import {
 import {
   agentLaunchPlatformForScope,
   agentLaunchProjectRuntime,
+  isOpenCodeModelPick,
   resolveAgentLaunchRuntime
 } from './agent-launch-scope-runtime'
 import { resolveQoderTerminalCommand } from './qoder-terminal-command-resolution'
@@ -72,6 +73,9 @@ export async function resolveAgentTerminalCreateOptions(
         })
       : null)
   const launchAgent = plannedAgent ?? opts.launchAgent
+  const openCodeModelPick = plannedAgent
+    ? isOpenCodeModelPick(plannedAgent, host.toSessionOptions(opts.launchPreferences))
+    : false
   // Before any early return: a host that cannot apply the requested shell must refuse rather than
   // spawn another one. Judged against the runtime this PTY's shell will come from.
   const shellRefusal = terminalShellOverrideRefusal({
@@ -81,7 +85,7 @@ export async function resolveAgentTerminalCreateOptions(
     projectRuntime:
       opts.shellOverride && store
         ? plannedAgent || opts.launchRuntime
-          ? agentLaunchProjectRuntime(store, workspace)
+          ? agentLaunchProjectRuntime(store, workspace, openCodeModelPick)
           : resolveLocalProjectRuntimeForWorktreeId(store, workspace.id)
         : undefined,
     cwd: resolveTerminalStartupCwd(workspace.path, opts.cwd) ?? workspace.path,
@@ -108,7 +112,9 @@ export async function resolveAgentTerminalCreateOptions(
   }
   const runtime =
     opts.launchRuntime ??
-    (plannedAgent ? resolveAgentLaunchRuntime(store, workspace, opts.shellOverride) : undefined)
+    (plannedAgent
+      ? resolveAgentLaunchRuntime(store, workspace, opts.shellOverride, openCodeModelPick)
+      : undefined)
   const launch =
     plannedAgent && runtime
       ? await buildRuntimeAgentTerminalStartupOptions(

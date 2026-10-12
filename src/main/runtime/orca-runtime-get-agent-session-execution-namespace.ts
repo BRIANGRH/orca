@@ -13,6 +13,7 @@ import { canonicalizeAgentSessionIdentity } from './agent-session-claim-identity
 import { isTuiAgentEnabled } from '../../shared/tui-agent-selection'
 import { buildAgentResumeStartupPlan } from '../../shared/tui-agent-startup'
 import { agentLaunchQuotingShell } from '../../shared/agent-launch-runtime'
+import { isOpenCodeModelPick } from './agent-launch-scope-runtime'
 import { OrchestrationError } from './orchestration/orchestration-error'
 import {
   resolveTuiAgentLaunchArgs,
@@ -125,7 +126,12 @@ export class OrcaRuntimeWithGetAgentSessionExecutionNamespace extends OrcaRuntim
     if (!isTuiAgentEnabled(request.agent, settings.disabledTuiAgents)) {
       throw new Error('Selected agent is disabled. Choose an enabled agent before resuming.')
     }
-    const launchRuntime = this.resolveAgentLaunchRuntime(workspace)
+    const sessionOptions = this.toAgentSessionOptions(request.launchPreferences)
+    // A resumed model-picked OpenCode session runs where it was created.
+    const launchRuntime = this.resolveAgentLaunchRuntime(
+      workspace,
+      isOpenCodeModelPick(request.agent, sessionOptions)
+    )
     const { platform } = launchRuntime
     const shell = agentLaunchQuotingShell(launchRuntime)
     // Why: `workspace.repo` is display metadata and may be a row from another host; the launch
@@ -141,7 +147,7 @@ export class OrcaRuntimeWithGetAgentSessionExecutionNamespace extends OrcaRuntim
           : resolveTuiAgentLaunchArgs(request.agent, settings.agentDefaultArgs),
       agentEnv: resolveTuiAgentLaunchEnv(request.agent, settings.agentDefaultEnv),
       ompResumeFilePath: request.ompResumeFilePath,
-      sessionOptions: this.toAgentSessionOptions(request.launchPreferences),
+      sessionOptions,
       sessionOptionsOverrideAgentArgs: Boolean(request.launchPreferences),
       platform,
       shell,
