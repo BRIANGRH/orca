@@ -1210,6 +1210,20 @@
           "a05bcdaf57": "Agents View",
           "f63ea281e3": "Threaded left-sidebar feed for agent completions and blocking states.",
           "fb82ea1d7a": "Automatically materialize configured files or folders into newly created worktrees.",
+          "nativeChat": {
+            "resumeCopy": "When Orca quits or installs an update, chats that were working are automatically resumed when Orca is reopened.",
+            "resumeTitle": "Resume working chats automatically after a restart",
+            "resumeToggleLabel": "Toggle automatic resume after a restart",
+            "shellEnvCopy": "Codex and Claude chats start with every variable your login shell exports, the same as a terminal. Turn off to choose which ones they get.",
+            "shellEnvNameAdd": "Add",
+            "shellEnvNamePlaceholder": "Variable name",
+            "shellEnvNameRemove": "Remove {{value0}}",
+            "shellEnvNamesAlwaysPassed": "PATH, locale, and SSH_AUTH_SOCK are always passed. Applies the next time a chat starts or resumes.",
+            "shellEnvNamesEmpty": "No variables added yet.",
+            "shellEnvNamesLabel": "Variables to pass from your shell",
+            "shellEnvTitle": "Use your shell environment",
+            "shellEnvToggleLabel": "Toggle using your shell environment"
+          },
           "newWorktreeCardStyle": {
             "copy": "Preview updated worktree-card layout, metadata placement, card-display menu options, and status presentation."
           }
@@ -1706,7 +1720,8 @@
             "fa72e71f05": "agents",
             "fe5688b761": "sidebar",
             "nativeChat": {
-              "description": "Open supported new agents in Chat UI."
+              "description": "Open supported new agents in Chat UI.",
+              "queue": "queue"
             }
           }
         },

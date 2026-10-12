@@ -1,5 +1,6 @@
 import { translate } from '@/i18n/i18n'
 import { AppearanceChatSection } from './AppearanceChatSection'
+import { ChatBehaviorSetting } from './ChatBehaviorSetting'
 import { ChatNamingSetting } from './ChatNamingSetting'
 import { ChatPermissionSetting } from './ChatPermissionSetting'
 import { NativeChatInlineVisualsSetting } from './NativeChatInlineVisualsSetting'
@@ -12,6 +13,7 @@ import type { SettingsSearchEntry } from './settings-search'
 import { useAppStore } from '../../store'
 import { Card, CardContent } from '../ui/card'
 import { getChatAppearanceSearchEntries } from './chat-appearance-search'
+import { getChatBehaviorTitle } from './chat-behavior-search'
 
 export function ChatSettingsSection({
   settings,
@@ -40,6 +42,10 @@ export function ChatSettingsSection({
   }
   const title = translate('settings.appearance.chat.title', 'Chat')
   const appearanceTitle = translate('auto.components.settings.Settings.2b4474780a', 'Appearance')
+  const showAllBehavior = matchesSettingsSearch(query, [
+    { title },
+    { title: getChatBehaviorTitle() }
+  ])
   return (
     <SettingsSection
       id="chat"
@@ -80,6 +86,11 @@ export function ChatSettingsSection({
               forceVisible={matchesSettingsSearch(query, [{ title }])}
             />
           ) : null}
+          <ChatBehaviorSetting
+            settings={settings}
+            updateSettings={updateSettings}
+            forceVisible={showAllBehavior}
+          />
           {showDesktopOnlySettings ? (
             <ChatNamingSetting
               key={chatPromptDiscardSignal}
