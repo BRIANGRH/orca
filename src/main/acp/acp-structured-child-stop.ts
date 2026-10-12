@@ -2,10 +2,19 @@ import type { AcpStructuredSession } from './acp-structured-session'
 import type { AcpStructuredConnection } from './acp-structured-connection'
 import type { AcpChildStops, AcpDialect } from './acp-dialects/acp-dialect'
 import { AcpAgentError } from './acp-errors'
-import type { AgentSessionBackgroundTaskStops } from '../../shared/agent-child-work-stop-targets'
+import type {
+  AgentChildWorkStopAcknowledgement,
+  AgentSessionBackgroundTaskStops
+} from '../../shared/agent-child-work-stop-targets'
+import type { AgentChildWorkOutcome } from '../../shared/agent-status-child-work'
+import type { NativeChatSubagentState } from '../../shared/native-chat-types'
 import { acpBackgroundTaskStopId } from './acp-background-task-child-work'
 
-type ChildStopResult = { cancelled: boolean; stillRunning?: true }
+type ChildStopResult = {
+  cancelled: boolean
+  stillRunning?: true
+  acknowledged?: AgentChildWorkStopAcknowledgement
+}
 type SubagentStop = NonNullable<AcpDialect['subagentStop']>
 type BackgroundTaskStop = NonNullable<AcpDialect['backgroundTaskStop']>
 
@@ -69,11 +78,17 @@ export async function probeAcpChildStops(
   return { subagents, backgroundTasks }
 }
 
+/** The run's own ending, when the agent answered a stop of a subagent that had already finished. */
+const FINISHED_OUTCOMES: Partial<Record<NativeChatSubagentState, AgentChildWorkOutcome>> = {
+  completed: 'succeeded',
+  failed: 'failed',
+  stopped: 'cancelled'
+}
+
 async function stopAcpSubagent(
   session: AcpStructuredSession,
   control: SubagentStop,
-  id: string,
-  at: () => number
+  id: string
 ): Promise<ChildStopResult> {
   const request = control.request(session.lane.translator.providerSessionId, id)
   let value: unknown
@@ -87,10 +102,18 @@ async function stopAcpSubagent(
     throw error
   }
   const result = control.response(value, id)
-  if (result.state && result.state !== 'working') {
-    session.lane.apply(session.lane.translator.reconcileSubagent(id, result.state, at()))
+  const outcome =
+    result.state === undefined ? undefined : (FINISHED_OUTCOMES[result.state] ?? 'unknown')
+  if (result.state === 'working') {
+    return { cancelled: result.cancelled }
   }
-  return { cancelled: result.cancelled }
+  // Not found is no acceptance; an answer that names how the subagent finished is its own ending.
+  return result.cancelled || outcome !== undefined
+    ? {
+        cancelled: result.cancelled,
+        acknowledged: { taskId: id, ...(outcome !== undefined ? { outcome } : {}) }
+      }
+    : { cancelled: false }
 }
 
 async function stopAcpBackgroundTask(
@@ -125,9 +148,12 @@ async function stopAcpBackgroundTask(
 export async function stopAcpChildren(
   session: AcpStructuredSession,
   fence: number,
-  taskIds: readonly string[],
-  at: () => number
-): Promise<ChildStopResult> {
+  taskIds: readonly string[]
+): Promise<{
+  cancelled: boolean
+  stillRunning?: true
+  acknowledged: AgentChildWorkStopAcknowledgement[]
+}> {
   const subagentStop = session.childStops?.subagents ? session.spec.dialect.subagentStop : undefined
   const taskStop = session.childStops?.backgroundTasks
     ? session.spec.dialect.backgroundTaskStop
@@ -139,16 +165,20 @@ export async function stopAcpChildren(
   }
   let cancelled = false
   let stillRunning = false
+  const acknowledged: AgentChildWorkStopAcknowledgement[] = []
   for (const id of taskIds) {
     const taskId = acpBackgroundTaskStopId(id)
-    const result =
+    const result: ChildStopResult =
       taskId !== undefined && taskStop
         ? await stopAcpBackgroundTask(session, taskStop, taskId)
         : subagentStop
-          ? await stopAcpSubagent(session, subagentStop, id, at)
+          ? await stopAcpSubagent(session, subagentStop, id)
           : { cancelled: false }
     cancelled ||= result.cancelled
     stillRunning ||= result.stillRunning === true
+    if (result.acknowledged) {
+      acknowledged.push(result.acknowledged)
+    }
   }
-  return { cancelled, ...(stillRunning ? { stillRunning: true as const } : {}) }
+  return { cancelled, ...(stillRunning ? { stillRunning: true as const } : {}), acknowledged }
 }

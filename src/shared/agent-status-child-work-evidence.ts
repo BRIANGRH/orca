@@ -7,6 +7,8 @@
 
 import type { AgentChildWorkAliasKind } from './agent-status-child-work-alias'
 import type {
+  AgentChildWorkId,
+  AgentChildWorkInvocationFence,
   AgentChildWorkKind,
   AgentChildWorkOperation,
   AgentChildWorkOutcome,
@@ -75,6 +77,17 @@ export type AgentChildWorkEndedEvidence = {
   totalTokens?: number
 }
 
+/** The provider accepted a Stop of the run the host captured when it sent it. Settles that run
+ *  provisionally (`cancelled`, basis `stop-acknowledged`) unless it already ended; never a later
+ *  run. `outcome` is the run's own ending when the provider's answer named one. */
+export type AgentChildWorkStopAcknowledgedEvidence = {
+  type: 'stop-acknowledged'
+  observedAt: number
+  childWorkId: AgentChildWorkId
+  invocation: AgentChildWorkInvocationFence
+  outcome?: AgentChildWorkOutcome
+}
+
 /** The user's next turn began: the provider accepted their next send. A turn the provider opens
  *  on its own is not one. Settled children are kept, with their outcome, until then; a settled
  *  child that still owns live work, at any depth, stays so that work keeps its owners. */
@@ -98,5 +111,6 @@ export type AgentChildWorkEvidence =
   | AgentChildWorkOperationEvidence
   | AgentChildWorkEndedEvidence
   | AgentChildWorkRemovedEvidence
+  | AgentChildWorkStopAcknowledgedEvidence
   | AgentChildWorkTurnStartedEvidence
   | AgentChildWorkSessionEndedEvidence

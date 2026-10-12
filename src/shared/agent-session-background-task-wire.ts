@@ -55,6 +55,9 @@ export type AgentSessionBackgroundTaskState = {
    *  advertise `agent-session.background-task-child-views.v1` never receives a state whose only
    *  rows are settled: to it, as before, the roster is live work. */
   children?: AgentChildWorkView[]
+  /** The host refused some of this session's child work for room, so what is listed is not all
+   *  that runs; no row's absence means it ended. Lasts until the provider session ends. */
+  incomplete?: true
 }
 
 function backgroundTaskFieldsEqual(

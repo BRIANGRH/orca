@@ -91,6 +91,16 @@ describe('structuredSessionBackgroundTasksView', () => {
     }
   })
 
+  // Absence of a row never reads as idle when the host says some work went unrecorded.
+  it('keeps the strip and its Stop, monitoring, when the host could not record some work', () => {
+    expect(
+      structuredSessionBackgroundTasksView(
+        { state: 'monitoring', children: [], supportsTaskStop: true, incomplete: true },
+        null
+      )
+    ).toMatchObject({ show: true, isMonitoring: true, incomplete: true, supportsStopAll: true })
+  })
+
   it('reads live work beneath an idle session as monitoring, and a running turn as its own', () => {
     const roster = {
       state: 'monitoring' as const,
@@ -121,7 +131,8 @@ describe('structuredSessionBackgroundTasksView', () => {
       tasks,
       settledTasks: [],
       supportsStop: false,
-      supportsStopAll: true
+      supportsStopAll: true,
+      incomplete: false
     })
     expect(structuredSessionBackgroundTasksView(null, null)).toMatchObject({
       show: false,

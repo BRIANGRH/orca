@@ -30,14 +30,15 @@ import {
   taskUsageTotalTokens,
   terminalClaudeTaskRunState
 } from './claude-background-task-frames'
+import { isClaudeSubagentTask } from './claude-subagent-task-frames'
 import {
   claudeChildWorkOutcome,
   claudeTaskProgressFacts,
   type ClaudeTaskFacts
 } from './claude-child-work-evidence'
 
-/** Live children one session tracks, and the ended ids it remembers to recognise a restart. */
-const MAX_LIVE_TASKS = 256
+/** Ended ids remembered to recognise a restart. Live children take no bound here: refusing one
+ *  would hide a running child; the host's global limits bound them. */
 const MAX_ENDED_TASKS = 256
 
 type DecodedClaudeTask = {
@@ -119,16 +120,6 @@ export class ClaudeChildWorkDecoder {
     }
   }
 
-  /** The CLI acknowledged a stop of this task, and one it no longer knows is acknowledged with no
-   *  frame at all, so the acknowledgement ends a task still live here. Provisionally: the SDK hands
-   *  the acknowledgement over as soon as it reads it, ahead of frames the CLI wrote before it, so
-   *  the task's own ending may still arrive and replace this one. */
-  stopAcknowledged(id: string): void {
-    if (this.live.has(id)) {
-      this.end(id, 'stopped', { basis: 'stop-acknowledged' })
-    }
-  }
-
   /** Which children a pending request blocks, re-derived by the caller before every drain. A
    *  live child that starts or stops waiting is a live edge of its own. */
   observeWaiting(waiting: ReadonlySet<string>): void {
@@ -176,7 +167,7 @@ export class ClaudeChildWorkDecoder {
     if (restart && toolUseId !== undefined && this.ended.get(id) === toolUseId) {
       return
     }
-    const kind = classifyClaudeBackgroundTaskKind(message.task_type)
+    const kind = startedTaskKind(message)
     this.upsert(
       id,
       {
@@ -251,9 +242,6 @@ export class ClaudeChildWorkDecoder {
     facts: ClaudeTaskFacts,
     restart = false
   ): void {
-    if (!this.live.has(id) && this.live.size >= MAX_LIVE_TASKS) {
-      return
-    }
     this.ended.delete(id)
     this.live.set(id, task)
     this.report(id, task, facts, restart)
@@ -304,4 +292,11 @@ export class ClaudeChildWorkDecoder {
       ...(reported.totalTokens !== undefined ? { totalTokens: reported.totalTokens } : {})
     }))
   }
+}
+
+/** Releases predating `task_type` still name an agent in `subagent_type`. */
+function startedTaskKind(message: Record<string, unknown>): AgentChildWorkKind {
+  return isClaudeSubagentTask(message)
+    ? 'agent'
+    : classifyClaudeBackgroundTaskKind(message.task_type)
 }

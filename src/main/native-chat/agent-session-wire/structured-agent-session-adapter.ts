@@ -14,7 +14,10 @@ import type {
 // take this?" — and it answers `unknown` rather than guessing, because the
 // journal renders that as delivery unconfirmed instead of as failure.
 
-import type { AgentSessionBackgroundTaskStops } from '../../../shared/agent-child-work-stop-targets'
+import type {
+  AgentChildWorkStopAcknowledgement,
+  AgentSessionBackgroundTaskStops
+} from '../../../shared/agent-child-work-stop-targets'
 import type {
   AgentJournalAnsweredTurnIdentity,
   AgentJournalItemIdentity,
@@ -362,12 +365,17 @@ export type StructuredAgentSessionAdapter = StructuredAgentSessionAdapterStop & 
   }): Promise<{ ok: true } | { ok: false; rejected: string }>
   /** Stops exactly the tasks `taskIds` names, which the host resolves from its child records.
    *  `stillRunning` is the provider's own answer that one survived its stop; a throw leaves the
-   *  effect unknown. */
+   *  effect unknown. `acknowledged` names each task the provider accepted the stop of, which the
+   *  host alone turns into that run's provisional ending. */
   stopBackgroundTasks?(input: {
     sessionId: string
     fence: number
     taskIds: readonly string[]
-  }): Promise<{ cancelled: boolean; stillRunning?: true }>
+  }): Promise<{
+    cancelled: boolean
+    stillRunning?: true
+    acknowledged?: readonly AgentChildWorkStopAcknowledgement[]
+  }>
   /** The stops this provider honours for a live session's background work; undefined when the
    *  adapter holds no live session for it. */
   backgroundTaskStops?(sessionId: string): AgentSessionBackgroundTaskStops | undefined

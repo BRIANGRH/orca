@@ -4,7 +4,11 @@ import type {
 } from '../../../shared/agent-session-record'
 import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
 import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
-import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
+import type { AgentChildWorkReconcileOutcome } from '../../../shared/agent-status-child-work-evidence-admission'
+import type {
+  AgentChildWorkRowView,
+  AgentChildWorkView
+} from '../../../shared/agent-status-child-work-view'
 import {
   parseAgentStatusSubject,
   serializeAgentStatusSubject,
@@ -22,10 +26,15 @@ export type StructuredAgentSessionStatusSink = {
     subject: AgentStatusStructuredSessionSubject,
     evidence: AgentChildWorkEvidence[],
     provider: AgentSessionRecord['provider']
-  ) => void
+  ) => AgentChildWorkReconcileOutcome | null | void
   /** The child records the sink holds for that subject, as the views every surface reads. */
   readChildWork?: (subject: AgentStatusStructuredSessionSubject) => AgentChildWorkView[]
+  /** The same, with what a subagent's saved row also keeps. */
+  readChildWorkRows?: (subject: AgentStatusStructuredSessionSubject) => AgentChildWorkRowView[]
 }
+
+/** The store's limits refusing a record: the per-session one, and the store's own. */
+const ROOM_REFUSALS: ReadonlySet<string> = new Set(['ingestion-limit', 'store-rejected'])
 
 /** Retain the owner address because record removal may precede the final status callback. */
 export class StructuredAgentSessionStatusOwnership {
@@ -34,6 +43,9 @@ export class StructuredAgentSessionStatusOwnership {
   // forget a row that did land, but "we hold an address" is not evidence the row is there. Only a
   // publish that returned proves that, and only that proof may suppress the re-offer below.
   private readonly landed = new Set<string>()
+  /** Sessions with child work the store refused for room. Only the provider session's end, which
+   *  ends every child it ran, makes the records whole again. */
+  private readonly untracked = new Set<string>()
 
   constructor(private readonly sink: () => StructuredAgentSessionStatusSink | undefined) {}
 
@@ -84,9 +96,20 @@ export class StructuredAgentSessionStatusOwnership {
     provider: AgentSessionRecord['provider']
   ): void {
     const subject = this.subjects.get(sessionId)
-    if (subject && this.landed.has(sessionId)) {
-      this.sink()?.publishChildWork?.(subject, evidence, provider)
+    if (!subject || !this.landed.has(sessionId)) {
+      return
     }
+    const outcome = this.sink()?.publishChildWork?.(subject, evidence, provider)
+    if (evidence.some((edge) => edge.type === 'session-ended')) {
+      this.untracked.delete(sessionId)
+    } else if (outcome?.rejected.some(({ reason }) => ROOM_REFUSALS.has(reason))) {
+      this.untracked.add(sessionId)
+    }
+  }
+
+  /** Whether some of the session's running child work has no record. */
+  childWorkIncomplete(sessionId: string): boolean {
+    return this.untracked.has(sessionId)
   }
 
   /** Undefined until the parent row has landed: a sink holds no children for a parent it lacks. */
@@ -95,12 +118,20 @@ export class StructuredAgentSessionStatusOwnership {
     return subject && this.landed.has(sessionId) ? this.sink()?.readChildWork?.(subject) : undefined
   }
 
+  readChildWorkRows(sessionId: string): AgentChildWorkRowView[] | undefined {
+    const subject = this.subjects.get(sessionId)
+    return subject && this.landed.has(sessionId)
+      ? this.sink()?.readChildWorkRows?.(subject)
+      : undefined
+  }
+
   forget(sessionId: string): void {
     const subject = this.subjects.get(sessionId)
     if (!subject) {
       return
     }
     this.landed.delete(sessionId)
+    this.untracked.delete(sessionId)
     this.sink()?.forget(subject)
     this.subjects.delete(sessionId)
   }

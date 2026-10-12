@@ -18,27 +18,24 @@ describe('CodexSubagentExecutions retention and identity', () => {
     expect(settledTurns).toBeLessThanOrEqual(256)
   })
 
-  it('retains early live owner events at capacity and makes room only after settlement', () => {
+  it('keeps every running child past the settled-history bound', () => {
     const executions = new CodexSubagentExecutions()
-    for (let index = 0; index < 128; index++) {
-      executions.observeTurn(`child-${index}`, `turn-${index}`, 'working')
-    }
-    expect(executions.observeTurn('overflow', 'overflow', 'working')).toBeNull()
-    for (let index = 0; index < 128; index++) {
+    for (let index = 0; index < 200; index++) {
+      expect(executions.observeTurn(`child-${index}`, `turn-${index}`, 'working')).not.toBeNull()
       executions.register(`child-${index}`, `child-${index}`, 'parent')
     }
-    expect(executions.workingChildren()).toHaveLength(128)
+    expect(executions.workingChildren()).toHaveLength(200)
     executions.observeTurn('child-0', 'turn-0', 'completed')
-    expect(executions.observeTurn('overflow', 'overflow', 'working')).not.toBeNull()
-    executions.register('overflow', 'overflow', 'parent')
-    expect(executions.workingChildren()).toHaveLength(128)
+    executions.register('next', 'next', 'parent')
+    expect(executions.find('child-0')).toBeUndefined()
+    expect(executions.workingChildren()).toHaveLength(199)
   })
 
   it('corrects an unverifiable execution with its own terminal event and ignores stale starts', () => {
     const executions = new CodexSubagentExecutions()
     executions.register('child', 'child', 'parent')
     executions.observeTurn('child', 'turn', 'working')
-    executions.settleSession()
+    executions.closeThread('child')
     expect(executions.workingChildren()).toEqual([])
     expect(executions.observeTurn('child', 'turn', 'working')).toBeNull()
     expect(executions.observeTurn('child', 'turn', 'completed')?.execution.state).toBe('completed')

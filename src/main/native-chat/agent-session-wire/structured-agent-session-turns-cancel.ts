@@ -1,4 +1,8 @@
-import { agentChildWorkStopTargets } from '../../../shared/agent-child-work-stop-targets'
+import {
+  agentChildWorkStopEvidence,
+  agentChildWorkStopTargets
+} from '../../../shared/agent-child-work-stop-targets'
+import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import { agentSessionFailureWords } from '../../../shared/agent-session-failure-words'
@@ -146,6 +150,9 @@ type PerformCancelInput = {
   withdrewQueued?: Promise<boolean>
   /** The session's child records: a background Stop reaches the tasks they offer a stop. */
   childWork?: () => readonly AgentChildWorkView[] | undefined
+  /** Hands the host the stops the provider accepted, as evidence about the runs it sent them to.
+   *  Never throws: recording it is bookkeeping, and cannot fail the Stop. */
+  acknowledgeStops?: (evidence: AgentChildWorkEvidence[]) => void
   /** The latest Stop event is this press's own, or the in-force one it repeats: its settle binds. */
   opensSettle?: true
 }
@@ -195,14 +202,19 @@ async function cancelAndNote(
   let stoppedTurn: string | undefined
   try {
     const dispatchStatus = latestJournalDispatchObservation(ctx.journal, ctx.fence)
+    // Captured before the stop goes out: its acknowledgement may end only these runs.
+    const targets = input.scope ? agentChildWorkStopTargets(input.childWork?.(), input.taskId) : []
     const background =
       input.scope && !stoppedBefore
         ? await ctx.adapter.stopBackgroundTasks?.({
             sessionId: ctx.sessionId,
             fence: ctx.fence,
-            taskIds: agentChildWorkStopTargets(input.childWork?.(), input.taskId)
+            taskIds: targets.map((target) => target.providerId)
           })
         : undefined
+    input.acknowledgeStops?.(
+      agentChildWorkStopEvidence(targets, background?.acknowledged, Date.now())
+    )
     // A background Stop writes no row, so a task the agent shows still running after it goes back
     // to the client that pressed it.
     if (background?.stillRunning) {

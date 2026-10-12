@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionExecutionLocation } from '../../../shared/agent-session-record'
 import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
+import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
+import { AGENT_STATUS_STORE_LIMITS } from '../../../shared/agent-status-store-contract'
 import { makeStructuredAgentStatusSubject } from '../../../shared/agent-status-subject'
+import { AgentHookServer } from '../../agent-hooks/server'
 import { StructuredAgentSessionStatusOwnership } from './structured-agent-session-status-ownership'
 
 const location: AgentSessionExecutionLocation = {
@@ -118,5 +121,58 @@ describe('structured status owner address retention', () => {
     expect(() => unlanded.publish(summary, location)).toThrow('store down')
     unlanded.publishChildWork(summary.sessionId, evidence, 'claude')
     expect(sink.publishChildWork).toHaveBeenCalledOnce()
+  })
+})
+
+describe('child work the host had no room to record', () => {
+  const agentLive = (id: string): AgentChildWorkEvidence => ({
+    type: 'live',
+    observedAt: 200,
+    child: {
+      handle: { idKind: 'task_id', id },
+      kind: 'agent',
+      residency: 'background',
+      state: 'working',
+      stoppable: true
+    }
+  })
+
+  function owners() {
+    const server = new AgentHookServer()
+    const owner = new StructuredAgentSessionStatusOwnership(() => ({
+      publish: (published, subject) => server.ingestStructuredStatus(published, subject),
+      forget: (subject) => server.dropStructuredStatus(subject),
+      publishChildWork: (subject, evidence, provider) =>
+        server.ingestStructuredChildWork(subject, evidence, provider),
+      readChildWork: (subject) => server.getStructuredChildWorkViews(subject)
+    }))
+    return { owner }
+  }
+
+  it('marks an idle parent incomplete when the store refuses its live background child', () => {
+    const { owner } = owners()
+    // Another session holds every child record the store has room for.
+    owner.publish({ ...summary, sessionId: 'structured-busy' }, location)
+    owner.publishChildWork(
+      'structured-busy',
+      Array.from({ length: AGENT_STATUS_STORE_LIMITS.children }, (_unused, index) =>
+        agentLive(`busy-${index}`)
+      ),
+      'claude'
+    )
+    owner.publish({ ...summary, status: 'idle' }, location)
+    owner.publishChildWork(summary.sessionId, [agentLive('background-agent')], 'claude')
+
+    expect(owner.readChildWork(summary.sessionId)).toEqual([])
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(true)
+    // Only the provider session's end, which ends every child it ran, makes the records whole.
+    owner.publishChildWork(summary.sessionId, [agentLive('background-agent')], 'claude')
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(true)
+    owner.publishChildWork(
+      summary.sessionId,
+      [{ type: 'session-ended', observedAt: 300 }],
+      'claude'
+    )
+    expect(owner.childWorkIncomplete(summary.sessionId)).toBe(false)
   })
 })

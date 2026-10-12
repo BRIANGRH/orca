@@ -22,6 +22,8 @@ export type StructuredSessionBackgroundTasksView = {
   children?: AgentChildWorkView[]
   supportsStop: boolean
   supportsStopAll: boolean
+  /** Some running work is not listed: the strip stays, and says details are unavailable. */
+  incomplete: boolean
 }
 
 /** One shared empty list: a roster with no rows of a kind keeps the strip's memo on every render. */
@@ -61,8 +63,9 @@ export function structuredSessionBackgroundTasksView(
     !children?.length &&
     !tasks.length &&
     Boolean(backgroundTasks?.children?.length || backgroundTasks?.tasks?.length)
-  const show = monitoring && !onlyFinished && !onlyForeground
-  const liveWork = children ? agentChildWorkLiveness(children) !== null : show
+  const incomplete = monitoring && backgroundTasks.incomplete === true
+  const show = monitoring && (incomplete || (!onlyFinished && !onlyForeground))
+  const liveWork = incomplete || (children ? agentChildWorkLiveness(children) !== null : show)
   return {
     show,
     isMonitoring: turnId === null && liveWork,
@@ -73,7 +76,8 @@ export function structuredSessionBackgroundTasksView(
     supportsStop: backgroundTasks?.supportsTaskStop === true,
     // Absent means the host predates the field and does accept an untargeted
     // stop; only a host that says `false` has none to offer.
-    supportsStopAll: backgroundTasks?.supportsStopAll !== false
+    supportsStopAll: backgroundTasks?.supportsStopAll !== false,
+    incomplete
   }
 }
 

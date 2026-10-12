@@ -8,7 +8,9 @@ import {
   type AgentChildWorkReconcileOutcome
 } from '../../../shared/agent-status-child-work-reconciliation'
 import {
+  projectAgentChildWorkRowViews,
   projectAgentChildWorkViews,
+  type AgentChildWorkRowView,
   type AgentChildWorkView
 } from '../../../shared/agent-status-child-work-view'
 import {
@@ -65,9 +67,20 @@ export abstract class AgentHookServerIngestStructuredChildren extends AgentHookS
   /** The same records as the views every surface reads; the one record-to-view projection. */
   getStructuredChildWorkViews(subject: AgentStatusStructuredSessionSubject): AgentChildWorkView[] {
     const children = this.getStructuredChildWork(subject)
-    return projectAgentChildWorkViews(
-      children,
-      children.flatMap((child) => this.canonicalStatusStore.getAliasesForChild(child.childWorkId))
+    return projectAgentChildWorkViews(children, this.aliasesOf(children))
+  }
+
+  /** The views with what a subagent's saved row also keeps; for the host's row writer only. */
+  getStructuredChildWorkRows(
+    subject: AgentStatusStructuredSessionSubject
+  ): AgentChildWorkRowView[] {
+    const children = this.getStructuredChildWork(subject)
+    return projectAgentChildWorkRowViews(children, this.aliasesOf(children))
+  }
+
+  private aliasesOf(children: readonly AgentChildWorkRecord[]) {
+    return children.flatMap((child) =>
+      this.canonicalStatusStore.getAliasesForChild(child.childWorkId)
     )
   }
 }

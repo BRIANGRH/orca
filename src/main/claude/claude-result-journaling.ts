@@ -65,9 +65,7 @@ export function journalClaudeResult(
   if (settlesTurn) {
     prompts.retryPendingCancellations()
     turn.suppressReopenOnFailure(message.is_error === true)
-    // The turn is over however it ended, so a foreground child still
-    // reported as working will never be settled by an event.
-    subagents.settleTurn(turn.groupKey)
+    subagents.turnEnded()
     context.settle(message, commandEnd ?? claudeTurnEndForResult(message, observedAt, leftToStop))
     // The turn is over. A block still awaiting its final keeps the text the
     // flush above journaled, but its live state goes: an interrupted turn

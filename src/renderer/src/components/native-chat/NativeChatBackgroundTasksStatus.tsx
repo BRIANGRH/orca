@@ -136,6 +136,39 @@ function BackgroundTaskRow(props: {
   )
 }
 
+/** Under the rows: that some work is not listed, and the stop that reaches all of it. A row with
+ *  no stop of its own, or work no row lists, leaves the untargeted stop the only one. */
+function BackgroundTasksFooter(props: {
+  listed: boolean
+  incomplete: boolean
+  supportsTaskStop: boolean
+  supportsStopAll: boolean
+  stoppingAll: boolean
+  onStopAll: () => void
+}): React.JSX.Element {
+  return (
+    <>
+      {props.incomplete && props.listed ? (
+        <p className="mt-1.5">{say('detailsUnavailable')}</p>
+      ) : null}
+      {(!props.supportsTaskStop || props.incomplete) && props.supportsStopAll ? (
+        <div className={props.listed ? 'mt-2 border-t border-border pt-2' : 'mt-2'}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            aria-label={say('stopAll')}
+            disabled={props.stoppingAll}
+            onClick={props.onStopAll}
+          >
+            {say('stop')}
+          </Button>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
 export function NativeChatBackgroundTasksStatus(props: {
   tasks: readonly AgentSessionBackgroundTask[]
   settledTasks: readonly AgentSessionBackgroundTask[]
@@ -148,6 +181,8 @@ export function NativeChatBackgroundTasksStatus(props: {
   /** False when the provider exposes no honest stop at all; the fallback
    *  control is hidden rather than offering a button that cannot act. */
   supportsStopAll: boolean
+  /** Some running work is not listed, so the rows are not the whole roster. */
+  incomplete?: boolean
   stoppingTaskIds: ReadonlySet<string>
   stoppingAll: boolean
   /** True while the session is idle: only then may the strip speak as the
@@ -270,20 +305,14 @@ export function NativeChatBackgroundTasksStatus(props: {
               ) : (
                 <p>{say('detailsUnavailable')}</p>
               )}
-              {!props.supportsTaskStop && props.supportsStopAll ? (
-                <div className={groups.length > 0 ? 'mt-2 border-t border-border pt-2' : 'mt-2'}>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    aria-label={say('stopAll')}
-                    disabled={props.stoppingAll}
-                    onClick={() => props.onStop()}
-                  >
-                    {say('stop')}
-                  </Button>
-                </div>
-              ) : null}
+              <BackgroundTasksFooter
+                listed={groups.length > 0}
+                incomplete={props.incomplete === true}
+                supportsTaskStop={props.supportsTaskStop}
+                supportsStopAll={props.supportsStopAll}
+                stoppingAll={props.stoppingAll}
+                onStopAll={() => props.onStop()}
+              />
             </div>
           ) : null}
         </div>

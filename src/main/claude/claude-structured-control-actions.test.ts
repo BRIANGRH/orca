@@ -308,34 +308,23 @@ describe('stopClaudeBackgroundTasks', () => {
     return { childWork, connection: { stopTask } } as unknown as ClaudeSession
   }
 
-  it('stops exactly the ids the host named, and ends each acknowledged one', async () => {
+  it('stops exactly the ids the host named, and reports each acknowledged one', async () => {
     const childWork = liveChildWork(['task-agent', 'task-bash'])
     const stopTask = vi.fn(async (_taskId: string, _options?: { timeoutMs?: number }) => {})
     const session = stoppingSession(childWork, stopTask)
 
     await expect(
       stopClaudeBackgroundTasks(session, 5_000, () => true, ['task-agent', 'task-bash'])
-    ).resolves.toEqual({ cancelled: true })
+    ).resolves.toEqual({
+      cancelled: true,
+      acknowledged: [{ taskId: 'task-agent' }, { taskId: 'task-bash' }]
+    })
     expect(stopTask.mock.calls).toEqual([
       ['task-agent', { timeoutMs: 5_000 }],
       ['task-bash', { timeoutMs: 5_000 }]
     ])
-    expect(childWork.drain(2)).toEqual([
-      {
-        type: 'ended',
-        observedAt: 2,
-        handle: { idKind: 'task_id', id: 'task-agent' },
-        outcome: 'cancelled',
-        basis: 'stop-acknowledged'
-      },
-      {
-        type: 'ended',
-        observedAt: 2,
-        handle: { idKind: 'task_id', id: 'task-bash' },
-        outcome: 'cancelled',
-        basis: 'stop-acknowledged'
-      }
-    ])
+    // The host settles what was acknowledged; the decoder records nothing of its own.
+    expect(childWork.drain(2)).toEqual([])
   })
 
   it('stops issuing requests when ownership changes between tasks', async () => {
@@ -359,10 +348,10 @@ describe('stopClaudeBackgroundTasks', () => {
 
     await expect(
       stopClaudeBackgroundTasks(session, undefined, () => true, ['task-live'])
-    ).resolves.toEqual({ cancelled: false })
-    expect(childWork.drain(2)).toEqual([])
+    ).resolves.toEqual({ cancelled: false, acknowledged: [] })
     await expect(stopClaudeBackgroundTasks(session, undefined, () => true, [])).resolves.toEqual({
-      cancelled: false
+      cancelled: false,
+      acknowledged: []
     })
     expect(stopTask).toHaveBeenCalledTimes(1)
   })
@@ -381,9 +370,6 @@ describe('stopClaudeBackgroundTasks', () => {
       stopClaudeBackgroundTasks(session, undefined, () => true, ['task-1', 'task-2'])
     ).rejects.toBe(lost)
     expect(stopTask.mock.calls.map(([taskId]) => taskId)).toEqual(['task-1', 'task-2'])
-    expect(childWork.drain(2)).toMatchObject([
-      { type: 'ended', handle: { id: 'task-2' }, outcome: 'cancelled' }
-    ])
   })
 
   it('stops asking after a request times out: a CLI not answering costs one deadline, not one per task', async () => {

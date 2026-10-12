@@ -141,6 +141,46 @@ function TaskRow({
   )
 }
 
+/** Under the rows: that some work is not listed, and the stop that reaches all of it. A row with
+ *  no stop of its own, or work no row lists, leaves the untargeted stop the only one. */
+function BackgroundTasksFooter({
+  listed,
+  view,
+  stoppingAll,
+  onStopAll
+}: {
+  listed: boolean
+  view: MobileStructuredBackgroundTasks['view']
+  stoppingAll: boolean
+  onStopAll: () => void
+}): React.JSX.Element {
+  return (
+    <>
+      {view.incomplete && listed ? (
+        <Text style={styles.unavailable}>{say('detailsUnavailable')}</Text>
+      ) : null}
+      {(!view.supportsStop || view.incomplete) && view.supportsStopAll ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={say('stopAll')}
+          accessibilityState={{ disabled: stoppingAll }}
+          disabled={stoppingAll}
+          hitSlop={6}
+          style={({ pressed }) => [
+            styles.textAction,
+            styles.stopAll,
+            pressed && styles.pressed,
+            stoppingAll && styles.disabled
+          ]}
+          onPress={onStopAll}
+        >
+          <Text style={styles.actionLabel}>{say('stop')}</Text>
+        </Pressable>
+      ) : null}
+    </>
+  )
+}
+
 /** The session's running child work — agents, shells, monitors, workflows — as one collapsible box
  *  above the composer. Desktop parity: `NativeChatBackgroundTasksStatus`, from the same host roster
  *  and the same shared grouping, header and Stop rules. Mounted per conversation, so its open and
@@ -236,24 +276,12 @@ function MobileNativeChatBackgroundTasksImpl({
             ) : (
               <Text style={styles.unavailable}>{say('detailsUnavailable')}</Text>
             )}
-            {!view.supportsStop && view.supportsStopAll ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={say('stopAll')}
-                accessibilityState={{ disabled: stopping.all }}
-                disabled={stopping.all}
-                hitSlop={6}
-                style={({ pressed }) => [
-                  styles.textAction,
-                  styles.stopAll,
-                  pressed && styles.pressed,
-                  stopping.all && styles.disabled
-                ]}
-                onPress={() => onStop()}
-              >
-                <Text style={styles.actionLabel}>{say('stop')}</Text>
-              </Pressable>
-            ) : null}
+            <BackgroundTasksFooter
+              listed={groups.length > 0}
+              view={view}
+              stoppingAll={stopping.all}
+              onStopAll={() => onStop()}
+            />
           </ScrollView>
         ) : null}
       </View>

@@ -185,12 +185,12 @@ describe('Claude child-work decoder', () => {
     expect(decoder.drain(500)).toEqual([])
   })
 
-  it('bounds the live children it tracks', () => {
+  it('admits every live child: only the host store bounds them', () => {
     const decoder = new ClaudeChildWorkDecoder()
-    for (let index = 0; index < 257; index += 1) {
+    for (let index = 0; index < 300; index += 1) {
       decoder.observe({ ...backgroundAgent, task_id: `agent-${index}` })
     }
-    expect(decoder.drain(500)).toHaveLength(256)
+    expect(decoder.drain(500)).toHaveLength(300)
   })
 
   it('ends what still runs as stopped when Orca ends the session, and only then', () => {

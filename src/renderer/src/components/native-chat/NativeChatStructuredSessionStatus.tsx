@@ -107,6 +107,7 @@ export function NativeChatStructuredSessionStatus(props: {
           indicatorActive={props.backgroundTasks.isMonitoring}
           supportsTaskStop={props.backgroundTasks.supportsStop}
           supportsStopAll={props.backgroundTasks.supportsStopAll}
+          incomplete={props.backgroundTasks.incomplete}
           stoppingTaskIds={stoppingTaskIds}
           stoppingAll={activeStopping?.all ?? false}
           expanded={expanded?.sessionId === props.sessionId && expanded.expanded}

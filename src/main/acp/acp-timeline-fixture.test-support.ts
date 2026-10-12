@@ -11,6 +11,8 @@ import { openProviderTimelineRig } from '../native-chat/agent-session-timeline/p
 import { GROK_ACP_DIALECT } from './acp-dialects/grok-dialect'
 import type { AcpRequestPresentation } from './acp-dialects/acp-dialect'
 import { AcpTimelineTranslator } from './acp-timeline-translator'
+import type { AgentChildWorkEvidence } from '../../shared/agent-status-child-work-evidence'
+import { acpSubagentRecords } from './acp-structured-child-work.test-support'
 import { PromptResponseSchema } from './generated/acp-protocol.generated'
 
 const frameSchema = z.object({
@@ -73,6 +75,9 @@ export async function openAcpFixtureRig() {
   const translator = () =>
     new AcpTimelineTranslator({ sessionId: providerSessionId, dialect: GROK_ACP_DIALECT })
   let lane = translator()
+  const records = acpSubagentRecords()
+  const reported: AgentChildWorkEvidence[] = []
+  const drain = () => reported.push(...lane.subagents.drainEvidence())
   const requests = new Map<
     string | number,
     { request: string; presentation: AcpRequestPresentation }
@@ -80,6 +85,11 @@ export async function openAcpFixtureRig() {
   const apply = (events: ProviderTimelineEvent[]) => {
     for (const event of events) {
       expect(rig.assembler.apply(event).admission.accepted).toBe(true)
+      if (event.type === 'session.ended') {
+        // As the lane reports a session end once the journal admitted it.
+        drain()
+        reported.push({ type: 'session-ended', observedAt: 9_000 })
+      }
     }
   }
   const feed = async (frames: AcpFixtureFrame[]) => {
@@ -92,6 +102,7 @@ export async function openAcpFixtureRig() {
         const session = z.object({ sessionId: z.string() }).parse(message.params)
         if (providerSessionId !== session.sessionId) {
           providerSessionId = session.sessionId
+          drain()
           lane = translator()
         }
         apply(lane.openPrompt(`${frame.process}:${message.id}`, at).events)
@@ -162,7 +173,13 @@ export async function openAcpFixtureRig() {
     /** A new provider child: the sweep, a new generation's assembler and a new translator. */
     restart: async () => {
       await rig.restart()
+      drain()
       lane = translator()
+    },
+    /** The host's records of every subagent reported so far. */
+    subagents: () => {
+      drain()
+      return records(reported.splice(0))
     },
     finishLoad: () => lane.finishLoad()
   }

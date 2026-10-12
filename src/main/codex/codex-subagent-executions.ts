@@ -4,6 +4,7 @@ import {
   canReplaceSubagentState
 } from '../../shared/native-chat-subagent-summary'
 
+/** Children kept once settled; a running child is always kept, however many run. */
 const MAX_CHILDREN = 128
 const MAX_SETTLED_TURNS = 256
 /** Turn ordinals remembered per child; a row from an older run reads as its first. */
@@ -28,31 +29,18 @@ export type CodexExecutionChild = {
   turnCount: number
 }
 
-/** Told when a child's current execution changes, whichever frame changed it. */
-export type CodexExecutionListener = (child: Readonly<CodexExecutionChild>) => void
-
 /** Child turn events own execution; activity items only identify the child. */
 export class CodexSubagentExecutions {
   private readonly children = new Map<string, CodexExecutionChild>()
   private readonly settledTurns = new Map<string, NativeChatSubagentState>()
-  private readonly listeners = new Set<CodexExecutionListener>()
-
-  /** Every reader of a child's execution follows it here, so none needs the frames that end it. */
-  onExecutionChanged(listener: CodexExecutionListener): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
-  }
 
   register(
     agentThreadId: string,
     label: string | null,
     parentTurnId: string | null | undefined,
     spawnerThreadId?: string
-  ): CodexExecutionChild | undefined {
+  ): CodexExecutionChild {
     const child = this.child(agentThreadId)
-    if (!child) {
-      return undefined
-    }
     if (!child.registered || parentTurnId !== undefined) {
       child.parentTurnId = parentTurnId ?? null
     }
@@ -79,9 +67,6 @@ export class CodexSubagentExecutions {
       return null
     }
     const child = this.child(agentThreadId)
-    if (!child) {
-      return null
-    }
     this.numberTurn(child, turnId)
     if (
       state === 'working' &&
@@ -107,7 +92,6 @@ export class CodexSubagentExecutions {
     }
     if (state === 'working' || !child.execution || child.execution.turnId === turnId) {
       child.execution = execution
-      this.changed(child)
     }
     return { child, execution }
   }
@@ -168,15 +152,6 @@ export class CodexSubagentExecutions {
     )
   }
 
-  settleSession(): void {
-    for (const child of this.children.values()) {
-      if (child.execution?.state === 'working') {
-        child.execution = { ...child.execution, state: 'unverifiable' }
-        this.changed(child)
-      }
-    }
-  }
-
   clear(): void {
     this.children.clear()
     this.settledTurns.clear()
@@ -187,23 +162,17 @@ export class CodexSubagentExecutions {
     return { children: this.children.size, settledTurns: this.settledTurns.size }
   }
 
-  private changed(child: CodexExecutionChild): void {
-    for (const listener of this.listeners) {
-      listener(child)
-    }
-  }
-
-  private child(agentThreadId: string): CodexExecutionChild | undefined {
+  private child(agentThreadId: string): CodexExecutionChild {
     const existing = this.children.get(agentThreadId)
     if (existing) {
       return existing
     }
     if (this.children.size >= MAX_CHILDREN) {
+      // Refusing a running child would hide it while it runs; the host's limits bound them.
       const settled = [...this.children].find(([, child]) => child.execution?.state !== 'working')
-      if (!settled) {
-        return undefined
+      if (settled) {
+        this.children.delete(settled[0])
       }
-      this.children.delete(settled[0])
     }
     const child: CodexExecutionChild = {
       agentThreadId,
