@@ -4079,7 +4079,12 @@
             "checkTooltip": "重启后 Orca 未能恢复或未能确认已恢复的聊天。点击查看详情。",
             "resumingTooltip": "正在恢复中断的聊天并请它们继续…",
             "resumingProgressLabel": "正在恢复聊天 {{value0}}/{{value1}}",
-            "resumingProgressAria": "正在恢复聊天，已完成 {{value0}}/{{value1}}。点击查看详情。"
+            "resumingProgressAria": "正在恢复聊天，已完成 {{value0}}/{{value1}}。点击查看详情。",
+            "resumedLabelOne": "已恢复 1 个聊天",
+            "resumedLabel": "已恢复 {{value0}} 个聊天",
+            "resumedAriaOne": "已恢复 1 个聊天。点击查看。",
+            "resumedAria": "已恢复 {{value0}} 个聊天。点击查看。",
+            "resumedTooltip": "重启后 Orca 恢复的聊天。点击查看。"
           },
           "provider": {
             "extra": {
@@ -12398,18 +12403,7 @@
           "olderTerminalsUnverifiable": "Orca 无法确认由旧版本 Orca 启动的终端是否已退出。请重新连接后重试。",
           "olderTerminals_one": "由旧版本 Orca 启动的 {{count}} 个终端仍在此主机上运行，且不会自行停止。请在该版本的 Orca 中关闭它们，或在主机上结束它们，然后重新连接。",
           "olderTerminals_other": "由旧版本 Orca 启动的 {{count}} 个终端仍在此主机上运行，且不会自行停止。请在该版本的 Orca 中关闭它们，或在主机上结束它们，然后重新连接。",
-          "olderTerminals": "由旧版本 Orca 启动的 {{count}} 个终端仍在此主机上运行，且不会自行停止。请在该版本的 Orca 中关闭它们，或在主机上结束它们，然后重新连接。",
-          "oldTerminalsStopLead": "要在主机上结束它们，请运行：",
-          "oldTerminalsStopLeadPids": "要在主机上结束它们（进程 ID {{pids}}），请运行：",
-          "endOldTerminals": {
-            "action": "结束此主机上的旧终端",
-            "title": "结束此主机上的旧终端？",
-            "description": "这会结束旧版本 Orca 以此账户在此主机上留下并仍在运行的所有终端，包括从其他计算机打开的终端。其中运行的 shell 和代理都会停止。支持恢复的代理之后可以恢复；普通 shell 无法恢复。",
-            "confirm": "结束终端",
-            "running": "正在结束旧终端…",
-            "connected": "旧终端已结束。主机已连接。",
-            "failed": "Orca 无法结束旧终端。"
-          }
+          "olderTerminals": "由旧版本 Orca 启动的 {{count}} 个终端仍在此主机上运行，且不会自行停止。请在该版本的 Orca 中关闭它们，或在主机上结束它们，然后重新连接。"
         },
         "deltaMove": {
           "action": "迁移新项目…",
@@ -17560,7 +17554,8 @@
         "expandNode": "展开 {{value0}}",
         "selectMachine": "选择 {{value0}} 上的全部聊天",
         "sshHost": "SSH",
-        "done": "完成"
+        "done": "完成",
+        "resultListLabel": "本次恢复的聊天"
       },
       "linear-issue-attribute-filter-coverage-notice": {
         "statusPartialTeamCoverage": "过滤 {{value1}} 团队状态中的 {{value0}} — 不包括其余团队的问题。",
@@ -17662,7 +17657,11 @@
         "resumedTitleOne": "已恢复 {{value0}}/1 个聊天",
         "resumingTitleOne": "正在恢复 1 个聊天",
         "resumingTitle": "正在恢复 {{value0}} 个聊天",
-        "description": "每个聊天都会带着完整上下文恢复，并被要求检查它停在了哪里。你可以关闭此窗口，状态栏会继续显示进度。"
+        "description": "每个聊天都会带着完整上下文恢复，并被要求检查它停在了哪里。你可以关闭此窗口，状态栏会继续显示进度。",
+        "finished": "Orca 关闭时这些聊天正在工作。Orca 已将每个聊天恢复到停止的位置并保留完整上下文，并让智能体在继续之前先检查它之前在做什么。你自己的提示没有被重新发送。",
+        "finishedUpdate": "Orca 安装更新时这些聊天正在工作。Orca 已将每个聊天恢复到停止的位置并保留完整上下文，并让智能体在继续之前先检查它之前在做什么。你自己的提示没有被重新发送。",
+        "finishedPartial": "Orca 关闭时这些聊天正在工作。Orca 恢复的聊天已回到停止的位置并保留完整上下文，并被要求在继续之前先检查之前在做什么。你自己的提示没有被重新发送。请在列表中查看仍需处理或可以恢复的聊天。",
+        "finishedPartialUpdate": "Orca 安装更新时这些聊天正在工作。Orca 恢复的聊天已回到停止的位置并保留完整上下文，并被要求在继续之前先检查之前在做什么。你自己的提示没有被重新发送。请在列表中查看仍需处理或可以恢复的聊天。"
       },
       "NativeChatResumeRunStatusIcon": {
         "waitingForReply": "等待回复",
@@ -17682,6 +17681,11 @@
         "attention": "需要处理",
         "running": "已运行 {{value0}}",
         "filter": "显示聊天"
+      },
+      "NativeChatResumeAutoNote": {
+        "resuming": "重启后正在自动恢复。",
+        "resumed": "重启后已自动恢复。",
+        "changeInSettings": "在设置中更改"
       }
     },
     "i18n": {
@@ -17766,6 +17770,7 @@
         "couldNotStart": "{{agent}} 无法启动。",
         "editSavedArguments": "请在设置 > 智能体 > 参数中编辑。",
         "couldNotRestart": "{{agent}} 无法重新启动。",
+        "codexCliTooOld": "Codex {{installedVersion}} 版本过旧，无法用于聊天。请更新到 {{minimumVersion}} 或更高版本。",
         "notSignedIn": "{{agent}} 尚未登录。",
         "claudeSystemNotSignedIn": "Claude 尚未登录。请运行 `{{loginCommand}}`，或在 Claude 账户设置中选择账户。",
         "claudeManagedNotSignedIn": "此 Claude 账户尚未登录。请在 Claude 账户设置中重新登录。",
@@ -17789,8 +17794,8 @@
         "chooseClaudeAccountThenSend": "请在 Claude 账户设置中选择或添加一个，然后重新发送您的消息。",
         "providerExitedRow": "{{agent}} 在生成此回复时停止了。您可以在此对话中继续。",
         "providerExitedRejection": "{{agent}} 在发送此消息前已停止。",
-        "providerRejected": "提供商未接受此消息。",
-        "providerRejectedQuoted": "提供商未接受此消息：{{detail}}。",
+        "providerRejected": "{{agent}} 未接受此消息。",
+        "providerRejectedQuoted": "{{agent}} 未接受此消息：{{detail}}。",
         "attachmentEmpty": "此消息中的一张图片为空，因此消息未发送。",
         "attachmentTooLarge": "此消息中的一张图片过大，因此消息未发送。",
         "attachmentLargerThan": "此消息中的一张图片超过 {{size}} MB，因此消息未发送。",
@@ -18132,8 +18137,11 @@
       },
       "transcriptLabel": "对话",
       "toggle": {
-        "showTerminal": "显示终端",
-        "showChat": "显示聊天视图"
+        "showTerminal": "显示终端"
+      },
+      "resumeInNewChat": {
+        "notSavedYet": "{{agent}} 尚未保存此对话。请在它回复后重试。",
+        "cannotResume": "此 {{agent}} 对话无法在本机聊天中恢复。"
       },
       "state": {
         "loading": {
@@ -18211,7 +18219,8 @@
         "one": "1 个已更改的文件",
         "many": "{{count}} 更改了文件",
         "partial": "部分差异",
-        "recorded": "本轮记录编辑的总计。"
+        "showDiff": "显示差异",
+        "hideDiff": "隐藏差异"
       },
       "receipt": {
         "unavailable": "所选答案不可用",
@@ -18325,6 +18334,8 @@
         "subtitle": "文件将作为智能体可以读取的路径添加到您的消息中。"
       },
       "copyCode": "复制代码",
+      "wrapLines": "自动换行",
+      "disableLineWrap": "关闭自动换行",
       "context": {
         "unavailable": "上下文用量暂时未知，将在智能体下次响应后提供。",
         "summary": "上下文：{{used}}/{{window}} token（{{percent}}%），根据上一次响应的估算值。",

@@ -1,5 +1,6 @@
 // Each runtime registration owns its adapter, location support and account resolution at start.
 
+import { withSupportedCodexCli } from '../codex/codex-cli-installation-error'
 import { codexStructuredLaunchPart } from '../codex/codex-structured-launch-resolution'
 import { claudeStructuredLaunchPart } from '../claude/claude-structured-launch-resolution'
 import { supportsCodexStructuredLocation } from '../codex/codex-structured-location-support'
@@ -131,13 +132,16 @@ function createCodexAdapter(context: StructuredAgentAdapterContext): StructuredA
   const { deps, followUps, host } = context
   return new CodexStructuredSessionAdapter({
     resolveAccountKind: deps.resolveCodexAccountKind,
-    resolveLaunch: composeStructuredLaunch(
-      CODEX_STRUCTURED_AGENT,
-      structuredAgentLaunchSources(context),
-      codexStructuredLaunchPart({
-        resolveLaunchArgs: () => deps.resolveLaunchArgs('codex'),
-        ...(deps.resolveCodexCommand ? { resolveCommand: deps.resolveCodexCommand } : {})
-      })
+    resolveLaunch: withSupportedCodexCli(
+      composeStructuredLaunch(
+        CODEX_STRUCTURED_AGENT,
+        structuredAgentLaunchSources(context),
+        codexStructuredLaunchPart({
+          resolveLaunchArgs: () => deps.resolveLaunchArgs('codex'),
+          ...(deps.resolveCodexCommand ? { resolveCommand: deps.resolveCodexCommand } : {})
+        })
+      ),
+      deps.readCodexInstallation
     ),
     ...(deps.openCodexConnection ? { openConnection: deps.openCodexConnection } : {}),
     ...(deps.readProcessStartTime ? { readProcessStartTime: deps.readProcessStartTime } : {}),

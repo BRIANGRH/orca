@@ -206,13 +206,18 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
     load: async () => (await import('./handlers/agent-hooks.js')).AGENT_HOOK_HANDLERS
   },
   {
+    name: 'agent-launch',
+    keys: ['agent launch'],
+    load: async () => (await import('./handlers/agent-launch.js')).AGENT_LAUNCH_HANDLERS
+  },
+  {
     name: 'profile-state',
     keys: ['profile state exports', 'profile state rollback'],
     load: async () => (await import('./handlers/profile-state.js')).PROFILE_STATE_HANDLERS
   },
   {
     name: 'diagnostics',
-    keys: ['diagnostics memory'],
+    keys: ['diagnostics memory', 'terminal-daemon status', 'terminal-daemon restart'],
     load: async () => (await import('./handlers/diagnostics.js')).DIAGNOSTICS_HANDLERS
   },
   {
