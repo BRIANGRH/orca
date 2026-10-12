@@ -511,10 +511,15 @@ body:has(> [data-slot='dialog-overlay'], > [data-slot='sheet-overlay']) {
 
 [data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-button] {
   /* Why: Sonner's native action slots otherwise share the copy row and squeeze
-     long notices; indent the wrapped footer to align with text after the icon. */
+     long notices; the wrapped footer aligns with the copy. */
   margin-top: 2px;
-  margin-left: 26px;
+  margin-left: 0;
   margin-right: 0;
+}
+
+/* Why: only an icon pushes the copy right; an icon-less toast's footer would float off its text. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-icon] ~ [data-button] {
+  margin-left: 26px;
 }
 
 [data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-button] ~ [data-button] {
