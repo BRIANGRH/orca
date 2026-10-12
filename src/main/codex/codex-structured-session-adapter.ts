@@ -228,9 +228,11 @@ export class CodexStructuredSessionAdapter implements StructuredAgentSessionAdap
     }
   }
 
+  stoppedMessageDelivery = (): 'append' => 'append'
+
   appendStoppedMessages: NonNullable<StructuredAgentSessionAdapter['appendStoppedMessages']> = (
     input
-  ) => injectCodexStoppedMessages(this.sessions.get(input.sessionId), input.messages)
+  ) => injectCodexStoppedMessages(() => this.sessions.get(input.sessionId), input)
 
   cancelTurn: StructuredAgentSessionAdapter['cancelTurn'] = (request) =>
     cancelCodexStructuredTurn({

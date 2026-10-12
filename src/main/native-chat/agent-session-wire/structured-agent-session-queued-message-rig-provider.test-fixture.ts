@@ -130,8 +130,11 @@ export function createQueuedRigProvider(
       : {}),
     ...(options.recoverRewind ? { recoverRewind: options.recoverRewind } : {}),
     ...(options.carriesStoppedHistory
-      ? { prepareDispatch: options.prepareDispatch ?? prepareAll }
-      : { appendStoppedMessages })
+      ? {
+          stoppedMessageDelivery: () => 'carry' as const,
+          prepareDispatch: options.prepareDispatch ?? prepareAll
+        }
+      : { stoppedMessageDelivery: () => 'append' as const, appendStoppedMessages })
   }
 
   /** What the provider's translator writes when a /compact's turn ends, as a success. */

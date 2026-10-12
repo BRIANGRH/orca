@@ -6,30 +6,35 @@ import type { OwedStoppedMessage } from '../../../shared/agent-session-stopped-h
 import type { AgentSessionPreparedDispatch } from './structured-agent-session-prepared-dispatch'
 
 /** `refused`: proven before anything reached the agent, so they are owed again. `unknown`: they may
- *  be in its log, so they are never appended again. */
+ *  be in its log, so they are never appended again. `unreadable`: nothing in them still reads, so
+ *  nothing was written, and they are never tried again, as a send drops what no longer reads. */
 export type AgentSessionStoppedMessageAppendOutcome =
-  | { outcome: 'accepted' }
+  | { outcome: 'accepted' | 'unreadable' }
   | { outcome: 'refused' | 'unknown'; reason: string }
 
+/** `append`: `appendStoppedMessages`; `carry`: `prepareDispatch`; `none`: neither. */
+export type AgentSessionStoppedMessageDelivery = 'append' | 'carry' | 'none'
+
 export type StructuredAgentSessionStoppedHistoryAdapter = {
+  /** How this session's agent takes the stopped messages owed to it; absent: `none`. */
+  stoppedMessageDelivery?(sessionId: string): AgentSessionStoppedMessageDelivery
   /** Prepares a person's send once with the stopped messages it can carry within this agent's
    *  limits, before the handover is recorded. Null when none rides or the send alone fails to
-   *  prepare. Only for an agent that cannot append them (`appendStoppedMessages`). */
+   *  prepare. */
   prepareDispatch?(input: {
     sessionId: string
     fence: number
     body: AgentJournalMessageItem
     owed: readonly OwedStoppedMessage[]
   }): Promise<AgentSessionPreparedDispatch | null>
-  /** Whether this session's agent appends stopped messages rather than carrying them; absent:
-   *  whether this adapter has `appendStoppedMessages`. */
-  appendsStoppedMessages?(sessionId: string): boolean
   /** Writes stopped messages into the agent's own log, each followed by the agent's own record of
-   *  an interrupted request, without running a turn; oldest first, in one write. Settles within a
-   *  few seconds. */
+   *  an interrupted request, without running a turn; oldest first, in one write. Refused when,
+   *  right before the write, `fence` is no longer the child's or `turnLive` says Orca opened a
+   *  turn. Settles within a few seconds. */
   appendStoppedMessages?(input: {
     sessionId: string
     fence: number
     messages: readonly OwedStoppedMessage[]
+    turnLive: () => boolean
   }): Promise<AgentSessionStoppedMessageAppendOutcome>
 }

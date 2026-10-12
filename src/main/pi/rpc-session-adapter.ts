@@ -156,6 +156,8 @@ export class PiRpcSessionAdapter implements StructuredAgentSessionAdapter {
     )
   }
 
+  stoppedMessageDelivery = (): 'carry' => 'carry'
+
   prepareDispatch: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']> = (input) => {
     const session = this.session(input.sessionId, input.fence)
     return preparePiRpcDispatch(input.body, input.owed, session.turns.heldBytesFree)

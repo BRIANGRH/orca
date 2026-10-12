@@ -8,7 +8,8 @@ import { agentJournalSubmissionKey } from '../../../shared/agent-session-journal
 import {
   AGENT_JOURNAL_THREAD_SCOPE,
   type AgentJournalMessageItem,
-  type AgentJournalSubmission
+  type AgentJournalSubmission,
+  type AgentJournalTurnScope
 } from '../../../shared/agent-session-journal-types'
 import {
   appendStoppedHistory,
@@ -50,7 +51,7 @@ const CARRIER: AgentJournalSubmission = {
 
 function journal(options: {
   clearSequence?: number
-  appended?: Map<string, readonly string[]>
+  appended?: Map<string, { messageIds: readonly string[]; sequence: number }>
 }): Parameters<typeof owedStoppedHistory>[0] {
   const submissions = [stopped('old', 2), stopped('new', 9), CARRIER]
   return {
@@ -159,7 +160,7 @@ describe('choosing the stopped history a handover carries', () => {
   it('owes nothing an append record names', () => {
     expect(
       owedIds(
-        journal({ appended: new Map([['append-1', ['old']]]) }),
+        journal({ appended: new Map([['append-1', { messageIds: ['old'], sequence: 1 }]]) }),
         CARRIER,
         message('next'),
         AGENT_JOURNAL_THREAD_SCOPE
@@ -186,6 +187,7 @@ describe('appending the stopped messages owed to the agent', () => {
         })
       },
       journal: {
+        liveTurnScope: vi.fn((): AgentJournalTurnScope => AGENT_JOURNAL_THREAD_SCOPE),
         stoppedHistory: {
           recordAppend: vi.fn(async (entry: JournalStoppedMessageAppend) => {
             events.push(
@@ -210,7 +212,10 @@ describe('appending the stopped messages owed to the agent', () => {
   })
 
   it('records a proven refusal, so they are owed again', async () => {
-    const { ctx, events } = appending(async () => ({ outcome: 'refused', reason: '-32601' }))
+    const { ctx, events } = appending(async () => ({
+      outcome: 'refused',
+      reason: 'Codex is running a turn'
+    }))
     await appendStoppedHistory(ctx, OWED)
 
     expect(events).toEqual(['record old,new', 'append old,new', 'record refused'])
@@ -242,6 +247,30 @@ describe('appending the stopped messages owed to the agent', () => {
 
     expect(events).toEqual(['record old,new'])
     expect(ctx.adapter.appendStoppedMessages).not.toHaveBeenCalled()
+  })
+
+  it("lets the agent read Orca's turn right before its write", async () => {
+    const live: boolean[] = []
+    const { ctx } = appending(async ({ turnLive }) => {
+      live.push(turnLive())
+      ctx.journal.liveTurnScope.mockReturnValue({ kind: 'turn', turnItemId: 'turn-1' })
+      live.push(turnLive())
+      return { outcome: 'refused', reason: 'Codex is running a turn' }
+    })
+    await appendStoppedHistory(ctx, OWED)
+
+    expect(live).toEqual([false, true])
+  })
+
+  it('logs a message with nothing left to append once, as nothing written, and leaves it covered', async () => {
+    const { ctx, events } = appending(async () => ({ outcome: 'unreadable' }))
+    await appendStoppedHistory(ctx, OWED)
+
+    expect(events).toEqual(['record old,new', 'append old,new'])
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      'stopped messages had nothing left to append',
+      expect.not.objectContaining({ outcome: 'unknown' })
+    )
   })
 
   it('appends nothing when nothing is owed', async () => {

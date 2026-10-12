@@ -51,17 +51,9 @@ type StoppedHistoryContext = {
   fence: number
   adapter: Pick<
     StructuredAgentSessionAdapter,
-    'prepareDispatch' | 'appendsStoppedMessages' | 'appendStoppedMessages'
+    'prepareDispatch' | 'stoppedMessageDelivery' | 'appendStoppedMessages'
   >
   logger: StructuredAgentSessionLogger
-}
-
-/** Whether this session's agent takes stopped messages into its own log, not in a send. */
-export function appendsStoppedHistory(ctx: StoppedHistoryContext): boolean {
-  return (
-    ctx.adapter.appendsStoppedMessages?.(ctx.sessionId) ??
-    ctx.adapter.appendStoppedMessages !== undefined
-  )
 }
 
 /** Appends the owed messages to the agent's own log. The record goes first and covers them, so they
@@ -69,7 +61,9 @@ export function appendsStoppedHistory(ctx: StoppedHistoryContext): boolean {
  *  is logged, and the send goes on. */
 export async function appendStoppedHistory(
   ctx: StoppedHistoryContext & {
-    journal: { stoppedHistory: Pick<JournalStoppedHistory, 'recordAppend'> }
+    journal: Pick<AgentSessionJournal, 'liveTurnScope'> & {
+      stoppedHistory: Pick<JournalStoppedHistory, 'recordAppend'>
+    }
   },
   owed: readonly OwedStoppedMessage[]
 ): Promise<void> {
@@ -92,7 +86,12 @@ export async function appendStoppedHistory(
   }
   let result: AgentSessionStoppedMessageAppendOutcome
   try {
-    result = await append({ sessionId: ctx.sessionId, fence: ctx.fence, messages: owed })
+    result = await append({
+      sessionId: ctx.sessionId,
+      fence: ctx.fence,
+      messages: owed,
+      turnLive: () => ctx.journal.liveTurnScope().kind !== 'thread'
+    })
   } catch (error) {
     result = {
       outcome: 'unknown',
@@ -100,6 +99,10 @@ export async function appendStoppedHistory(
     }
   }
   if (result.outcome === 'accepted') {
+    return
+  }
+  if (result.outcome === 'unreadable') {
+    ctx.logger.warn('stopped messages had nothing left to append', log)
     return
   }
   ctx.logger.warn('appending stopped messages did not settle', {

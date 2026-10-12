@@ -74,8 +74,9 @@ export class StructuredAgentSessionAdapterRouter implements StructuredAgentSessi
   prepareDispatch: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']> = async (input) =>
     (await this.owner(input.sessionId).prepareDispatch?.(input)) ?? null
 
-  appendsStoppedMessages = (sessionId: string): boolean =>
-    this.liveOwnerOrNull(sessionId)?.appendStoppedMessages !== undefined
+  stoppedMessageDelivery: NonNullable<StructuredAgentSessionAdapter['stoppedMessageDelivery']> = (
+    sessionId
+  ) => this.liveOwnerOrNull(sessionId)?.stoppedMessageDelivery?.(sessionId) ?? 'none'
 
   appendStoppedMessages: NonNullable<StructuredAgentSessionAdapter['appendStoppedMessages']> = (
     input

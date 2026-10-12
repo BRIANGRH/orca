@@ -5,15 +5,23 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type * as ClaudeDispatchContent from '../claude/claude-structured-dispatch-content'
 import { agentSessionFailureFact } from '../../shared/agent-session-failure'
 import { agentSessionFailureWords } from '../../shared/agent-session-failure-words'
 import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
+import { readClaudeImage } from '../claude/claude-structured-dispatch-content'
 import { CodexAppServerRequestError } from './codex-app-server-request-error'
+import { CodexAppServerUnsupportedError } from './codex-app-server-session'
 import {
   CODEX_TURN_ABORTED_MARKER,
   injectCodexStoppedMessages
 } from './codex-stopped-message-append'
+
+vi.mock('../claude/claude-structured-dispatch-content', async (original) => {
+  const actual = await original<typeof ClaudeDispatchContent>()
+  return { ...actual, readClaudeImage: vi.fn(actual.readClaudeImage) }
+})
 
 function stopped(id: string, blocks: AgentJournalMessageItem['blocks']): OwedStoppedMessage {
   return {
@@ -44,12 +52,28 @@ function session(answer: () => Promise<unknown> = async () => ({})) {
     request,
     host: {
       ended: false,
+      fence: 1,
       threadId: 'thread-1',
       activeTurnIds: new Set<string>(),
       dispatchPending: false,
       connection: { closed: false, request }
     }
   }
+}
+
+type Host = ReturnType<typeof session>['host']
+
+function inject(
+  host: Host | undefined | (() => Host | undefined),
+  messages: readonly OwedStoppedMessage[],
+  turnLive = () => false,
+  timeoutMs?: { prepare: number; settle: number }
+) {
+  return injectCodexStoppedMessages(
+    typeof host === 'function' ? host : () => host,
+    { fence: 1, messages, turnLive },
+    timeoutMs
+  )
 }
 
 const marker = {
@@ -69,7 +93,7 @@ afterEach(async () => {
 describe('appending stopped messages to Codex', () => {
   it('injects every message and its interruption in one call, as measured on 0.159.0', async () => {
     const { request, host } = session()
-    const outcome = await injectCodexStoppedMessages(host, [
+    const outcome = await inject(host, [
       stopped('a', [{ type: 'text', text: 'Reply with only the word pinecone' }]),
       stopped('b', [{ type: 'text', text: 'then rebuild' }])
     ])
@@ -95,7 +119,7 @@ describe('appending stopped messages to Codex', () => {
           marker
         ]
       },
-      { timeoutMs: 5_000 }
+      { timeoutMs: 2_000 }
     ])
     expect(CODEX_TURN_ABORTED_MARKER).toBe(
       '<turn_aborted>\nThe user interrupted the previous turn on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed.\n</turn_aborted>'
@@ -107,7 +131,7 @@ describe('appending stopped messages to Codex', () => {
     const png = join(folder, 'shot.png')
     await writeFile(png, Buffer.from([1, 2, 3]))
     const { request, host } = session()
-    await injectCodexStoppedMessages(host, [
+    await inject(host, [
       stopped('a', [
         { type: 'image-ref', path: png },
         { type: 'text', text: 'look' },
@@ -126,10 +150,25 @@ describe('appending stopped messages to Codex', () => {
             type: 'input_image',
             image_url: `data:image/png;base64,${Buffer.from([1, 2, 3]).toString('base64')}`
           },
-          { type: 'input_text', text: 'look' },
-          { type: 'input_image', image_url: 'https://example.com/a.png' }
+          { type: 'input_text', text: 'look' }
         ]
       },
+      marker
+    ])
+  })
+
+  it('leaves out a remote image, which Codex refuses before recording anything, and keeps the words', async () => {
+    const { request, host } = session()
+    expect(
+      await inject(host, [
+        stopped('a', [
+          { type: 'image-ref', url: 'https://example.com/a.png' },
+          { type: 'text', text: 'what is this' }
+        ])
+      ])
+    ).toEqual({ outcome: 'accepted' })
+    expect(request.mock.calls[0]?.[1]?.items).toEqual([
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'what is this' }] },
       marker
     ])
   })
@@ -138,12 +177,113 @@ describe('appending stopped messages to Codex', () => {
     for (const busy of [{ activeTurnIds: new Set(['turn-1']) }, { dispatchPending: true }]) {
       const { request, host } = session()
       expect(
-        await injectCodexStoppedMessages({ ...host, ...busy }, [
-          stopped('a', [{ type: 'text', text: 'a' }])
-        ])
+        await inject({ ...host, ...busy }, [stopped('a', [{ type: 'text', text: 'a' }])])
       ).toMatchObject({ outcome: 'refused' })
       expect(request).not.toHaveBeenCalled()
     }
+    const { request, host } = session()
+    expect(
+      await inject(host, [stopped('a', [{ type: 'text', text: 'a' }])], () => true)
+    ).toMatchObject({ outcome: 'refused', reason: 'Codex is running a turn' })
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('checks again right before the write: a turn that started while it prepared refuses it', async () => {
+    for (const started of [
+      (host: Host) => host.activeTurnIds.add('turn-1'),
+      (host: Host) => {
+        host.dispatchPending = true
+      }
+    ]) {
+      const { request, host } = session()
+      const read = vi.mocked(readClaudeImage).mockImplementationOnce(async () => {
+        started(host)
+        return Buffer.from([1])
+      })
+      expect(
+        await inject(host, [stopped('a', [{ type: 'image-ref', path: '/tmp/shot.png' }])])
+      ).toEqual({ outcome: 'refused', reason: 'Codex is running a turn' })
+      expect(read).toHaveBeenCalled()
+      expect(request).not.toHaveBeenCalled()
+    }
+    // Orca's own journal opened a turn meanwhile.
+    const { request, host } = session()
+    let live = false
+    vi.mocked(readClaudeImage).mockImplementationOnce(async () => {
+      live = true
+      return Buffer.from([1])
+    })
+    expect(
+      await inject(host, [stopped('a', [{ type: 'image-ref', path: '/tmp/shot.png' }])], () => live)
+    ).toEqual({ outcome: 'refused', reason: 'Codex is running a turn' })
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('is refused, not unknown, when the child died while it prepared: nothing was written', async () => {
+    for (const died of [
+      (host: Host) => {
+        host.ended = true
+      },
+      (host: Host) => {
+        host.connection.closed = true
+      },
+      (host: Host) => {
+        host.fence = 2
+      }
+    ]) {
+      const { request, host } = session()
+      vi.mocked(readClaudeImage).mockImplementationOnce(async () => {
+        died(host)
+        return Buffer.from([1])
+      })
+      expect(
+        await inject(host, [stopped('a', [{ type: 'image-ref', path: '/tmp/shot.png' }])])
+      ).toEqual({ outcome: 'refused', reason: 'Codex ended before the append' })
+      expect(request).not.toHaveBeenCalled()
+    }
+    // A new child took the session meanwhile.
+    const { request, host } = session()
+    let current: Host | undefined = host
+    vi.mocked(readClaudeImage).mockImplementationOnce(async () => {
+      current = session().host
+      return Buffer.from([1])
+    })
+    expect(
+      await inject(() => current, [stopped('a', [{ type: 'image-ref', path: '/tmp/shot.png' }])])
+    ).toEqual({ outcome: 'refused', reason: 'Codex ended before the append' })
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('gives up on a stalled image read in time, refused, and never injects it later', async () => {
+    const { request, host } = session()
+    let readLate: (bytes: Buffer) => void = () => {}
+    vi.mocked(readClaudeImage).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          readLate = resolve
+        })
+    )
+    const started = Date.now()
+    expect(
+      await inject(
+        host,
+        [stopped('a', [{ type: 'image-ref', path: '/tmp/shot.png' }])],
+        () => false,
+        { prepare: 50, settle: 50 }
+      )
+    ).toEqual({ outcome: 'refused', reason: 'reading the stopped messages took too long' })
+    expect(Date.now() - started).toBeLessThan(1_000)
+    readLate(Buffer.from([1]))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('has nothing to write when nothing in the messages reads any more', async () => {
+    const { request, host } = session()
+    expect(
+      await inject(host, [stopped('a', [{ type: 'image-ref', url: 'https://example.com/a.png' }])])
+    ).toEqual({ outcome: 'unreadable' })
+    expect(request).not.toHaveBeenCalled()
   })
 
   it('is refused, writing nothing, when Codex is gone', async () => {
@@ -153,34 +293,28 @@ describe('appending stopped messages to Codex', () => {
       { ...host, ended: true },
       { ...host, connection: { ...host.connection, closed: true } }
     ]) {
-      expect(
-        await injectCodexStoppedMessages(gone, [stopped('a', [{ type: 'text', text: 'a' }])])
-      ).toMatchObject({ outcome: 'refused' })
+      expect(await inject(gone, [stopped('a', [{ type: 'text', text: 'a' }])])).toMatchObject({
+        outcome: 'refused'
+      })
     }
     expect(request).not.toHaveBeenCalled()
   })
 
-  it('is refused only on "no such method", so a Codex without inject keeps them owed', async () => {
-    const { host } = session(async () => {
-      throw new CodexAppServerRequestError('thread/inject_items', -32601, 'Method not found')
-    })
-    expect(
-      await injectCodexStoppedMessages(host, [stopped('a', [{ type: 'text', text: 'a' }])])
-    ).toEqual({ outcome: 'refused', reason: 'this Codex cannot append to its log' })
-  })
-
-  it('is unknown on any other error or lost contact: Codex may have recorded them', async () => {
+  it('is unknown on any error or lost contact: Codex may have recorded them', async () => {
     for (const error of [
       new CodexAppServerRequestError('thread/inject_items', -32603, 'persist failed'),
+      // What Orca's connection makes of a Codex too old for the method: never asked again.
+      new CodexAppServerUnsupportedError('thread/inject_items is unsupported'),
       new Error('codex app-server request timed out'),
       new Error('codex app-server connection closed')
     ]) {
       const { host } = session(async () => {
         throw error
       })
-      expect(
-        await injectCodexStoppedMessages(host, [stopped('a', [{ type: 'text', text: 'a' }])])
-      ).toEqual({ outcome: 'unknown', reason: error.message })
+      expect(await inject(host, [stopped('a', [{ type: 'text', text: 'a' }])])).toEqual({
+        outcome: 'unknown',
+        reason: error.message
+      })
     }
   })
 })

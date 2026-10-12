@@ -3,6 +3,7 @@
 // open no turn, show no Working and write no row.
 
 import { describe, expect, it, vi } from 'vitest'
+import type * as ClaudeDispatchContent from './claude-structured-dispatch-content'
 import { agentSessionFailureFact } from '../../shared/agent-session-failure'
 import { agentSessionFailureWords } from '../../shared/agent-session-failure-words'
 import { agentJournalItemKey } from '../../shared/agent-session-journal-item-key'
@@ -14,6 +15,8 @@ import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-hist
 import { readAgentJournalTurn } from '../../shared/agent-session-turn-record'
 import { claudeUnwrittenUserMessageError } from './claude-agent-sdk-user-message-queue'
 import { appendClaudeStoppedMessages } from './claude-stopped-message-append'
+import { claudeStoppedMessageContent } from './claude-structured-dispatch-content'
+import { settleClaudeExitedSession } from './claude-structured-session-close'
 import {
   PROVIDER_SESSION_ID,
   USER_MESSAGE,
@@ -22,6 +25,11 @@ import {
   identityFor,
   type FakeConnection
 } from './claude-structured-session-test-support'
+
+vi.mock('./claude-structured-dispatch-content', async (original) => {
+  const actual = await original<typeof ClaudeDispatchContent>()
+  return { ...actual, claudeStoppedMessageContent: vi.fn(actual.claudeStoppedMessageContent) }
+})
 
 function stopped(id: string, text: string): OwedStoppedMessage {
   const body: AgentJournalMessageItem = {
@@ -68,7 +76,20 @@ async function acquired() {
   const connection = claude.connections[0]!
   const frame = (message: Record<string, unknown>) =>
     connection.handlers.onMessage?.({ session_id: PROVIDER_SESSION_ID, ...message })
-  return { adapter, bodies, connection, frame }
+  const session = adapter['sessions'].get('session-1')!
+  return { adapter, bodies, connection, frame, session }
+}
+
+function append(
+  adapter: Awaited<ReturnType<typeof acquired>>['adapter'],
+  messages: OwedStoppedMessage[],
+  sessionId = 'session-1'
+) {
+  return adapter.appendStoppedMessages({ sessionId, fence: 7, messages, turnLive: () => false })
+}
+
+function turnRunning(bodies: Map<string, AgentJournalItemBody>): boolean {
+  return turnRows(bodies).some((body) => readAgentJournalTurn(body)?.state === 'running')
 }
 
 /** The rows a turn writes: its turn record and the messages in it. */
@@ -121,11 +142,10 @@ function zeroTurnCommands(
 describe('appending stopped messages to Claude', () => {
   it('writes each as its content then the block-form marker, shouldQuery false, oldest first', async () => {
     const { adapter, connection, frame } = await acquired()
-    const outcome = adapter.appendStoppedMessages({
-      sessionId: 'session-1',
-      fence: 7,
-      messages: [stopped('a', 'delete the build'), stopped('b', 'then rebuild')]
-    })
+    const outcome = append(adapter, [
+      stopped('a', 'delete the build'),
+      stopped('b', 'then rebuild')
+    ])
     await vi.waitFor(() => expect(connection.sent).toHaveLength(4))
 
     expect(connection.sent.map(({ uuid: _uuid, ...rest }) => rest)).toEqual(
@@ -151,11 +171,7 @@ describe('appending stopped messages to Claude', () => {
 
   it('settles once Claude completes every frame, and its commands open no turn, Working or row', async () => {
     const { adapter, bodies, connection, frame } = await acquired()
-    const outcome = adapter.appendStoppedMessages({
-      sessionId: 'session-1',
-      fence: 7,
-      messages: [stopped('a', 'delete the build')]
-    })
+    const outcome = append(adapter, [stopped('a', 'delete the build')])
     await vi.waitFor(() => expect(connection.sent).toHaveLength(2))
     expect(adapter.holdsDispatch('session-1')).toBe(true)
     const before = [...bodies]
@@ -185,11 +201,7 @@ describe('appending stopped messages to Claude', () => {
 
   it('leaves a send that starts before the append idles its own frames, its idle included', async () => {
     const { adapter, bodies, connection, frame } = await acquired()
-    const outcome = adapter.appendStoppedMessages({
-      sessionId: 'session-1',
-      fence: 7,
-      messages: [stopped('a', 'delete the build')]
-    })
+    const outcome = append(adapter, [stopped('a', 'delete the build')])
     await vi.waitFor(() => expect(connection.sent).toHaveLength(2))
     zeroTurnCommands(connection, frame)
     expect(await outcome).toEqual({ outcome: 'accepted' })
@@ -214,13 +226,117 @@ describe('appending stopped messages to Claude', () => {
     )
   })
 
-  it('is unknown when Claude does not confirm it in time, and never claims a later turn for it', async () => {
-    const { adapter, connection } = await acquired()
-    const session = adapter['sessions'].get('session-1')!
+  it('is unknown when Claude does not confirm it in time; then it holds nothing, and its late result ends no turn', async () => {
+    const { adapter, bodies, connection, frame, session } = await acquired()
     expect(
-      await appendClaudeStoppedMessages(session, [stopped('a', 'delete the build')], 10)
+      await appendClaudeStoppedMessages(
+        session,
+        { fence: 7, messages: [stopped('a', 'delete the build')], turnLive: () => false },
+        { prepare: 2_000, settle: 10 }
+      )
     ).toEqual({ outcome: 'unknown', reason: 'Claude did not confirm the append' })
     expect(connection.sent).toHaveLength(2)
+    // Disarmed: the child may rest.
+    expect(adapter.holdsDispatch('session-1')).toBe(false)
+    const [content, marker] = connection.sent.map((message) => String(message.uuid))
+
+    await adapter.dispatch({
+      sessionId: 'session-1',
+      clientMessageId: 'next',
+      body: USER_MESSAGE,
+      fence: 7
+    })
+    const sent = connection.sent.at(-1)!
+    frame(lifecycle(String(sent.uuid), 'started'))
+    frame(init)
+    frame({ ...sent, isReplay: true })
+    expect(turnRunning(bodies)).toBe(true)
+    // The append's own frames, late, while the send's turn runs.
+    frame(result(content!))
+    frame(lifecycle(content!, 'completed'))
+    frame(result(marker!))
+    expect(turnRunning(bodies)).toBe(true)
+  })
+
+  it('gives up on a stalled read in time, refused, and never writes it later', async () => {
+    const { connection, session } = await acquired()
+    let readLate: (content: unknown[]) => void = () => {}
+    vi.mocked(claudeStoppedMessageContent).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          readLate = resolve
+        })
+    )
+    const started = Date.now()
+    expect(
+      await appendClaudeStoppedMessages(
+        session,
+        { fence: 7, messages: [stopped('a', 'look')], turnLive: () => false },
+        { prepare: 50, settle: 50 }
+      )
+    ).toEqual({ outcome: 'refused', reason: 'reading the stopped messages took too long' })
+    expect(Date.now() - started).toBeLessThan(1_000)
+    readLate([{ type: 'text', text: 'look' }])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(connection.sent).toHaveLength(0)
+  })
+
+  it('checks again right before the write: refused when the child or Orca moved on while it read', async () => {
+    for (const moved of [
+      (state: { live: boolean; session: { fence: number } }) => {
+        state.live = true
+      },
+      (state: { live: boolean; session: { fence: number } }) => {
+        state.session.fence = 8
+      }
+    ]) {
+      const { connection, session } = await acquired()
+      const state = { live: false, session }
+      vi.mocked(claudeStoppedMessageContent).mockImplementationOnce(async () => {
+        moved(state)
+        return [{ type: 'text', text: 'look' }]
+      })
+      expect(
+        await appendClaudeStoppedMessages(session, {
+          fence: 7,
+          messages: [stopped('a', 'look')],
+          turnLive: () => state.live
+        })
+      ).toMatchObject({ outcome: 'refused' })
+      expect(connection.sent).toHaveLength(0)
+    }
+  })
+
+  it('is refused when the child ends with every frame unwritten, settled as its exit runs', async () => {
+    const { adapter, connection, session } = await acquired()
+    const writes: ((error: Error) => void)[] = []
+    vi.spyOn(connection, 'send').mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          writes.push(reject)
+        })
+    )
+    const outcome = append(adapter, [stopped('a', 'delete the build')])
+    await vi.waitFor(() => expect(writes).toHaveLength(2))
+
+    // As the connection ends: the queue fails each frame it never wrote, then the exit settles.
+    const ended = new Error('claude stream-json connection closed')
+    writes.forEach((reject) => reject(claudeUnwrittenUserMessageError(ended)))
+    connection.closed = true
+    settleClaudeExitedSession(session)
+
+    expect(await outcome).toEqual({ outcome: 'refused', reason: 'Claude took no frame' })
+  })
+
+  it('is unknown when the child ends after taking its frames', async () => {
+    const { adapter, connection, session } = await acquired()
+    const outcome = append(adapter, [stopped('a', 'delete the build')])
+    await vi.waitFor(() => expect(connection.sent).toHaveLength(2))
+
+    connection.closed = true
+    settleClaudeExitedSession(session)
+
+    expect(await outcome).toEqual({ outcome: 'unknown', reason: 'Claude ended during the append' })
   })
 
   it('is refused when Claude is gone or took no frame, so the message stays owed', async () => {
@@ -228,20 +344,12 @@ describe('appending stopped messages to Claude', () => {
     vi.spyOn(connection, 'send').mockRejectedValue(
       claudeUnwrittenUserMessageError(new Error('claude stream-json connection is closed'))
     )
-    expect(
-      await adapter.appendStoppedMessages({
-        sessionId: 'session-1',
-        fence: 7,
-        messages: [stopped('a', 'delete the build')]
-      })
-    ).toMatchObject({ outcome: 'refused' })
-    expect(
-      await adapter.appendStoppedMessages({
-        sessionId: 'gone',
-        fence: 7,
-        messages: [stopped('a', 'delete the build')]
-      })
-    ).toMatchObject({ outcome: 'refused' })
+    expect(await append(adapter, [stopped('a', 'delete the build')])).toMatchObject({
+      outcome: 'refused'
+    })
+    expect(await append(adapter, [stopped('a', 'delete the build')], 'gone')).toMatchObject({
+      outcome: 'refused'
+    })
   })
 
   it('is unknown when a frame may have been written and the rest failed', async () => {
@@ -249,12 +357,8 @@ describe('appending stopped messages to Claude', () => {
     vi.spyOn(connection, 'send')
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('stdin closed mid-write'))
-    expect(
-      await adapter.appendStoppedMessages({
-        sessionId: 'session-1',
-        fence: 7,
-        messages: [stopped('a', 'delete the build')]
-      })
-    ).toMatchObject({ outcome: 'unknown' })
+    expect(await append(adapter, [stopped('a', 'delete the build')])).toMatchObject({
+      outcome: 'unknown'
+    })
   })
 })

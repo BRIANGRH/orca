@@ -167,6 +167,8 @@ export class AcpStructuredSessionAdapter implements StructuredAgentSessionAdapte
     return { state: 'admitted' }
   }
 
+  stoppedMessageDelivery = (): 'carry' => 'carry'
+
   prepareDispatch: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']> = (input) =>
     prepareAcpDispatch(input.body, input.owed, this.live(input.sessionId))
 

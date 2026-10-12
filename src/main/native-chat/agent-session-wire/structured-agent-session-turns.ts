@@ -48,7 +48,6 @@ import { CommandReceiptExistsError } from '../agent-session-journal/command-rece
 import type { StructuredAgentRegistry } from './structured-agent-registry'
 import {
   appendStoppedHistory,
-  appendsStoppedHistory,
   owedStoppedHistory,
   prepareStoppedHistory
 } from './structured-agent-session-stopped-history-selection'
@@ -232,11 +231,11 @@ export async function handOverSubmission(
   // writes the stopped messages owed to the agent: into its own log, or carried in this send, named
   // on this same row before anything is written.
   const owed = owedStoppedHistory(ctx, submission, body, ctx.journal.liveTurnScope())
-  const appends = appendsStoppedHistory(ctx)
-  if (appends) {
+  const delivery = ctx.adapter.stoppedMessageDelivery?.(ctx.sessionId) ?? 'none'
+  if (delivery === 'append') {
     await appendStoppedHistory(ctx, owed)
   }
-  const prepared = appends ? null : await prepareStoppedHistory(ctx, body, owed)
+  const prepared = delivery === 'carry' ? await prepareStoppedHistory(ctx, body, owed) : null
   // Re-read after that I/O: a turn opened meanwhile makes this a steer, which carries none.
   const turnScope = ctx.journal.liveTurnScope()
   const carried = turnScope.kind === 'thread' ? prepared : null
