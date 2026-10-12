@@ -1,7 +1,7 @@
 import {
   agentSessionFailureFact,
   providerDiagnostic,
-  type AgentSessionFailureFact
+  type SubmissionRejectionFact
 } from '../../shared/agent-session-failure'
 import { agentSessionFailureWords } from '../../shared/agent-session-failure-words'
 import type { AgentSessionDispatchOutcome } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
@@ -40,7 +40,7 @@ export function piRpcFailureFact(error: string) {
   )
 }
 
-function piRejection(fact: AgentSessionFailureFact): AgentSessionDispatchOutcome {
+function piRejection(fact: SubmissionRejectionFact): AgentSessionDispatchOutcome {
   return {
     state: 'rejected',
     ...agentSessionFailureWords(fact, { agentName: 'Pi', surface: 'rejection' })
