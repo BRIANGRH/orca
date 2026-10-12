@@ -71,6 +71,11 @@ export type WslOrcadDeployOptions = {
   readRegistryId?: (distro: string) => Promise<string | null>
 }
 
+/** Until the persisted deployment record (C7) assigns one, the environment is keyed per distro. */
+export function defaultWslOrcadEnvironmentId(distro: string): string {
+  return `wsl:${wslDistroHolderKey(distro)}`
+}
+
 /** WSL 1 runs no Linux kernel, so the pinned Node and its pty cannot run there. */
 export function isWsl1KernelRelease(release: string): boolean {
   return /^\d+\.\d+\.\d+-\d+-Microsoft$/.test(release.trim())
@@ -86,7 +91,7 @@ export async function deployAndLaunchWslOrcad(
   }
   const target: WslOrcadHostTarget = {
     kind: 'wsl',
-    id: options.environmentId ?? `wsl:${wslDistroHolderKey(name)}`,
+    id: options.environmentId ?? defaultWslOrcadEnvironmentId(name),
     distro: name,
     label: options.label ?? name
   }
