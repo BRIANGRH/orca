@@ -229,6 +229,22 @@ describe('WslHostService', () => {
     expect(connector.connect).toHaveBeenCalledTimes(2)
   })
 
+  it('refuses a connect while the experiment is off, but still removes the host', async () => {
+    const connector = makeConnector([UBUNTU])
+    const service = makeService(connector)
+    await service.add({ distro: 'Ubuntu' })
+    connector.connect.mockClear()
+    enabled = false
+
+    await expect(service.connect('wsl:ubuntu')).rejects.toThrow('turned off in Settings')
+    service.setVisibleWork(['wsl:ubuntu'])
+    await service.ensureForRuntimeCall('wsl:ubuntu')
+    expect(connector.connect).not.toHaveBeenCalled()
+
+    await service.remove('wsl:ubuntu')
+    expect(listEnvironments(userDataPath)).toEqual([])
+  })
+
   it('removes a host: closes its connection, releases the holder, drops both records', async () => {
     const connector = makeConnector([UBUNTU])
     const service = makeService(connector)

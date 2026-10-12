@@ -23,6 +23,11 @@ import { OrcadHostUnsupportedError } from '../ssh/orcad-host-unavailable'
 import type { WslHostDistroCandidate } from './wsl-host-distro-list'
 import { findServerSharingWslOrcad } from './wsl-host-ssh-orcad-conflict'
 import { wslDistroHolderKey } from './wsl-distro-holder-record'
+import {
+  admitWslHostDistro,
+  sameWslDistro,
+  WSL_HOSTS_DISABLED_MESSAGE
+} from './wsl-host-add-admission'
 import { WslOrcadLaunchDeferredError, type WslOrcadConnection } from './wsl-orcad-connection'
 import type { WslOrcadConnectionStatus } from './wsl-orcad-connection-status'
 import { defaultWslOrcadEnvironmentId } from './wsl-orcad-deploy'
@@ -116,7 +121,7 @@ export class WslHostService {
     return candidates.map(({ id: _id, ...distro }) => ({
       ...distro,
       environmentId:
-        records.find((record) => sameDistro(record.distro, distro.name))?.environmentId ?? null
+        records.find((record) => sameWslDistro(record.distro, distro.name))?.environmentId ?? null
     }))
   }
 
@@ -153,6 +158,9 @@ export class WslHostService {
     const record = this.recordForEnvironment(environmentId)
     if (!record) {
       throw new Error('This server is not a WSL host.')
+    }
+    if (!this.deps.isEnabled()) {
+      throw new Error(WSL_HOSTS_DISABLED_MESSAGE)
     }
     await this.wsl.connect(record.distro)
   }
@@ -210,35 +218,18 @@ export class WslHostService {
     startIfStopped?: boolean
   }): Promise<WslHostAddResult> {
     if (!this.deps.isEnabled()) {
-      return { ok: false, kind: 'disabled', message: 'WSL hosts are turned off in Experimental.' }
+      return { ok: false, kind: 'disabled', message: WSL_HOSTS_DISABLED_MESSAGE }
     }
-    const distro = (await this.wsl.listDistros()).find((candidate) =>
-      sameDistro(candidate.name, args.distro)
-    )
-    if (!distro) {
-      return {
-        ok: false,
-        kind: 'failed',
-        message: `${args.distro} is not a registered WSL distro.`
-      }
+    const admission = admitWslHostDistro({
+      requested: args.distro,
+      candidates: await this.wsl.listDistros(),
+      alreadyAdded: (name) => this.recordForDistro(name) !== null,
+      startIfStopped: args.startIfStopped === true
+    })
+    if (!('distro' in admission)) {
+      return admission
     }
-    if (distro.version === 1) {
-      return {
-        ok: false,
-        kind: 'unsupported-wsl1',
-        message: `${distro.name} runs WSL 1, which isn’t supported as a host. Convert it with: wsl --set-version ${distro.name} 2`
-      }
-    }
-    if (this.recordForDistro(distro.name)) {
-      return { ok: false, kind: 'already-added', message: `${distro.name} is already a host.` }
-    }
-    if (distro.state === 'stopped' && !args.startIfStopped) {
-      return {
-        ok: false,
-        kind: 'distro-stopped',
-        message: `${distro.name} is stopped. Start it to add it as a host.`
-      }
-    }
+    const { distro } = admission
     const userDataPath = this.deps.userDataPath()
     try {
       const sharing = findServerSharingWslOrcad(
@@ -321,16 +312,12 @@ export class WslHostService {
   }
 
   private recordForDistro(distro: string): WslHostDeploymentRecord | null {
-    return this.records().find((record) => sameDistro(record.distro, distro)) ?? null
+    return this.records().find((record) => sameWslDistro(record.distro, distro)) ?? null
   }
 
   private recordForEnvironment(environmentId: string): WslHostDeploymentRecord | null {
     return this.records().find((record) => record.environmentId === environmentId) ?? null
   }
-}
-
-function sameDistro(left: string, right: string): boolean {
-  return wslDistroHolderKey(left) === wslDistroHolderKey(right)
 }
 
 function errorMessage(error: unknown): string {
