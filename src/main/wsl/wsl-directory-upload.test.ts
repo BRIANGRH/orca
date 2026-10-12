@@ -58,7 +58,7 @@ describe.skipIf(process.platform === 'win32' || !hasSha256sum())('uploadDirector
   let commands: string[]
 
   const transport = createWslOrcadHostTransport({
-    distro: 'test',
+    target: { kind: 'wsl', id: 'env-test', distro: 'test', label: 'test' },
     spawn: (spec) => {
       const args = spec.args ?? []
       const command = args[args.indexOf('--exec') + 3] ?? ''

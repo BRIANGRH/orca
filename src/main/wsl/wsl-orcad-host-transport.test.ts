@@ -51,7 +51,7 @@ function fakeChild(options: { spawnError?: Error } = {}): FakeChild {
 function transportWith(children: FakeChild[]) {
   const specs: PipedProcessSpec[] = []
   const transport = createWslOrcadHostTransport({
-    distro: 'Ubuntu-24.04',
+    target: { kind: 'wsl', id: 'env-1', distro: 'Ubuntu-24.04', label: 'My Ubuntu' },
     spawn: (spec) => {
       specs.push(spec)
       const next = children.shift()
@@ -164,9 +164,9 @@ describe('createWslOrcadHostTransport', () => {
     const target = transport.getTarget()
     expect(target).toEqual({
       kind: 'wsl',
-      id: 'wsl:Ubuntu-24.04',
+      id: 'env-1',
       distro: 'Ubuntu-24.04',
-      label: 'Ubuntu-24.04'
+      label: 'My Ubuntu'
     })
     expect(isWslOrcadHostTarget(target)).toBe(true)
     expect(transport.usesSystemSshTransport()).toBe(false)

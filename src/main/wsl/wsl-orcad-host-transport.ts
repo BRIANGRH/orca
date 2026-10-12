@@ -11,14 +11,14 @@ import { resolveWslInteropSpawnCwd } from '../wsl-interop-spawn-directory'
 import { wrapWslCommandProcess } from './wsl-command-channel'
 import { uploadDirectoryIntoWsl, wslGuestSourcePath } from './wsl-directory-upload'
 import { resolveWslExecutablePath } from './wsl-executable-path'
-import { wslOrcadHostTarget, type WslOrcadHostTarget } from './wsl-orcad-host-target'
+import type { WslOrcadHostTarget } from './wsl-orcad-host-target'
 
 export type WslOrcadHostTransport = OrcadHostTransport & {
   getTarget(): WslOrcadHostTarget
 }
 
 type WslOrcadHostTransportOptions = {
-  distro: string
+  target: WslOrcadHostTarget
   /** Test seam; production spawns through process-host. */
   spawn?: PipedProcessSpawner
 }
@@ -31,7 +31,7 @@ export function createWslOrcadHostTransport(
   options: WslOrcadHostTransportOptions
 ): WslOrcadHostTransport {
   const spawn = options.spawn ?? spawnProcess
-  const target = wslOrcadHostTarget(options.distro)
+  const { target } = options
   const transport: WslOrcadHostTransport = {
     // `wrapCommand` is SSH-only: there is no login shell between wsl.exe and `sh -c`.
     async exec(command: string, execOptions?: SshExecOptions): Promise<RemoteCommandChannel> {
@@ -39,7 +39,7 @@ export function createWslOrcadHostTransport(
         throw createSshOperationAbortError()
       }
       const program = resolveWslExecutablePath()
-      const args = buildWslExecArgs(options.distro, ['sh', '-c', command])
+      const args = buildWslExecArgs(target.distro, ['sh', '-c', command])
       if (commandLineLength([program, ...args]) > MAX_COMMAND_LINE_CHARS) {
         throw new Error('WSL command exceeds the Windows command-line limit')
       }
@@ -73,7 +73,7 @@ export function createWslOrcadHostTransport(
       uploadDirectoryIntoWsl(
         transport,
         localDir,
-        wslGuestSourcePath(localDir, options.distro),
+        wslGuestSourcePath(localDir, target.distro),
         remoteDir,
         { signal: fileOptions?.signal }
       )
