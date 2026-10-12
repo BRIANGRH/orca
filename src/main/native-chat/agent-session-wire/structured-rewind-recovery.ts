@@ -153,6 +153,7 @@ export async function recoverStructuredRewind(
   if (rewind.phase !== 'provider-succeeded') {
     return
   }
+  // Re-derived, not stored: the rewind admitted no unsettled send, and a settled one never leaves the set.
   const replacement = withRewindRestatedSends(
     rewind.retained.map(retainedRowReplacement),
     rewindRestatedSends(journal)
