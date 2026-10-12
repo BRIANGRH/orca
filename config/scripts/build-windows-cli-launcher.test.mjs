@@ -267,7 +267,6 @@ describe('Windows CLI launcher', () => {
   profile: process.env.ORCA_USER_DATA_PATH,
   electronRunAsNode: process.env.ELECTRON_RUN_AS_NODE ?? null,
   nodeOptions: process.env.NODE_OPTIONS ?? null,
-  owningHost: process.env.ORCA_CLI_OWNING_HOST ?? null,
   desktopMarker: process.env.ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER ?? null
 }))\n`,
         'utf8'
@@ -296,7 +295,6 @@ describe('Windows CLI launcher', () => {
         profile,
         electronRunAsNode: null,
         nodeOptions: null,
-        owningHost: '1',
         desktopMarker: null
       })
       // Windows PowerShell 5.1 itself drops embedded double quotes, so its body has none.

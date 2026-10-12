@@ -11,6 +11,7 @@ import { requireLegacyAgentSessionAccountHome } from '../../shared/agent-session
 import { agentSessionProviderHandleChainHead } from '../../shared/agent-session-provider-handle'
 import { isNativeLocalLocation } from '../../shared/execution-host'
 import { resolveCodexCommand } from '../codex-cli/command'
+import { resolveAgainAfterRefreshOnMissingProgram } from '../native-chat/structured-agent-command-resolution'
 import type { AgentSessionRecordStore } from '../runtime/agent-session-record-store'
 import { resolveAgentSessionLaunchDirectory } from '../runtime/agent-session-launch-directory'
 import type { CodexStructuredLaunch } from './codex-structured-session-adapter'
@@ -30,6 +31,8 @@ export type CodexStructuredLaunchResolverDeps = {
   resolveCommand?: (options?: { pathEnv?: string | null; homePath?: string }) => string
   /** Fresh shell/configured environment for this spawn; never written to the session record. */
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
+  /** Refreshes that environment when Codex was not found in it; absent never retries. */
+  refreshEnvironmentAfterMiss?: () => Promise<void>
   resolveRollout?: typeof resolvePinnedCodexRolloutProof
   /** The user's Agent Permissions setting as thread policy, re-read per acquisition.
    *  States both postures outright — a resume inherits the last one for any field left absent. */
@@ -50,7 +53,19 @@ export type CodexStructuredInvocation = {
  * session it stands in for. Env VALUES stay out of the catalog fingerprint:
  * drift there heals on the next refresh.
  */
-export async function resolveCodexStructuredInvocation(
+export function resolveCodexStructuredInvocation(
+  deps: Pick<
+    CodexStructuredLaunchResolverDeps,
+    'resolveCommand' | 'resolveEnvironment' | 'refreshEnvironmentAfterMiss'
+  >
+): Promise<CodexStructuredInvocation> {
+  return resolveAgainAfterRefreshOnMissingProgram(
+    () => readCodexStructuredInvocation(deps),
+    deps.refreshEnvironmentAfterMiss
+  )
+}
+
+async function readCodexStructuredInvocation(
   deps: Pick<CodexStructuredLaunchResolverDeps, 'resolveCommand' | 'resolveEnvironment'>
 ): Promise<CodexStructuredInvocation> {
   const environment = await deps.resolveEnvironment?.()

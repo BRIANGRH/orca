@@ -111,13 +111,12 @@ fn run_server_cli(config_path: &Path) -> ! {
         }
     }
     env::set_var("ORCA_USER_DATA_PATH", user_data_path);
-    // Binds the CLI to this server over an inherited ORCA_ENVIRONMENT, as the POSIX launcher does.
-    env::set_var("ORCA_CLI_OWNING_HOST", "1");
     for name in [
         "NODE_OPTIONS",
         "NODE_REPL_EXTERNAL_MODULE",
         "ELECTRON_RUN_AS_NODE",
-        // The desktop marker would make orchestration demand a bare `orca` resume command.
+        // A server started by the desktop's `orca serve` inherits this marker, which would make
+        // orchestration demand a bare `orca` resume command.
         "ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER",
     ] {
         env::remove_var(name);

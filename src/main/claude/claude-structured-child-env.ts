@@ -4,6 +4,7 @@
 import { withCliRuntimeOnPath } from '../../shared/node-cli-command-resolution'
 import { applyClaudeEnvPatch } from '../claude-accounts/environment'
 import { resolveClaudeCommand } from '../codex-cli/command'
+import { resolveAgainAfterRefreshOnMissingProgram } from '../native-chat/structured-agent-command-resolution'
 import { withoutInheritedClaudeConfigDir } from './claude-config-dir-pin'
 import type { ClaudeStructuredLaunchResolverDeps } from './claude-structured-launch-resolution'
 
@@ -19,7 +20,7 @@ function cloneDefinedEnv(env: NodeJS.ProcessEnv | Record<string, string>): Recor
 
 export type ClaudeEnvDeps = Pick<
   ClaudeStructuredLaunchResolverDeps,
-  'resolveCommand' | 'resolveEnv' | 'resolveInheritedEnv'
+  'resolveCommand' | 'resolveEnv' | 'resolveInheritedEnv' | 'refreshEnvironmentAfterMiss'
 >
 
 /** What a child's env is built from, before any auth policy applies to it. */
@@ -29,9 +30,14 @@ export type ClaudeChildEnvSources = {
   inheritedEnv: Record<string, string>
 }
 
-export async function resolveClaudeChildEnvSources(
-  deps: ClaudeEnvDeps
-): Promise<ClaudeChildEnvSources> {
+export function resolveClaudeChildEnvSources(deps: ClaudeEnvDeps): Promise<ClaudeChildEnvSources> {
+  return resolveAgainAfterRefreshOnMissingProgram(
+    () => readClaudeChildEnvSources(deps),
+    deps.refreshEnvironmentAfterMiss
+  )
+}
+
+async function readClaudeChildEnvSources(deps: ClaudeEnvDeps): Promise<ClaudeChildEnvSources> {
   const overlay = await deps.resolveEnv?.()
   const inheritedEnv = deps.resolveInheritedEnv
     ? await deps.resolveInheritedEnv()

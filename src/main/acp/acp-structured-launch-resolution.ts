@@ -18,6 +18,7 @@ import type { AgentSessionAccountHome } from '../../shared/agent-session-account
 import type { resolveCliCommand } from '../../shared/node-cli-command-resolution'
 import { agentSessionRefusalError } from '../../shared/agent-session-wire-refusals'
 import {
+  resolveAgainAfterRefreshOnMissingProgram,
   resolveStructuredAgentCommand,
   type StructuredAgentCommandSettings
 } from '../native-chat/structured-agent-command-resolution'
@@ -69,6 +70,8 @@ export type AcpStructuredLaunchResolverDeps = {
   resolveWorkspacePath: (workspaceId: string) => Promise<string>
   /** The shared base env; re-read per acquisition. */
   resolveEnvironment: () => Promise<Record<string, string>>
+  /** Refreshes that env when the agent's program was not found in it; absent never retries. */
+  refreshEnvironmentAfterMiss?: () => Promise<void>
   /** The user's per-agent environment overlay from settings. */
   resolveLaunchEnv?: (agent: string) => Record<string, string>
   /** The Agent Permissions setting's bypass posture for this agent, re-read per acquisition. */
@@ -145,6 +148,7 @@ export async function acpLaunchVersionSupported(
 export type AcpLaunchInvocationDeps = Pick<
   AcpStructuredLaunchResolverDeps,
   | 'resolveEnvironment'
+  | 'refreshEnvironmentAfterMiss'
   | 'resolveLaunchEnv'
   | 'resolveCommandSettings'
   | 'resolveCommand'
@@ -154,7 +158,18 @@ export type AcpLaunchInvocationDeps = Pick<
 
 /** The binary and environment any child of this agent runs under for `accountHome`: a session's
  *  launch and a catalog probe both resolve here, so neither can reach another account or install. */
-export async function resolveAcpLaunchInvocation(
+export function resolveAcpLaunchInvocation(
+  spec: AcpLaunchSpec,
+  accountHome: AgentSessionAccountHome,
+  deps: AcpLaunchInvocationDeps
+): Promise<{ command: string; env: Record<string, string>; envToDelete: string[] }> {
+  return resolveAgainAfterRefreshOnMissingProgram(
+    () => readAcpLaunchInvocation(spec, accountHome, deps),
+    deps.refreshEnvironmentAfterMiss
+  )
+}
+
+async function readAcpLaunchInvocation(
   spec: AcpLaunchSpec,
   accountHome: AgentSessionAccountHome,
   deps: AcpLaunchInvocationDeps

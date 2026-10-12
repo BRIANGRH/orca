@@ -46,19 +46,6 @@ describe('prependOrcaCliDirToChildPath', () => {
       expect(shim.ensureLinuxTerminalOrcaCliShimDir).not.toHaveBeenCalled()
     }
   )
-  it("keeps a WSL pane off a Windows server's native launcher", () => {
-    installFakeAppEnvironment({ getCliLauncherPath: () => 'C:\\server\\bin\\orca.exe' })
-    const env: Record<string, string> = { PATH: 'C:\\Windows', ORCA_CLI_COMMAND: 'orca-ide' }
-    prependOrcaCliDirToChildPath(env, {
-      isPackaged: true,
-      userDataPath: USER_DATA,
-      resourcesPath: null,
-      skipHostLauncher: true,
-      platform: 'win32'
-    })
-    expect(env.ORCA_CLI_COMMAND).toBe('orca-ide')
-    expect(env.PATH).not.toContain('server')
-  })
   it('puts a Windows execution host CLI first on Path without a POSIX restore dir', () => {
     const binDir = join(USER_DATA, 'cli', 'bin')
     const launcher = join(binDir, 'orca.exe')

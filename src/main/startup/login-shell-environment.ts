@@ -9,7 +9,8 @@ import {
 
 const START_MARKER = '__ORCA_LOGIN_SHELL_ENV_START__'
 const END_MARKER = '__ORCA_LOGIN_SHELL_ENV_END__'
-const SPAWN_TIMEOUT_MS = 5000
+/** How long one profile-loading shell may run before Orca stops waiting for it. */
+export const LOGIN_SHELL_SPAWN_TIMEOUT_MS = 5000
 
 /** Whether a profile-loading shell produced the env, or Orca fell back to its own. */
 export type LoginShellEnvironmentCapture = {
@@ -130,7 +131,7 @@ function spawnShellAndReadEnvironment(
         // Best-effort timeout cleanup.
       }
       finish(null)
-    }, SPAWN_TIMEOUT_MS)
+    }, LOGIN_SHELL_SPAWN_TIMEOUT_MS)
     child.stdin.on('error', () => {})
     child.stdout.on('error', () => finish(null))
     child.stderr.on('error', () => {})

@@ -156,9 +156,15 @@ describe('runtime-selector flags on locally pinned CLI commands', () => {
     expect(runtimeClientConstructorMock).toHaveBeenCalledWith(undefined, 'm4air')
   })
 
-  it('preserves explicit routing for an owning-host invocation with a stale ambient selector', async () => {
-    process.env.ORCA_CLI_OWNING_HOST = '1'
-    process.env.ORCA_ENVIRONMENT = 'stale-shell-selection'
+  /** The selectors an agent's environment carries: set empty, which the CLI reads as unset. */
+  function agentSelectors(): void {
+    process.env.ORCA_ENVIRONMENT = ''
+    process.env.ORCA_PAIRING_CODE = ''
+    process.env.ORCA_REMOTE_PAIRING = ''
+  }
+
+  it("keeps explicit --environment routing under an agent's empty selectors", async () => {
+    agentSelectors()
     pairRuntimeEnvironment(listEnvironmentsMock, 'env-m4air', 'm4air')
     fakeMachineNameRuntime('M4 Air')
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -167,11 +173,9 @@ describe('runtime-selector flags on locally pinned CLI commands', () => {
     expect(runtimeClientConstructorMock).toHaveBeenCalledWith(undefined, 'm4air')
   })
 
-  it('lets an owning-host invocation pick --host runtime:<id> despite a stale ambient selector', async () => {
-    process.env.ORCA_CLI_OWNING_HOST = '1'
-    process.env.ORCA_ENVIRONMENT = 'stale-shell-selection'
+  it("keeps --host runtime:<id> routing under an agent's empty selectors", async () => {
+    agentSelectors()
     pairRuntimeEnvironment(listEnvironmentsMock, 'gpu')
-    resolveEnvironmentMock.mockReturnValue({ id: 'stale-shell-selection' })
     queueFixtures(callMock, okFixture('req_project_setups', { setups: [] }))
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})

@@ -13,6 +13,7 @@ import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 import type { resolveCliCommand } from '../../shared/node-cli-command-resolution'
 import { isStableCliVersionOnLine, probeAgentCliVersion } from '../agent-cli-version-probe'
 import {
+  resolveAgainAfterRefreshOnMissingProgram,
   resolveStructuredAgentCommand,
   type StructuredAgentCommandSettings
 } from '../native-chat/structured-agent-command-resolution'
@@ -29,6 +30,8 @@ export type PiRpcLaunchResolverDeps = {
   store: AgentSessionRecordStore
   resolveWorkspacePath: (id: string) => Promise<string>
   resolveEnvironment: () => Promise<NodeJS.ProcessEnv>
+  /** Refreshes that environment when Pi was not found in it; absent never retries. */
+  refreshEnvironmentAfterMiss?: () => Promise<void>
   /** The user's Pi Command setting, re-read per acquisition; none runs the stock binary. */
   resolveCommandSettings?: () => StructuredAgentCommandSettings
   resolveCommand?: typeof resolveCliCommand
@@ -128,13 +131,19 @@ export function createPiRpcLaunchResolver(
       throw new Error('Pi account home does not match its binary')
     }
     const cwd = await resolveAgentSessionLaunchDirectory(deps, record)
-    const env: Record<string, string> = {}
-    for (const [key, value] of Object.entries(await deps.resolveEnvironment())) {
-      if (value !== undefined) {
-        env[key] = value
+    const { env, command } = await resolveAgainAfterRefreshOnMissingProgram(async () => {
+      const env: Record<string, string> = {}
+      for (const [key, value] of Object.entries(await deps.resolveEnvironment())) {
+        if (value !== undefined) {
+          env[key] = value
+        }
       }
-    }
-    env.PI_CODING_AGENT_DIR = accountHome.path
+      env.PI_CODING_AGENT_DIR = accountHome.path
+      return {
+        env,
+        command: resolvePiRpcCommand(env, deps.resolveCommandSettings?.(), deps.resolveCommand)
+      }
+    }, deps.refreshEnvironmentAfterMiss)
     const previous = agentSessionProviderHandleChainHead(record.providerHandleChain)
     let sessionFile: string | undefined
     let forkFile: string | undefined
@@ -157,7 +166,6 @@ export function createPiRpcLaunchResolver(
         forkFile = source
       }
     }
-    const command = resolvePiRpcCommand(env, deps.resolveCommandSettings?.(), deps.resolveCommand)
     // Again at every launch: the binary on PATH may have changed since the chat was created.
     if (!(await piRpcVersionSupported({ command, cwd, env }, deps.probeVersion))) {
       throw agentSessionRefusalError('structured_agent_session_unsupported', {

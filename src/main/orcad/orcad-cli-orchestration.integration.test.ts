@@ -137,8 +137,6 @@ it.skipIf(skip)(
         CLAUDE_CONFIG_DIR: join(home, 'claude'),
         ORCA_USER_DATA_PATH: root,
         ORCA_CLI_COMMAND: launcher,
-        ORCA_ENVIRONMENT: 'stale-shell-selection',
-        ORCA_PAIRING_CODE: 'stale-pairing',
         ORCA_BACKGROUND_LAUNCH: '1',
         ...(process.platform === 'win32' ? { ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER: '1' } : {})
       }

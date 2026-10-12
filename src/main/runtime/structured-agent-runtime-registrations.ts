@@ -97,10 +97,10 @@ export type StructuredAgentAccountHomeServices = {
 }
 
 /** What a catalog probe is built from: the same runtime resolvers its sessions launch through. */
-export type StructuredAgentModelCatalogContext = Pick<
-  StructuredAgentAdapterContext,
-  'deps' | 'environment'
->
+export type StructuredAgentModelCatalogContext = Pick<StructuredAgentAdapterContext, 'deps'> & {
+  /** A listing never retries a missing program; only a launch does. */
+  environment: Omit<StructuredAgentAdapterContext['environment'], 'refreshAfterMissingProgram'>
+}
 
 export type StructuredAgentRuntimeRegistration = {
   definition: StructuredAgentDefinition
@@ -146,6 +146,7 @@ function createCodexAdapter(context: StructuredAgentAdapterContext): StructuredA
       store,
       resolveWorkspacePath: deps.resolveWorkspacePath,
       resolveEnvironment: context.environment.resolveCodexEnvironment,
+      refreshEnvironmentAfterMiss: context.environment.refreshAfterMissingProgram,
       resolveLaunchArgs: () => deps.resolveLaunchArgs('codex'),
       ...(deps.resolveCodexPermissionPolicy
         ? { resolvePermissionPolicy: deps.resolveCodexPermissionPolicy }
@@ -182,6 +183,7 @@ function createClaudeAdapter(
     ...nativeChatVisualsFor(deps),
     ...(deps.resolveClaudeLaunchEnv ? { resolveClaudeLaunchEnv: deps.resolveClaudeLaunchEnv } : {}),
     resolveClaudeInheritedEnv: context.environment.resolveClaudeInheritedEnv,
+    refreshClaudeEnvironmentAfterMiss: context.environment.refreshAfterMissingProgram,
     resolveClaudeLaunchArgs: () => deps.resolveLaunchArgs('claude'),
     resolveClaudeAuthPolicy: deps.resolveClaudeAuthPolicy,
     ...(deps.resolveClaudePermissionMode
@@ -235,6 +237,7 @@ function acpRegistration(spec: AcpLaunchSpec): StructuredAgentRuntimeRegistratio
           readJournal,
           resolveWorkspacePath: deps.resolveWorkspacePath,
           resolveEnvironment: context.environment.resolveBaseEnvironment,
+          refreshEnvironmentAfterMiss: context.environment.refreshAfterMissingProgram,
           ...(deps.resolveAgentLaunchEnv ? { resolveLaunchEnv: deps.resolveAgentLaunchEnv } : {}),
           ...(deps.resolveAgentCommandSettings
             ? { resolveCommandSettings: deps.resolveAgentCommandSettings }

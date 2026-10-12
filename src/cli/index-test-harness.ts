@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, vi, type Mock } from 'vitest'
-import { readCliRemoteSelectionDefaults } from '../shared/cli-execution-host-env'
 
 export type RuntimeClientModuleMocks = {
   callMock: Mock
@@ -37,11 +36,12 @@ export async function createRuntimeClientModuleMock(mocks: RuntimeClientModuleMo
       environmentSelector?: string | null
     ) {
       mocks.runtimeClientConstructorMock(remotePairingCode, environmentSelector)
-      const defaults = readCliRemoteSelectionDefaults()
       const effectivePairingCode =
-        remotePairingCode === undefined ? defaults.pairingCode : remotePairingCode
+        remotePairingCode === undefined
+          ? (process.env.ORCA_PAIRING_CODE ?? process.env.ORCA_REMOTE_PAIRING)
+          : remotePairingCode
       const effectiveEnvironment =
-        environmentSelector === undefined ? defaults.environment : environmentSelector
+        environmentSelector === undefined ? process.env.ORCA_ENVIRONMENT : environmentSelector
       if (effectivePairingCode && effectiveEnvironment) {
         throw new RuntimeClientError(
           'invalid_argument',
@@ -116,7 +116,6 @@ export function useWorktreeAwarenessEnvironment(mocks: WorktreeAwarenessMocks): 
   const originalPairingCode = process.env.ORCA_PAIRING_CODE
   const originalRemotePairing = process.env.ORCA_REMOTE_PAIRING
   const originalEnvironment = process.env.ORCA_ENVIRONMENT
-  const originalOwningHost = process.env.ORCA_CLI_OWNING_HOST
   const originalWorkspaceId = process.env.ORCA_WORKSPACE_ID
   const originalWorktreeId = process.env.ORCA_WORKTREE_ID
 
@@ -124,7 +123,6 @@ export function useWorktreeAwarenessEnvironment(mocks: WorktreeAwarenessMocks): 
     mocks.callMock.mockReset()
     delete process.env.ORCA_TERMINAL_HANDLE
     delete process.env.ORCA_USER_DATA_PATH
-    delete process.env.ORCA_CLI_OWNING_HOST
     delete process.env.ORCA_DEV_CLI_INVOCATION
     delete process.env.ORCA_WORKSPACE_ID
     delete process.env.ORCA_WORKTREE_ID
@@ -189,11 +187,6 @@ export function useWorktreeAwarenessEnvironment(mocks: WorktreeAwarenessMocks): 
       delete process.env.ORCA_ENVIRONMENT
     } else {
       process.env.ORCA_ENVIRONMENT = originalEnvironment
-    }
-    if (originalOwningHost === undefined) {
-      delete process.env.ORCA_CLI_OWNING_HOST
-    } else {
-      process.env.ORCA_CLI_OWNING_HOST = originalOwningHost
     }
     if (originalWorkspaceId === undefined) {
       delete process.env.ORCA_WORKSPACE_ID

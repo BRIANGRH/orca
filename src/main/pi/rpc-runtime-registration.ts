@@ -36,6 +36,7 @@ function createPiRpcAdapter(context: StructuredAgentAdapterContext): StructuredA
       store: context.store,
       resolveWorkspacePath: deps.resolveWorkspacePath,
       resolveEnvironment: piEnvironment(context),
+      refreshEnvironmentAfterMiss: context.environment.refreshAfterMissingProgram,
       ...(deps.resolveAgentCommandSettings
         ? { resolveCommandSettings: deps.resolveAgentCommandSettings }
         : {})

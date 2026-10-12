@@ -115,6 +115,8 @@ export type ClaudeStructuredLaunchResolverDeps = {
     | undefined
   /** The env the child inherits before auth stripping; absent inherits Orca's own process env. */
   resolveInheritedEnv?: () => Promise<Record<string, string>>
+  /** Refreshes the inherited env after the command was not found in it; absent never retries. */
+  refreshEnvironmentAfterMiss?: () => Promise<void>
   /** Required, so every caller states which login a failed sign-in names rather than inherit a
    *  guess. Build it with claudeStructuredAuthPolicyForSettings. */
   resolveAuthPolicy: () => Promise<ClaudeStructuredAuthPolicy> | ClaudeStructuredAuthPolicy

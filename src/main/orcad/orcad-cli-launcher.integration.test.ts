@@ -21,7 +21,7 @@ const runtime = existsSync(join(slotDir, ORCAD_NODE_RUNTIME_MARKER_FILENAME))
 const skip = skipForMissingInputs('artifact', runtime ? [] : ['a Node orcad slot in out/orcad'])
 
 it.skipIf(skip)(
-  'a session child runs the server CLI against its owning server',
+  "an agent's CLI reaches its owning server while a person's selector is honoured",
   async () => {
     const root = mkdtempSync(join(tmpdir(), 'orcad-cli-'))
     const home = join(root, 'home')
@@ -135,6 +135,18 @@ it.skipIf(skip)(
       })
       expect(version.code, version.stderr).toBe(0)
       expect(version.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/u)
+      // A person's own selector on the server is honoured, as on any machine.
+      const person = await runProcess({
+        program: launcher,
+        args: ['status', '--json'],
+        env: { ...env, ORCA_ENVIRONMENT: 'stale-shell-selection' },
+        cwd: home,
+        timeoutMs: 15_000
+      })
+      expect(person.code).not.toBe(0)
+      expect(`${person.stdout}${person.stderr}`).toContain(
+        'Unknown environment: stale-shell-selection'
+      )
     } finally {
       await killChildAndWait(child)
       await killProfileDaemons(userData)

@@ -8,7 +8,10 @@ import { createAcpStructuredLaunchResolver } from '../acp/acp-structured-launch-
 import { structuredAgentSupportsLaunch } from './structured-agent-launch-support'
 
 const { probeAgentCliVersion, loginShell } = vi.hoisted(() => {
-  const loginShell: { env: Record<string, string> } = { env: {} }
+  const loginShell: { env: Record<string, string>; reread: () => void } = {
+    env: {},
+    reread: () => {}
+  }
   return { probeAgentCliVersion: vi.fn(), loginShell }
 })
 vi.mock('../agent-cli-version-probe', async (importOriginal) => ({
@@ -16,7 +19,12 @@ vi.mock('../agent-cli-version-probe', async (importOriginal) => ({
   probeAgentCliVersion
 }))
 vi.mock('../startup/login-shell-environment', () => ({
-  resolveLoginShellEnvironment: async () => loginShell.env
+  LOGIN_SHELL_SPAWN_TIMEOUT_MS: 5000,
+  resolveLoginShellEnvironment: async () => loginShell.env,
+  captureLoginShellEnvironment: async () => {
+    loginShell.reread()
+    return { status: 'captured', env: loginShell.env }
+  }
 }))
 
 let bin: string
@@ -45,6 +53,7 @@ beforeEach(async () => {
   await writeFile(opencode, '#!/bin/sh\n')
   await chmod(opencode, 0o755)
   loginShell.env = { PATH: bin, HOME: '/home/user' }
+  loginShell.reread = () => {}
 })
 afterEach(async () => {
   probeAgentCliVersion.mockReset()
@@ -78,6 +87,20 @@ describe('structuredAgentSupportsLaunch', () => {
       cwd: '/repo/worktree',
       env: { PATH: bin, OPENCODE_EXTRA: '1', OPENCODE_CLIENT: 'acp' }
     })
+  })
+
+  it('asks again after rereading the shell when the last read finds no runnable OpenCode', async () => {
+    // Only the profile's newer PATH reaches an OpenCode that answers its version.
+    probeAgentCliVersion.mockImplementation(async (input, supports) => {
+      asked.push(input)
+      return input.env.PATH === bin && supports('1.18.31')
+    })
+    loginShell.env = { PATH: '/usr/bin', HOME: '/home/user' }
+    loginShell.reread = () => {
+      loginShell.env = { PATH: bin, HOME: '/home/user' }
+    }
+    expect(await structuredAgentSupportsLaunch('opencode', 'id:workspace-1', runtime)).toBe(true)
+    expect(asked.map(({ env }) => env.PATH)).toEqual(['/usr/bin', bin])
   })
 
   it('refuses when the version cannot be read', async () => {

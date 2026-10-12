@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path'
 import type { GlobalSettings } from '../../shared/global-settings-types'
 import type { TuiAgent } from '../../shared/tui-agent'
 import {
@@ -8,7 +9,10 @@ import {
   hasExplicitTuiLaunchCommand,
   structuredAgentCommandToken
 } from '../../shared/tui-agent-launch-command-override'
-import { AgentSessionPreSpawnError } from './agent-session-wire/structured-agent-session-adapter'
+import {
+  AgentSessionPreSpawnError,
+  isAgentSessionPreSpawnError
+} from './agent-session-wire/structured-agent-session-adapter'
 
 export type StructuredAgentCommandSettings = Partial<
   Pick<GlobalSettings, 'agentCmdOverrides' | 'agentDefaultEnv'>
@@ -57,4 +61,28 @@ export function resolveStructuredAgentCommand(
     })
   }
   return command
+}
+
+/** Resolves a launch's program from the shell snapshot. When none is found there (a bare name back,
+ *  or a Command setting naming no program), waits for one refresh and resolves once more, so an
+ *  agent installed since the last read starts. A found program never waits. */
+export async function resolveAgainAfterRefreshOnMissingProgram<T extends { command: string }>(
+  resolve: () => Promise<T>,
+  refreshAfterMiss: (() => Promise<void>) | undefined
+): Promise<T> {
+  if (!refreshAfterMiss) {
+    return resolve()
+  }
+  try {
+    const resolved = await resolve()
+    if (isAbsolute(resolved.command)) {
+      return resolved
+    }
+  } catch (error) {
+    if (!isAgentSessionPreSpawnError(error) || error.reason !== 'agentCommandNotRunnable') {
+      throw error
+    }
+  }
+  await refreshAfterMiss()
+  return resolve()
 }

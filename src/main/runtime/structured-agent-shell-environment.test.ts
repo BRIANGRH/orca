@@ -45,8 +45,9 @@ function pathSegments(env: Record<string, string>): string[] {
   return key ? (env[key]?.split(';') ?? []) : []
 }
 
-/** A powershell.exe child that prints the env it was given plus one profile-only variable. */
-function fakePowerShell(spec: { env: NodeJS.ProcessEnv }): EventEmitter {
+/** A powershell.exe child that prints the env it was given plus one profile-only variable, or,
+ *  when `failed`, exits without printing it, as a profile that errors does. */
+function fakePowerShell(spec: { env: NodeJS.ProcessEnv }, failed = false): EventEmitter {
   const stdout = new EventEmitter()
   const child = Object.assign(new EventEmitter(), {
     stdin: Object.assign(new EventEmitter(), { end: () => {} }),
@@ -56,11 +57,13 @@ function fakePowerShell(spec: { env: NodeJS.ProcessEnv }): EventEmitter {
   })
   const printed = JSON.stringify({ ...spec.env, PROFILE_ONLY: '1' })
   setImmediate(() => {
-    stdout.emit(
-      'data',
-      Buffer.from(`__ORCA_LOGIN_SHELL_ENV_START__${printed}__ORCA_LOGIN_SHELL_ENV_END__`)
-    )
-    child.emit('close', 0)
+    if (!failed) {
+      stdout.emit(
+        'data',
+        Buffer.from(`__ORCA_LOGIN_SHELL_ENV_START__${printed}__ORCA_LOGIN_SHELL_ENV_END__`)
+      )
+    }
+    child.emit('close', failed ? 1 : 0)
   })
   return child
 }
@@ -206,6 +209,40 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
         expect(spawnProcessMock).toHaveBeenCalledWith(
           expect.objectContaining({ program: 'powershell.exe' })
         )
+      }
+    )
+  })
+
+  it('retries a failed first PowerShell profile load on a later refresh, then stops', async () => {
+    let profileFails = true
+    await withSimulatedWindowsServer(
+      () => 'C:\\Windows',
+      async () => {
+        spawnProcessMock.mockImplementation((spec: { env: NodeJS.ProcessEnv }) =>
+          fakePowerShell(spec, profileFails)
+        )
+        const resolvers = createStructuredAgentEnvironmentResolvers({
+          resolveShellEnvironmentPolicy: () => INHERIT_ALL
+        })
+        expect((await resolvers.resolveBaseEnvironment()).PROFILE_ONLY).toBeUndefined()
+        const failedRuns = spawnProcessMock.mock.calls.length
+        profileFails = false
+        vi.advanceTimersByTime(10_000)
+        await resolvers.resolveBaseEnvironment()
+        await vi.waitFor(async () => {
+          expect((await resolvers.resolveBaseEnvironment()).PROFILE_ONLY).toBe('1')
+        })
+        expect(spawnProcessMock).toHaveBeenCalledTimes(failedRuns + 1)
+        // Once loaded, a refresh rereads only the saved PATH.
+        const registryReads = runProcessMock.mock.calls.length
+        vi.advanceTimersByTime(10_000)
+        await resolvers.resolveBaseEnvironment()
+        await vi.waitFor(() => {
+          expect(runProcessMock.mock.calls.length).toBeGreaterThan(registryReads)
+        })
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        expect(spawnProcessMock).toHaveBeenCalledTimes(failedRuns + 1)
+        expect((await resolvers.resolveBaseEnvironment()).PROFILE_ONLY).toBe('1')
       }
     )
   })
@@ -407,6 +444,41 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
       }
       // The hung refresh is shared, not restarted per start.
       expect(capture).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('lets a launch that found no program wait for one shared refresh, at most one shell timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const capture = vi
+        .fn<() => Promise<NodeJS.ProcessEnv>>(() => new Promise(() => {}))
+        .mockResolvedValueOnce({ PATH: '/before-install' })
+        .mockImplementationOnce(
+          () => new Promise((resolve) => setTimeout(() => resolve({ PATH: '/installed' }), 1000))
+        )
+      const resolvers = createStructuredAgentEnvironmentResolvers({ resolveEnvironment: capture })
+      expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/before-install')
+      // Inside the TTL only a miss refreshes, and two misses share one run.
+      const misses = Promise.all([
+        resolvers.refreshAfterMissingProgram(),
+        resolvers.refreshAfterMissingProgram()
+      ])
+      await vi.advanceTimersByTimeAsync(1000)
+      await misses
+      expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/installed')
+      expect(capture).toHaveBeenCalledTimes(2)
+      // A hung profile holds a miss for one shell timeout, and the snapshot stays.
+      let released = false
+      void resolvers.refreshAfterMissingProgram().then(() => {
+        released = true
+      })
+      await vi.advanceTimersByTimeAsync(4999)
+      expect(released).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(released).toBe(true)
+      expect((await resolvers.resolveBaseEnvironment()).PATH).toBe('/installed')
     } finally {
       vi.useRealTimers()
     }

@@ -9,7 +9,6 @@ import {
   validateCommandAndFlags
 } from './args'
 import { readOrcaCliVersion } from './cli-version'
-import { readCliRemoteSelectionDefaults } from '../shared/cli-execution-host-env'
 import { dispatch } from './dispatch'
 import {
   assertEnvironmentSelectorResolvable,
@@ -119,7 +118,6 @@ export async function main(
     const ignoreRemoteSelection = shouldIgnoreRemoteSelection(parsed.commandPath)
     const pairingCode = ignoreRemoteSelection ? null : parsed.flags.get('pairing-code')
     const environmentSelector = ignoreRemoteSelection ? null : parsed.flags.get('environment')
-    const ambientSelection = readCliRemoteSelectionDefaults()
     // Why: only the explicit flag is asserted eagerly. An ambient ORCA_ENVIRONMENT is background
     // config, and failing local-only commands because of a stale one would be a regression; the
     // explicit flag means the caller named that machine, so a bad name should fail immediately
@@ -145,8 +143,8 @@ export async function main(
           environmentSelector:
             typeof environmentSelector === 'string'
               ? { value: environmentSelector, label: '--environment' }
-              : ambientSelection.environment
-                ? { value: ambientSelection.environment, label: 'ORCA_ENVIRONMENT' }
+              : process.env.ORCA_ENVIRONMENT
+                ? { value: process.env.ORCA_ENVIRONMENT, label: 'ORCA_ENVIRONMENT' }
                 : null
         })
     // Why: --host runtime:<name> is canonicalized to the environment's id so downstream host-id

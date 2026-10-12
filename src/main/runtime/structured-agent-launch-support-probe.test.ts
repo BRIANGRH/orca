@@ -13,7 +13,9 @@ const { loginShell } = vi.hoisted(() => {
   return { loginShell }
 })
 vi.mock('../startup/login-shell-environment', () => ({
-  resolveLoginShellEnvironment: async () => loginShell.env
+  LOGIN_SHELL_SPAWN_TIMEOUT_MS: 5000,
+  resolveLoginShellEnvironment: async () => loginShell.env,
+  captureLoginShellEnvironment: async () => ({ status: 'captured', env: loginShell.env })
 }))
 
 type Settings = Pick<

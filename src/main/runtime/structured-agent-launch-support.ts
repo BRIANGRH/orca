@@ -9,7 +9,10 @@ import {
   type StructuredAgentSessionCreateSupport
 } from '../native-chat/structured-agent-session-create-support'
 import { structuredAgentRuntimeRegistration } from './structured-agent-runtime-registrations'
-import { resolveHostAgentBaseEnvironment } from './structured-agent-shell-environment'
+import {
+  refreshHostAgentBaseEnvironmentAfterMiss,
+  resolveHostAgentBaseEnvironment
+} from './structured-agent-shell-environment'
 
 type LaunchEnvironmentSettings = Pick<
   GlobalSettings,
@@ -36,12 +39,20 @@ export async function structuredAgentSupportsLaunch(
     return true
   }
   const settings = runtime.requireStore().getSettings()
-  const env = {
-    ...(await resolveHostAgentBaseEnvironment(settings)),
-    ...(isTuiAgent(agent) ? resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv) : {})
+  const ask = async (): Promise<boolean> => {
+    const env = {
+      ...(await resolveHostAgentBaseEnvironment(settings)),
+      ...(isTuiAgent(agent) ? resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv) : {})
+    }
+    const cwd = (await runtime.resolveRuntimeFileTarget(worktreeSelector)).worktree.path
+    return supportsLaunch({ cwd, env, commandSettings: settings })
   }
-  const cwd = (await runtime.resolveRuntimeFileTarget(worktreeSelector)).worktree.path
-  return supportsLaunch({ cwd, env, commandSettings: settings })
+  if (await ask()) {
+    return true
+  }
+  // An agent installed since the shell was last read is found once that read is refreshed.
+  await refreshHostAgentBaseEnvironmentAfterMiss()
+  return ask()
 }
 
 /** `agentSession.createSupport` on this host: every refusal it can know before spawning. The

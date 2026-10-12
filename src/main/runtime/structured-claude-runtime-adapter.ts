@@ -34,6 +34,8 @@ export type StructuredClaudeRuntimeAdapterDeps = {
   resolveClaudeLaunchEnv?: () => Promise<Record<string, string>> | Record<string, string>
   /** The env a Claude child inherits before auth stripping; absent inherits Orca's own. */
   resolveClaudeInheritedEnv?: () => Promise<Record<string, string>>
+  /** Refreshes that env when Claude was not found in it; absent never retries. */
+  refreshClaudeEnvironmentAfterMiss?: () => Promise<void>
   /** Managed-account auth state for a Claude launch, mirroring the terminal preflight.
    *  Required: an absent policy is what silently under-strips. */
   resolveClaudeAuthPolicy: () => Promise<ClaudeStructuredAuthPolicy> | ClaudeStructuredAuthPolicy
@@ -113,6 +115,9 @@ export function createStructuredClaudeRuntimeAdapter(
       ...(deps.resolveClaudeLaunchEnv ? { resolveEnv: deps.resolveClaudeLaunchEnv } : {}),
       ...(deps.resolveClaudeInheritedEnv
         ? { resolveInheritedEnv: deps.resolveClaudeInheritedEnv }
+        : {}),
+      ...(deps.refreshClaudeEnvironmentAfterMiss
+        ? { refreshEnvironmentAfterMiss: deps.refreshClaudeEnvironmentAfterMiss }
         : {}),
       resolveAuthPolicy: deps.resolveClaudeAuthPolicy,
       ...(deps.resolveClaudePermissionMode
