@@ -4,13 +4,13 @@ import { notifyRendererMemoryPressure } from '@/lib/renderer-memory-pressure'
 import {
   buildHiddenTerminalViews,
   getHiddenTerminalViewCensus,
-  registerMountedTerminalTabView,
   reportHiddenTerminalViews,
   resetHiddenTerminalViewBudgetForTest,
   selectHiddenTerminalViewsOverBudget,
   subscribeHiddenTerminalViewBudget,
   type HiddenTerminalView
 } from './terminal-hidden-view-budget'
+import { registerMountedTerminalTabView } from './mounted-terminal-view-census'
 import { selectColdParkedTerminalTabs } from './terminal-hidden-view-parking'
 
 const MB = 1024 * 1024
@@ -211,7 +211,10 @@ describe('buildHiddenTerminalViews', () => {
   it('keeps the largest size seen while hidden, and measures afresh on the next hide', () => {
     const sizes = new Map<string, { hiddenSinceMs: number; bytes: number }>()
     let bytes = 50 * MB
-    registerMountedTerminalTabView('tab-1', { getRetainedBytes: () => bytes })
+    registerMountedTerminalTabView('tab-1', {
+      getRetainedBytes: () => bytes,
+      getHiddenState: () => ({ restorable: true })
+    })
     const input = (hiddenSinceMs: number) => ({
       worktreeId: 'wt-1',
       terminalTabs: [tab('tab-1', { hiddenSinceMs })],
@@ -234,7 +237,10 @@ describe('buildHiddenTerminalViews', () => {
       parkableTabIds: new Set(['tab-1']),
       clockParkedTabIds: new Set<string>()
     }
-    const unregister = registerMountedTerminalTabView('tab-1', { getRetainedBytes: () => 7 * MB })
+    const unregister = registerMountedTerminalTabView('tab-1', {
+      getRetainedBytes: () => 7 * MB,
+      getHiddenState: () => ({ restorable: true })
+    })
     expect(buildHiddenTerminalViews(input, lastKnown)[0].bytes).toBe(7 * MB)
     unregister()
     expect(buildHiddenTerminalViews(input, lastKnown)[0].bytes).toBe(7 * MB)
@@ -319,6 +325,16 @@ describe('memory pressure and the hidden-view census', () => {
   })
 
   it('counts kept, over-budget and unrestorable views, so a report shows when the budget cannot hold', () => {
+    for (const [tabId, bytes, restorable] of [
+      ['kept', 60 * MB, true],
+      ['over', 60 * MB, true],
+      ['fail-open', 200 * MB, false]
+    ] as const) {
+      registerMountedTerminalTabView(tabId, {
+        getRetainedBytes: () => bytes,
+        getHiddenState: () => ({ restorable })
+      })
+    }
     reportHiddenTerminalViews(
       'wt-a',
       [
@@ -340,5 +356,55 @@ describe('memory pressure and the hidden-view census', () => {
     expect(collectRendererMemoryProfileCounts()['hiddenTerminalViews.unrestorableKB']).toBe(
       200 * 1024
     )
+  })
+
+  it('counts a clock-selected held view without changing its historical parking decision', () => {
+    const nowMs = 1_000_000
+    registerMountedTerminalTabView('held', {
+      getRetainedBytes: () => 10 * MB,
+      getHiddenState: () => ({ restorable: true })
+    })
+    const parked = selectColdParkedTerminalTabs({
+      worktreeId: 'wt-a',
+      terminalTabs: ['held', 'newest'].map((id) => ({
+        id,
+        ptyId: `wt-a@@${id}`,
+        isVisible: false,
+        hasActivityTerminalPortal: false,
+        hiddenSinceMs: nowMs - (id === 'held' ? 600_000 : 40_000)
+      })),
+      pendingStartupByTabId: {},
+      parkingEnabled: true,
+      nowMs,
+      hiddenViewBudget: (input) =>
+        reportHiddenTerminalViews(
+          'owner',
+          input
+            ? buildHiddenTerminalViews(
+                { ...input, isHeldMounted: (candidate) => candidate.id === 'held' },
+                new Map()
+              )
+            : []
+        )
+    })
+    expect(parked).toEqual(new Set(['held', 'newest']))
+    expect(getHiddenTerminalViewCensus()).toMatchObject({ keptViews: 1, keptKB: 10 * 1024 })
+  })
+
+  it('stops counting a disposed pressure-parked view while retaining its budget history', () => {
+    const unregister = registerMountedTerminalTabView('old', {
+      getRetainedBytes: () => 10 * MB,
+      getHiddenState: () => ({ restorable: true })
+    })
+    reportHiddenTerminalViews('owner', [view('old', 1, 10 * MB)])
+    notifyRendererMemoryPressure()
+    expect(getHiddenTerminalViewCensus()).toMatchObject({ overBudgetViews: 1 })
+    unregister()
+    expect(reportHiddenTerminalViews('owner', [view('old', 1, 10 * MB)])).toEqual(new Set(['old']))
+    expect(getHiddenTerminalViewCensus()).toMatchObject({
+      keptViews: 0,
+      overBudgetViews: 0,
+      unrestorableViews: 0
+    })
   })
 })

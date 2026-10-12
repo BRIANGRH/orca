@@ -11,7 +11,12 @@ import { restoreTerminalPaneLayout } from './terminal-pane-layout-restore'
 import { runTerminalPaneBootstrapSplits } from './terminal-pane-mount-bootstrap'
 import { installTerminalPaneMountEvents } from './terminal-pane-mount-events'
 import { cleanupTerminalPaneMount } from './terminal-pane-mount-cleanup'
-import { registerMountedTerminalTabView } from './terminal-hidden-view-budget'
+import { registerMountedTerminalTabView } from './mounted-terminal-view-census'
+import { useAppStore } from '@/store'
+import {
+  isParkRestorableTerminalPty,
+  selectPairedRuntimeParkingEnvironmentIdsFromState
+} from './terminal-hidden-view-parking'
 import type { UseTerminalPaneLifecycleDeps } from './terminal-pane-lifecycle-types'
 import type { TerminalPaneLifecycleRefs } from './use-terminal-pane-lifecycle-refs'
 
@@ -80,7 +85,26 @@ export function useTerminalPaneMountLifecycle(
       window.__paneManagers.set(deps.tabId, manager)
     }
     const unregisterHiddenViewCost = registerMountedTerminalTabView(deps.tabId, {
-      getRetainedBytes: () => estimatePanesRetainedBytes(manager.getPanes())
+      getRetainedBytes: () => estimatePanesRetainedBytes(manager.getPanes()),
+      getHiddenState: () => {
+        if (deps.isVisibleRef.current) {
+          return null
+        }
+        const transports = deps.paneTransportsRef.current
+        const restorePolicy = {
+          sshParkingEnabled: deps.settingsRef.current?.terminalSshViewParking !== false,
+          pairedRuntimeParkingEnvironmentIds: selectPairedRuntimeParkingEnvironmentIdsFromState(
+            useAppStore.getState()
+          )
+        }
+        return {
+          restorable:
+            transports.size > 0 &&
+            Array.from(transports.values()).every((transport) =>
+              isParkRestorableTerminalPty(transport.getPtyId(), deps.worktreeId, restorePolicy)
+            )
+        }
+      }
     })
     restoreTerminalPaneLayout({
       manager,

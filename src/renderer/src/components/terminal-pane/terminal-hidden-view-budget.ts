@@ -11,6 +11,11 @@
 import { registerRendererMemoryProfileContributor } from '@/lib/renderer-memory-profile'
 import { onRendererMemoryPressure } from '@/lib/renderer-memory-pressure'
 import {
+  collectMountedHiddenTerminalViewCounts,
+  readMountedTerminalTabViewBytes,
+  resetMountedTerminalViewsForTest
+} from './mounted-terminal-view-census'
+import {
   isParkRestorableTerminalPty,
   type TerminalParkRestorePolicy,
   type TerminalTabColdParkCandidate
@@ -41,36 +46,6 @@ export type HiddenTerminalView = {
   held?: boolean
   /** False when no park could restore it: held outside the budget and only counted. */
   restorable: boolean
-}
-
-type RetainedBytesSource = { getRetainedBytes(): number }
-
-const mountedViewsByTabId = new Map<string, RetainedBytesSource>()
-
-/** Called by the pane mount; the returned disposer runs on unmount. */
-export function registerMountedTerminalTabView(
-  tabId: string,
-  source: RetainedBytesSource
-): () => void {
-  mountedViewsByTabId.set(tabId, source)
-  return () => {
-    if (mountedViewsByTabId.get(tabId) === source) {
-      mountedViewsByTabId.delete(tabId)
-    }
-  }
-}
-
-/** Null when the tab has no mounted view (parked, or not yet created). */
-export function readMountedTerminalTabViewBytes(tabId: string): number | null {
-  const source = mountedViewsByTabId.get(tabId)
-  if (!source) {
-    return null
-  }
-  try {
-    return source.getRetainedBytes()
-  } catch {
-    return null
-  }
 }
 
 /** A view's size for its current hidden episode. */
@@ -264,33 +239,9 @@ onRendererMemoryPressure(() => releaseHiddenTerminalViewsForMemoryPressure())
  * memory report shows when the budget could not hold instead of assuming it.
  */
 export function getHiddenTerminalViewCensus(): Record<string, number> {
-  let keptViews = 0
-  let keptBytes = 0
-  let overBudgetViews = 0
-  let unrestorableViews = 0
-  let unrestorableBytes = 0
-  for (const [owner, views] of viewsByOwner) {
-    const overBudget = overBudgetByOwner.get(owner) ?? EMPTY_TAB_IDS
-    for (const view of views) {
-      const bytes = Number.isFinite(view.bytes) ? view.bytes : 0
-      if (!view.restorable) {
-        unrestorableViews += 1
-        unrestorableBytes += bytes
-      } else if (overBudget.has(view.tabId)) {
-        overBudgetViews += 1
-      } else {
-        keptViews += 1
-        keptBytes += bytes
-      }
-    }
-  }
   return {
     budgetKB: Math.round(budgetBytesInUse / 1024),
-    keptViews,
-    keptKB: Math.round(keptBytes / 1024),
-    overBudgetViews,
-    unrestorableViews,
-    unrestorableKB: Math.round(unrestorableBytes / 1024),
+    ...collectMountedHiddenTerminalViewCounts(overBudgetByOwner.values()),
     pressureReleases
   }
 }
@@ -316,7 +267,7 @@ export function subscribeHiddenTerminalViewBudget(
 }
 
 export function resetHiddenTerminalViewBudgetForTest(): void {
-  mountedViewsByTabId.clear()
+  resetMountedTerminalViewsForTest()
   viewsByOwner.clear()
   overBudgetByOwner.clear()
   listenersByOwner.clear()
