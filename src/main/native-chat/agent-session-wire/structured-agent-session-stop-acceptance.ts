@@ -43,6 +43,12 @@ export const STOP_COMMAND_RECEIPT: MutationCommandReceipt<AgentSessionCancelResu
   })
 }
 
+/** A background-task Stop the agent refused or could not confirm says so on its first answer. */
+export const BACKGROUND_STOP_COMMAND_RECEIPT: MutationCommandReceipt<AgentSessionCancelResult> = {
+  ...STOP_COMMAND_RECEIPT,
+  refusalAnswers: true
+}
+
 /** What a Stop that could not be saved answers: plain words naming the agent, and to try again. */
 export function stopFailedRefusal(
   ctx: Pick<AgentSessionTurnContext, 'agent'>
