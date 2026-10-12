@@ -249,6 +249,76 @@ describe.each([
     }
   )
 
+  it.each([
+    { sends: 'a carrier', mail: false },
+    { sends: 'mail only', mail: true }
+  ])('a card the person stopped stays paused through a rewind after $sends', async ({ mail }) => {
+    await begin()
+    await stopWhileStarting('A')
+    const carrier = await nextSend('B', mail)
+    await accepted(carrier, 'B', mail ? 'B' : 'history A, then B')
+    const later = await nextSend('C', mail)
+    await accepted(later, 'C', 'C')
+    const working = rig.send('W')
+    expect(await working.result).toMatchObject({ ok: true })
+    await eventually(async () =>
+      expect((await rig.submission(working.id))?.handedOverAt).toBeDefined()
+    )
+    const queued = await rig.send('Q', 'queue-if-active').result
+    if (!queued.ok || !('queued' in queued.value)) {
+      throw new Error('expected a queued receipt')
+    }
+    expect(await rig.stop()).toMatchObject({ ok: true })
+    await rig.settleRejected(working.id, 'interrupted')
+    const sent = dispatched()
+
+    await rewindTo(later)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+
+    expect(await rig.drafts()).toEqual([
+      { messageId: queued.value.queued.messageId, state: 'waiting' }
+    ])
+    expect(await rig.queuePause()).toEqual({ reason: 'stopped' })
+    expect(dispatched()).toEqual(sent)
+  })
+
+  it('a card held since a restart stays held through a rewind after a carrier', async () => {
+    await begin()
+    await stoppedThenCarried()
+    const later = await nextSend('C')
+    await accepted(later, 'C', 'C')
+    const working = rig.send('W')
+    expect(await working.result).toMatchObject({ ok: true })
+    await eventually(async () =>
+      expect((await rig.submission(working.id))?.handedOverAt).toBeDefined()
+    )
+    const queued = await rig.send('Q', 'queue-if-active').result
+    if (!queued.ok || !('queued' in queued.value)) {
+      throw new Error('expected a queued receipt')
+    }
+    await rig.restartHostProcess()
+    const waiting = [{ messageId: queued.value.queued.messageId, state: 'waiting' }]
+    expect(await rig.drafts()).toEqual(waiting)
+    // Sent before the restart, so its turn ends nothing the restart paused.
+    await accepted(working.id, 'W', 'W')
+    expect(
+      journal()
+        .queuedMessages.pauses()
+        .map(({ reason }) => reason)
+    ).toEqual(['restarted'])
+
+    await rewindTo(later)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+
+    expect(await rig.drafts()).toEqual(waiting)
+    expect(
+      journal()
+        .queuedMessages.pauses()
+        .map(({ reason }) => reason)
+    ).toEqual(['restarted'])
+    expect(dispatched()).toEqual(['B <- [A]', 'C', 'W'])
+  })
+
   it('a stopped message nothing carried survives the rewind and stays owed', async () => {
     await begin()
     const stopped = await stopWhileStarting('A')
