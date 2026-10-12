@@ -28,14 +28,16 @@ function terminal() {
 }
 
 function createRuntime() {
-  const runtime = new OrcaRuntimeService({
+  const store = {
     getSettings: () => ({
       disabledTuiAgents: [],
       agentCmdOverrides: {},
       agentDefaultArgs: {},
       agentDefaultEnv: { codex: { KEEP: '1', CODEX_HOME: '/stale' } }
     })
-  } as never)
+  }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the launch paths under test read only getSettings().
+  const runtime = new OrcaRuntimeService(store as never)
   Object.assign(runtime, {
     resolveTerminalWorkspaceLaunchScope: vi.fn(async () => ({
       id: 'worktree-1',
