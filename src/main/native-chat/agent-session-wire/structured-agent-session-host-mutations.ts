@@ -115,8 +115,13 @@ export function cancelStructuredAgentSessionTurn(
         childWork: () => context.readChildWork(sessionId),
         acknowledgeStops: (evidence) => context.publishChildWork(sessionId, evidence),
         // Untargeted, with work no record lists: the idle sweep's stop ends it with the agent.
-        ...(params.taskId === undefined && context.childWorkIncomplete(sessionId)
-          ? { stopUnlisted: () => context.stopAgent(sessionId, { cause: 'evict', resting: true }) }
+        ...(params.taskId === undefined
+          ? {
+              unlisted: {
+                present: () => context.childWorkIncomplete(sessionId),
+                stop: () => context.stopAgent(sessionId, { cause: 'evict', resting: true })
+              }
+            }
           : {})
       }),
       openForProviderWrite(context, params.envelope)

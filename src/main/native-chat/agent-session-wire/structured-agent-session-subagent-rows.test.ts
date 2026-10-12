@@ -114,6 +114,16 @@ describe("each subagent's saved row", () => {
     expect(rows[0]?.block).toMatchObject({ run: 'toolu_1', background: true, startedAt: 100 })
   })
 
+  it('names a subagent the provider gave no name or description as any unnamed one', async () => {
+    const r = await rig()
+    await r.report([child({ description: undefined })])
+    const [row] = r.saved()
+    expect(row?.block.label).toBe('subagent')
+    expect(row?.item.body).toMatchObject({
+      blocks: [{ type: 'text', text: 'Kicked off subagent subagent' }, { label: 'subagent' }]
+    })
+  })
+
   it('writes nothing for a record its row already says', async () => {
     const r = await rig()
     await r.report([child()])

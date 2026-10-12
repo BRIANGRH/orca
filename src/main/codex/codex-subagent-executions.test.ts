@@ -31,19 +31,31 @@ describe('CodexSubagentExecutions retention and identity', () => {
     expect(executions.workingChildren()).toHaveLength(199)
   })
 
-  it('keeps a child announced but not yet started past the bound, with its spawner', () => {
+  it('evicts a child that ended before one announced but not yet started, which keeps its spawner', () => {
     const executions = new CodexSubagentExecutions()
-    for (let index = 0; index < 128; index++) {
+    executions.register('announced', 'announced', 'spawner')
+    for (let index = 0; index < 127; index++) {
       executions.observeTurn(`child-${index}`, `turn-${index}`, 'working')
     }
-    executions.register('announced', 'announced', 'spawner')
+    executions.observeTurn('child-5', 'turn-5', 'completed')
     executions.register('next', 'next')
+    expect(executions.find('child-5')).toBeUndefined()
     expect(executions.find('announced')).toMatchObject({
       registered: true,
       spawnerThreadId: 'spawner'
     })
     executions.observeTurn('announced', 'turn-a', 'working')
     expect(executions.workingChildren().map((child) => child.agentThreadId)).toContain('announced')
+  })
+
+  it('past the bound, evicts the oldest never-started child once no child has ended', () => {
+    const executions = new CodexSubagentExecutions()
+    for (let index = 0; index < 200; index++) {
+      executions.register(`restored-${index}`, `restored-${index}`)
+    }
+    expect(executions.retentionSizes().children).toBe(128)
+    expect(executions.find('restored-0')).toBeUndefined()
+    expect(executions.find('restored-199')).toBeDefined()
   })
 
   it('collapses a label’s whitespace, and keeps the first label a child was given', () => {

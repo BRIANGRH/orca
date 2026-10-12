@@ -4,7 +4,8 @@
 // it, which run is current and how that run ended. Its journal row is their durable copy, written
 // here each time a record changes, where the subagent was spawned. The saved row is also the
 // dedupe: a record that reads as its row already does writes nothing, and a write that fails is
-// tried again by the next change, so nothing here holds an obligation of its own. What a lost
+// tried again by the next change after its batch settles, so nothing here holds an obligation of
+// its own. What a lost
 // write leaves saying `working` the journal's reopen pass settles as unverifiable.
 
 import {

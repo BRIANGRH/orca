@@ -199,7 +199,7 @@ async function cancelAndNote(
         ? await stopStructuredAgentSessionBackgroundWork(
             ctx,
             input,
-            liveTurnId === null && !isMainAgentWorking(ctx)
+            () => ctx.journal.activeTurnId() === null && !isMainAgentWorking(ctx)
           )
         : undefined
     // A background Stop writes no row, so a task the agent shows still running after it goes back

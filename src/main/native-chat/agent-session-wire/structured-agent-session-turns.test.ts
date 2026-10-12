@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentSessionJournalIdentity } from '../../../shared/agent-session-journal-types'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
+import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import { createTrackedJournalOpener } from '../agent-session-journal/journal-host-database-test-support'
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
 import { performCancel, type AgentSessionTurnContext } from './structured-agent-session-turns'
@@ -274,10 +275,13 @@ describe('performCancel', () => {
   async function backgroundStopWith(
     stopBackgroundTasks: StructuredAgentSessionAdapter['stopBackgroundTasks'],
     operation: string,
-    acknowledgeStops?: (evidence: AgentChildWorkEvidence[]) => void
+    acknowledgeStops?: (evidence: AgentChildWorkEvidence[]) => void,
+    unlisted?: { present: () => boolean; stop: () => Promise<void> },
+    onJournal?: (journal: AgentSessionJournal) => void
   ) {
     root = await mkdtemp(join(tmpdir(), 'orca-background-task-failed-cancel-'))
     const journal = await journals.open({ identity: IDENTITY, stateDirectory: root })
+    onJournal?.(journal)
     const cancelTurn = vi.fn(async () => ({ cancelled: true }))
     const ctx: AgentSessionTurnContext = {
       logger: createStructuredAgentSessionLogger(),
@@ -298,10 +302,12 @@ describe('performCancel', () => {
       scope: 'background-tasks',
       taskId: 'task-1',
       childWork: () => [liveTask('task-1')],
-      ...(acknowledgeStops ? { acknowledgeStops } : {})
+      ...(acknowledgeStops ? { acknowledgeStops } : {}),
+      ...(unlisted ? { unlisted } : {})
     })
     expect(cancelTurn).not.toHaveBeenCalled()
-    expect(journal.snapshot().items).toEqual([])
+    // A background Stop writes no row; only what the agent itself wrote is there.
+    expect(journal.snapshot().items).toHaveLength(onJournal ? 1 : 0)
     return result
   }
 
@@ -331,6 +337,46 @@ describe('performCancel', () => {
       refusal: { code: 'agent_session_operation_unknown' }
     })
     expect(result.ok ? undefined : result.refusal.details).toBeUndefined()
+  })
+
+  it('ends the agent for unlisted work only when, after the listed stops, no turn runs', async () => {
+    const stop = vi.fn(async () => {})
+    const atRest = await backgroundStopWith(
+      async () => ({ cancelled: false }),
+      'cancel-background-unlisted',
+      undefined,
+      { present: () => true, stop }
+    )
+    expect(atRest).toEqual({ ok: true, value: { turnId: 'background-tasks', cancelled: true } })
+    expect(stop).toHaveBeenCalledOnce()
+
+    // A turn the agent opens while the listed stops are out is not the Stop's to end.
+    let journal: AgentSessionJournal | undefined
+    const woke = await backgroundStopWith(
+      async () => {
+        await journal!.appendItem(
+          {
+            provider: 'legacy',
+            agent: 'codex',
+            sessionId: 'session-1',
+            recordId: 'turn-lifecycle:woke'
+          },
+          {
+            kind: 'status',
+            text: 'Agent is working…',
+            turnLifecycle: { turnId: 'woke', state: 'running' }
+          },
+          { fence: 1, turnScope: AGENT_JOURNAL_THREAD_SCOPE }
+        )
+        return { cancelled: false }
+      },
+      'cancel-background-unlisted-woke',
+      undefined,
+      { present: () => true, stop },
+      (opened) => (journal = opened)
+    )
+    expect(woke).toEqual({ ok: true, value: { turnId: 'background-tasks', cancelled: false } })
+    expect(stop).toHaveBeenCalledOnce()
   })
 
   it('ends a run the agent accepted the stop of, even when a later stop in the batch fails', async () => {

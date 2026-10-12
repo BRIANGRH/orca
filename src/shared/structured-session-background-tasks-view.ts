@@ -21,8 +21,9 @@ export type StructuredSessionBackgroundTasksView = {
   /** The host's child records, when it publishes them; the rows then read these. */
   children?: AgentChildWorkView[]
   supportsStop: boolean
-  /** The strip's untargeted Stop: offered when no row has a Stop of its own, or some work no row
-   *  lists, and the host has an untargeted stop at all. */
+  /** The strip's untargeted Stop: offered when no row has a Stop of its own and the host has an
+   *  untargeted stop, or, with no turn running, for work no row lists, which the host reaches by
+   *  ending the agent whatever stops its provider offers. */
   offersStopAll: boolean
   /** Some running work is not listed: the strip stays, and says details are unavailable. */
   incomplete: boolean
@@ -80,7 +81,9 @@ export function structuredSessionBackgroundTasksView(
     supportsStop,
     // Absent means the host predates the field and does accept an untargeted
     // stop; only a host that says `false` has none to offer.
-    offersStopAll: (!supportsStop || incomplete) && backgroundTasks?.supportsStopAll !== false,
+    offersStopAll:
+      (!supportsStop && backgroundTasks?.supportsStopAll !== false) ||
+      (incomplete && turnId === null),
     incomplete
   }
 }

@@ -24,6 +24,7 @@ import type {
 } from '../../../shared/agent-session-wire'
 import type { AgentSessionConversationCommandResult } from '../../../shared/agent-session-conversation-command'
 import { DISPATCH_DOUBT_SUBMISSION_MISSING } from '../agent-session-journal/journal-dispatch-doubt-reasons'
+import type { StructuredAgentSessionBackgroundStopInput } from './structured-agent-session-background-stop'
 import {
   agentSessionMessagePayload,
   agentSessionSendBodyFingerprint
@@ -283,7 +284,7 @@ export function cancelPlan(params: {
   /** The session's child records, which name the tasks a background Stop reaches. */
   childWork?: () => readonly AgentChildWorkView[] | undefined
   acknowledgeStops?: (evidence: AgentChildWorkEvidence[]) => void
-  stopUnlisted?: () => Promise<void>
+  unlisted?: StructuredAgentSessionBackgroundStopInput['unlisted']
 }): MutationPlan<AgentSessionCancelResult> {
   return {
     method: 'agentSession.cancel',
@@ -306,7 +307,7 @@ export function cancelPlan(params: {
         ...(params.prompt ? { prompt: params.prompt } : {}),
         ...(params.childWork ? { childWork: params.childWork } : {}),
         ...(params.acknowledgeStops ? { acknowledgeStops: params.acknowledgeStops } : {}),
-        ...(params.stopUnlisted ? { stopUnlisted: params.stopUnlisted } : {})
+        ...(params.unlisted ? { unlisted: params.unlisted } : {})
       }),
     // Interrupting twice would kill a turn the client never asked to stop, so a
     // replay reports the turn as already handled.

@@ -104,14 +104,22 @@ describe('structuredSessionBackgroundTasksView', () => {
   })
 
   it('offers the untargeted Stop only where no row stop reaches the work, and the host has one', () => {
-    const offers = (state: Partial<AgentSessionBackgroundTaskState>) =>
-      structuredSessionBackgroundTasksView({ state: 'monitoring', ...state }, null).offersStopAll
+    const offers = (
+      state: Partial<AgentSessionBackgroundTaskState>,
+      turnId: string | null = null
+    ) =>
+      structuredSessionBackgroundTasksView({ state: 'monitoring', ...state }, turnId).offersStopAll
     expect(offers({ supportsTaskStop: true })).toBe(false)
     expect(offers({ supportsTaskStop: false })).toBe(true)
+    expect(offers({ supportsTaskStop: false }, 'turn-1')).toBe(true)
+    expect(offers({ supportsTaskStop: false, supportsStopAll: false })).toBe(false)
     expect(offers({ supportsTaskStop: true, incomplete: true })).toBe(true)
-    expect(offers({ supportsTaskStop: false, supportsStopAll: false, incomplete: true })).toBe(
-      false
-    )
+    // Unlisted work is reached by ending the agent: no untargeted provider stop is needed, as on an
+    // ACP agent, and none is offered under a running turn the agent would end with it.
+    const acp = { supportsTaskStop: true, supportsStopAll: false, incomplete: true } as const
+    expect(offers(acp)).toBe(true)
+    expect(offers(acp, 'turn-1')).toBe(false)
+    expect(offers({ ...acp, supportsTaskStop: false })).toBe(true)
   })
 
   it('reads live work beneath an idle session as monitoring, and a running turn as its own', () => {
