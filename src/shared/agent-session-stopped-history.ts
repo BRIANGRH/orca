@@ -1,5 +1,6 @@
-// Stopped messages the agent is still owed, derived from the journal on each handover (host only);
-// membership is the carrier's `dispatch{pending}` row (`carries`), its fate the carrier's outcome.
+// Stopped messages the agent is still owed, derived from the journal on each handover (host only).
+// One is covered by an append record that no later row proves refused (Claude, Codex), or by an
+// ACP or Pi carrier's `carries` unless that carrier was refused before anything reached the agent.
 
 import { readAgentSessionFailureFact, type SubmissionRejectionKind } from './agent-session-failure'
 import type {
@@ -16,6 +17,8 @@ export type StoppedHistoryJournal = {
   submissions: readonly AgentJournalSubmission[]
   /** Each handed-over send's carried history, by its client message id. */
   carried: ReadonlyMap<string, readonly string[]>
+  /** The stopped messages each append not proven refused named, by append id. */
+  appended: ReadonlyMap<string, readonly string[]>
   /** The latest /clear's sequence; 0 when none. */
   clearSequence: number
   body: (clientMessageId: string) => AgentJournalItemBody | null
@@ -81,10 +84,9 @@ export function agentSessionStoppedHistoryOwed(
   journal: StoppedHistoryJournal
 ): OwedStoppedMessage[] {
   const byId = new Map(journal.submissions.map((entry) => [entry.clientMessageId, entry]))
-  const covered = new Set<string>()
+  const covered = new Set<string>([...journal.appended.values()].flat())
   for (const [carrierId, carried] of journal.carried) {
     const carrier = byId.get(carrierId)
-    // A carrier rewound away took its history out of the agent's context with it.
     if (carrier && !refusedBeforeWrite(carrier)) {
       carried.forEach((id) => covered.add(id))
     }
@@ -111,8 +113,8 @@ export function agentSessionStoppedHistoryOwed(
     )
 }
 
-/** Whether this send may carry stopped history: a person's ordinary message, a queued card's
- *  hand-off included. */
+/** Whether this send's handover may append or carry stopped history: a person's ordinary message, a
+ *  queued card's hand-off included. */
 export function agentSessionCanCarryStoppedHistory(
   submission: Pick<AgentJournalSubmission, 'source' | 'queuedMessageId'>,
   body: AgentJournalItemBody | null | undefined

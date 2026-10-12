@@ -230,6 +230,7 @@ describe('Stop with a follow-up Claude queued behind the running turn', () => {
       agentSessionStoppedHistoryOwed({
         submissions: [submission],
         carried: new Map(),
+        appended: new Map(),
         clearSequence: 0,
         body: () => USER_MESSAGE
       }).map((entry) => entry.submission.clientMessageId)

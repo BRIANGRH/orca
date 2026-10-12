@@ -65,6 +65,7 @@ function owed(
   submissions: AgentJournalSubmission[],
   options: {
     carried?: Record<string, string[]>
+    appended?: Record<string, string[]>
     clearSequence?: number
     bodies?: Record<string, AgentJournalItemBody>
   } = {}
@@ -72,6 +73,7 @@ function owed(
   const journal: StoppedHistoryJournal = {
     submissions,
     carried: new Map(Object.entries(options.carried ?? {})),
+    appended: new Map(Object.entries(options.appended ?? {})),
     clearSequence: options.clearSequence ?? 0,
     body: (id) => options.bodies?.[id] ?? message(id)
   }
@@ -201,8 +203,26 @@ describe('which stopped messages the agent is owed', () => {
     ).toEqual([])
   })
 
-  it('a carrier rewound away no longer covers: the rewind took its history out of context too', () => {
+  it('a carrier no longer in the journal covers nothing', () => {
     expect(owed([sent('a', 2, STOPPED)], { carried: { gone: ['a'] } })).toEqual(['a'])
+  })
+
+  it('an append record covers what it names, whatever came of the write', () => {
+    // A proven refusal removes the record, so only a standing one is read.
+    expect(
+      owed([sent('a', 2, STOPPED), sent('b', 3, STOPPED), sent('c', 4, STOPPED)], {
+        appended: { first: ['a'], second: ['c'] }
+      })
+    ).toEqual(['b'])
+  })
+
+  it('either kind of coverage covers, and a stopped message stays owed until one does', () => {
+    expect(
+      owed([sent('a', 2, STOPPED), sent('b', 3, STOPPED), sent('c', 9, rejected('writeFailed'))], {
+        carried: { c: ['a', 'b'] },
+        appended: { first: ['b'] }
+      })
+    ).toEqual(['a'])
   })
 })
 
