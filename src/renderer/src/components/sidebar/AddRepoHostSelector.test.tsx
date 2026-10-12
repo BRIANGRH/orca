@@ -134,4 +134,53 @@ describe('AddRepoHostSelector', () => {
     expect(html).toContain('Update Orca on the server.')
     expect(html).toContain('aria-disabled="true"')
   })
+
+  it('offers Add WSL distro only when given, and a connect action on a stopped WSL host', () => {
+    const hosts = [
+      {
+        id: 'local' as const,
+        label: 'Local PC',
+        detail: 'This computer',
+        kind: 'local' as const,
+        health: 'local' as const,
+        presence: 'local' as const
+      },
+      {
+        id: 'runtime:wsl%3Aubuntu' as const,
+        label: 'Ubuntu (WSL)',
+        detail: 'WSL distro · Distro stopped',
+        kind: 'runtime' as const,
+        health: 'disconnected' as const,
+        presence: 'project' as const,
+        wslDistro: 'Ubuntu'
+      }
+    ]
+    const withWsl = renderToStaticMarkup(
+      <AddRepoHostSelector
+        hosts={hosts}
+        selectedHostId="local"
+        open
+        onOpenChange={vi.fn()}
+        onSelectHost={vi.fn()}
+        onAddSshHost={vi.fn()}
+        onAddWslHost={vi.fn()}
+      />
+    )
+    expect(withWsl).toContain('Add WSL distro')
+    expect(withWsl).toContain('Ubuntu (WSL)')
+    expect(withWsl).toContain('Distro stopped')
+    expect(withWsl).toContain('Connect')
+
+    const withoutWsl = renderToStaticMarkup(
+      <AddRepoHostSelector
+        hosts={hosts}
+        selectedHostId="local"
+        open
+        onOpenChange={vi.fn()}
+        onSelectHost={vi.fn()}
+        onAddSshHost={vi.fn()}
+      />
+    )
+    expect(withoutWsl).not.toContain('Add WSL distro')
+  })
 })

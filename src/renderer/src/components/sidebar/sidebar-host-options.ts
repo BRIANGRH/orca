@@ -20,7 +20,9 @@ import type { RuntimeCompatVerdict } from '../../../../shared/protocol-compat'
 import type { SshConnectionState, SshConnectionStatus } from '../../../../shared/ssh-types'
 import type { PublicKnownRuntimeEnvironment } from '../../../../shared/runtime-environments'
 import type { RuntimeEnvironmentStatus } from '../../../../shared/runtime-host-status'
+import type { WslHostStatus } from '../../../../shared/wsl-host-types'
 import { translate } from '@/i18n/i18n'
+import { getWslHostRowDetail, getWslHostRowHealth } from './wsl-host-row-status'
 
 export type SidebarHostOption = {
   id: ExecutionHostId
@@ -35,6 +37,8 @@ export type SidebarHostOption = {
   connectionStatus?: SshConnectionStatus
   aliasHostIds?: readonly ExecutionHostId[]
   mergedIntoHostId?: ExecutionHostId
+  /** Set on a WSL host's row: the distro its Orca server runs in. */
+  wslDistro?: string
 }
 
 export type SidebarHostScopeOption = {
@@ -59,6 +63,7 @@ export function buildSidebarHostOptions(args: {
   // Why: per-host display-label overrides rename hosts everywhere the sidebar
   // options feed (host headers, scope picker, focus menu).
   hostLabelOverrides?: ReadonlyMap<ExecutionHostId, string>
+  wslHostStatuses?: Readonly<Record<string, WslHostStatus>>
 }): SidebarHostOption[] {
   const configuredSshTargetIds = new Set(args.sshTargetLabels.keys())
   const projectSshTargetIds = new Set<string>()
@@ -68,6 +73,15 @@ export function buildSidebarHostOptions(args: {
     }
     if (repo.executionHostId?.startsWith('ssh:')) {
       projectSshTargetIds.add(decodeURIComponent(repo.executionHostId.slice('ssh:'.length)))
+    }
+  }
+  const wslDistroByHostId = new Map<ExecutionHostId, { environmentId: string; distro: string }>()
+  for (const environment of args.runtimeEnvironments ?? []) {
+    if (environment.orcadDeployment?.kind === 'wsl') {
+      wslDistroByHostId.set(toRuntimeExecutionHostId(environment.id), {
+        environmentId: environment.id,
+        distro: environment.orcadDeployment.distro
+      })
     }
   }
   const activeRuntimeHostId = args.settings?.activeRuntimeEnvironmentId?.trim()
@@ -98,8 +112,17 @@ export function buildSidebarHostOptions(args: {
             : 'active'
       }
     }
+    const wsl = wslDistroByHostId.get(host.id)
+    const status = wsl ? args.wslHostStatuses?.[wsl.environmentId] : undefined
     return {
       ...host,
+      ...(wsl
+        ? {
+            wslDistro: wsl.distro,
+            detail: getWslHostRowDetail(status),
+            health: getWslHostRowHealth(host.health, status)
+          }
+        : {}),
       presence: host.id === activeRuntimeHostId ? 'active' : 'project'
     }
   })

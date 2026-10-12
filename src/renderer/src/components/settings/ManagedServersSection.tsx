@@ -15,6 +15,7 @@ import { Label } from '../ui/label'
 import { ManagedServerRow } from './ManagedServerRow'
 import { RuntimeSshAccessControl } from './RuntimeSshAccessControl'
 import { SshTargetSelect } from './SshTargetSelect'
+import { WslHostsSection } from './WslHostsSection'
 import { managedServerOutcomeLabel, migrationPhaseLabel } from './managed-server-copy'
 
 type ManagedServersSectionProps = {
@@ -60,7 +61,10 @@ export function ManagedServersSection({
   if (!api) {
     return null
   }
-  const managed = environments.filter((environment) => environment.orcadDeployment)
+  // Why not WSL hosts: they have their own section and none of the SSH lifecycle actions.
+  const managed = environments.filter(
+    (environment) => environment.orcadDeployment && environment.orcadDeployment.kind !== 'wsl'
+  )
   const paired = environments.filter((environment) => !environment.orcadDeployment)
   // Why: a host that already runs, or is moving to, a managed server can't take another.
   const busyTargetIds = new Set([
@@ -204,6 +208,8 @@ export function ManagedServersSection({
           ))}
         </div>
       ) : null}
+
+      <WslHostsSection environments={environments} onChanged={onChanged} />
 
       {paired.length > 0 ? (
         <div className="space-y-1">

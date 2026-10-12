@@ -80,7 +80,9 @@ export function useAddRepoHostSelection({
   const requestedHostPending =
     requestedHost !== undefined &&
     !requestedHostSelectable &&
-    (requestedHost.kind === 'ssh' || (requestedHost.aliasHostIds?.length ?? 0) > 0)
+    (requestedHost.kind === 'ssh' ||
+      requestedHost.wslDistro !== undefined ||
+      (requestedHost.aliasHostIds?.length ?? 0) > 0)
   const selectedHost = requestedHostSelectable
     ? requestedHost
     : requestedHostPending
@@ -132,6 +134,23 @@ export function useAddRepoHostSelection({
     async (hostId: ExecutionHostId): Promise<void> => {
       const host = selectableHostOptions.find((candidate) => candidate.id === hostId)
       const parsed = parseExecutionHostId(hostId)
+      if (host?.wslDistro !== undefined && parsed?.kind === 'runtime') {
+        // Main publishes the WSL host's progress; the row turns selectable once its server answers.
+        try {
+          await window.api.runtimeEnvironments.connect({ selector: parsed.environmentId })
+          setSelectedAddProjectHostId(hostId)
+        } catch (err) {
+          toast.error(
+            err instanceof Error
+              ? err.message
+              : translate(
+                  'auto.components.sidebar.useAddRepoHostSelection.wslConnectionFailed',
+                  'Couldn’t start the WSL host.'
+                )
+          )
+        }
+        return
+      }
       if (!host || parsed?.kind !== 'ssh') {
         return
       }

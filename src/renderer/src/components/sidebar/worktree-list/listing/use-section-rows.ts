@@ -78,6 +78,7 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
   const runtimeEnvironments = useAppStore((s) => s.runtimeEnvironments)
   const runtimeStatusByEnvironmentId = useAppStore((s) => s.runtimeStatusByEnvironmentId)
+  const wslHostStatuses = useAppStore((s) => s.wslHostStatuses)
   const workspaceHostOrder = useAppStore((s) => s.workspaceHostOrder)
   const setWorkspaceHostOrder = useAppStore((s) => s.setWorkspaceHostOrder)
 
@@ -127,7 +128,8 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         settings: args.settings,
         runtimeEnvironments,
         runtimeStatusByEnvironmentId,
-        hostLabelOverrides
+        hostLabelOverrides,
+        wslHostStatuses
       }),
     [
       repos,
@@ -136,7 +138,8 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       args.settings,
       runtimeEnvironments,
       runtimeStatusByEnvironmentId,
-      hostLabelOverrides
+      hostLabelOverrides,
+      wslHostStatuses
     ]
   )
   const hostLabelById = useMemo(

@@ -21,6 +21,7 @@ export function useSidebarHostScopeOptions(): {
   const settings = useAppStore((s) => s.settings)
   const runtimeEnvironments = useAppStore((s) => s.runtimeEnvironments)
   const runtimeStatusByEnvironmentId = useAppStore((s) => s.runtimeStatusByEnvironmentId)
+  const wslHostStatuses = useAppStore((s) => s.wslHostStatuses)
 
   const hostLabelOverrides = useMemo(() => getHostDisplayLabelOverrides(settings), [settings])
   const hostOptions = useMemo(
@@ -32,7 +33,8 @@ export function useSidebarHostScopeOptions(): {
         settings,
         runtimeEnvironments,
         runtimeStatusByEnvironmentId,
-        hostLabelOverrides
+        hostLabelOverrides,
+        wslHostStatuses
       }),
     [
       repos,
@@ -41,7 +43,8 @@ export function useSidebarHostScopeOptions(): {
       settings,
       runtimeEnvironments,
       runtimeStatusByEnvironmentId,
-      hostLabelOverrides
+      hostLabelOverrides,
+      wslHostStatuses
     ]
   )
   const hostScopeOptions = useMemo(() => buildSidebarHostScopeOptions(hostOptions), [hostOptions])

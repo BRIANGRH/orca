@@ -20,6 +20,8 @@ type AddRepoHostSelectorProps = {
   onConnectHost?: (hostId: ExecutionHostId) => void
   onAddSshHost?: () => void
   onAddRemoteServer?: () => void
+  /** Present only where WSL hosts are available and turned on. */
+  onAddWslHost?: () => void
 }
 
 function getHostStatusDetail(host: SidebarHostOption): string {
@@ -37,10 +39,11 @@ export function AddRepoHostSelector({
   onSelectHost,
   onConnectHost,
   onAddSshHost,
-  onAddRemoteServer
+  onAddRemoteServer,
+  onAddWslHost
 }: AddRepoHostSelectorProps): React.JSX.Element | null {
   const [addHostOpen, setAddHostOpen] = useState(false)
-  const showHostSetupActions = Boolean(onAddSshHost || onAddRemoteServer)
+  const showHostSetupActions = Boolean(onAddSshHost || onAddRemoteServer || onAddWslHost)
   if (!shouldShowHostScopeControls(hosts) && !showHostSetupActions) {
     return null
   }
@@ -100,10 +103,15 @@ export function AddRepoHostSelector({
                           </span>
                         </span>
                         <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                          {translate(
-                            'auto.components.sidebar.AddRepoHostSelector.addRemoteHostDetail',
-                            'SSH host or Orca server'
-                          )}
+                          {onAddWslHost
+                            ? translate(
+                                'auto.components.sidebar.AddRepoHostSelector.addRemoteHostDetailWithWsl',
+                                'SSH host, Orca server, or WSL distro'
+                              )
+                            : translate(
+                                'auto.components.sidebar.AddRepoHostSelector.addRemoteHostDetail',
+                                'SSH host or Orca server'
+                              )}
                         </span>
                       </span>
                       <ChevronRight className="mt-0.5 size-3.5 shrink-0" />
@@ -154,6 +162,30 @@ export function AddRepoHostSelector({
                           {translate(
                             'auto.components.sidebar.AddRepoHostSelector.addRemoteServerDetail',
                             'Pair with Orca running on another computer.'
+                          )}
+                        </span>
+                      </button>
+                    ) : null}
+                    {onAddWslHost ? (
+                      <button
+                        type="button"
+                        className="flex w-full flex-col rounded-sm px-2.5 py-2 text-left hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        onClick={() => {
+                          setAddHostOpen(false)
+                          onOpenChange(false)
+                          onAddWslHost()
+                        }}
+                      >
+                        <span className="text-xs font-medium">
+                          {translate(
+                            'auto.components.sidebar.AddRepoHostSelector.addWslHost',
+                            'Add WSL distro'
+                          )}
+                        </span>
+                        <span className="mt-0.5 text-[11px] text-muted-foreground">
+                          {translate(
+                            'auto.components.sidebar.AddRepoHostSelector.addWslHostDetail',
+                            'Run an Orca server inside a WSL 2 distro. Experimental.'
                           )}
                         </span>
                       </button>

@@ -1,0 +1,153 @@
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { translate } from '@/i18n/i18n'
+import type { WslHostDistro } from '../../../../shared/wsl-host-types'
+
+export function wslDistroStateLabel(distro: WslHostDistro): string {
+  if (distro.version === 1) {
+    return translate('auto.components.sidebar.AddWslHostFormPanel.wsl1', 'WSL 1 · not supported')
+  }
+  if (distro.environmentId) {
+    return translate('auto.components.sidebar.AddWslHostFormPanel.added', 'Already a host')
+  }
+  return distro.state === 'running'
+    ? translate('auto.components.sidebar.AddWslHostFormPanel.running', 'Running')
+    : translate('auto.components.sidebar.AddWslHostFormPanel.stopped', 'Stopped')
+}
+
+export function canAddWslDistro(distro: WslHostDistro | undefined): boolean {
+  return distro !== undefined && distro.version !== 1 && distro.environmentId === null
+}
+
+export function AddWslHostFormPanel({
+  distros,
+  loading,
+  selectedDistro,
+  error,
+  adding,
+  onSelectDistro,
+  onSubmit,
+  onCancel
+}: {
+  distros: readonly WslHostDistro[]
+  loading: boolean
+  selectedDistro: string
+  error: string | null
+  adding: boolean
+  onSelectDistro: (name: string) => void
+  onSubmit: () => void
+  onCancel: () => void
+}): React.JSX.Element {
+  const selected = distros.find((distro) => distro.name === selectedDistro)
+  const stopped = selected?.state === 'stopped' && canAddWslDistro(selected)
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>
+          {translate('auto.components.sidebar.AddWslHostFormPanel.title', 'Add WSL distro')}
+        </DialogTitle>
+        <DialogDescription>
+          {translate(
+            'auto.components.sidebar.AddWslHostFormPanel.description',
+            'Orca runs its server inside the distro, so git, files and terminals run natively in Linux. Use it for new projects; projects you opened through \\\\wsl.localhost keep working as they are.'
+          )}
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="add-wsl-distro">
+          {translate('auto.components.sidebar.AddWslHostFormPanel.distro', 'Distro')}
+        </Label>
+        <Select
+          value={selectedDistro}
+          // Why: Radix reports '' when its hidden native select resets; that is not a user choice.
+          onValueChange={(name) => name && onSelectDistro(name)}
+          disabled={adding || loading}
+        >
+          <SelectTrigger id="add-wsl-distro" className="w-full">
+            <SelectValue
+              placeholder={
+                loading
+                  ? translate(
+                      'auto.components.sidebar.AddWslHostFormPanel.loading',
+                      'Looking for WSL distros…'
+                    )
+                  : translate(
+                      'auto.components.sidebar.AddWslHostFormPanel.placeholder',
+                      'Choose a distro'
+                    )
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {distros.map((distro) => (
+              <SelectItem key={distro.name} value={distro.name} disabled={!canAddWslDistro(distro)}>
+                <span className="truncate">{distro.name}</span>
+                <span className="text-muted-foreground">{wslDistroStateLabel(distro)}</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {!loading && distros.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {translate(
+              'auto.components.sidebar.AddWslHostFormPanel.none',
+              'No WSL distros found. Install one with: wsl --install'
+            )}
+          </p>
+        ) : null}
+        {stopped ? (
+          <p className="text-xs text-muted-foreground">
+            {translate(
+              'auto.components.sidebar.AddWslHostFormPanel.stoppedHint',
+              '{{value0}} is stopped. Adding it starts it.',
+              { value0: selected.name }
+            )}
+          </p>
+        ) : null}
+        {adding ? (
+          <p className="text-xs text-muted-foreground" aria-live="polite">
+            {translate(
+              'auto.components.sidebar.AddWslHostFormPanel.addingHint',
+              'Installing and starting the Orca server in the distro. The first time can take a minute.'
+            )}
+          </p>
+        ) : null}
+        {error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        ) : null}
+      </div>
+
+      <DialogFooter className="sm:justify-between">
+        <span />
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={adding}>
+            {translate('auto.components.sidebar.AddRemoteHostDialog.cancel', 'Cancel')}
+          </Button>
+          <Button type="button" onClick={onSubmit} disabled={adding || !canAddWslDistro(selected)}>
+            {adding ? <LoadingSpinner className="size-4" /> : null}
+            {adding
+              ? translate('auto.components.sidebar.AddWslHostFormPanel.adding', 'Setting up…')
+              : stopped
+                ? translate(
+                    'auto.components.sidebar.AddWslHostFormPanel.startAndAdd',
+                    'Start and add'
+                  )
+                : translate('auto.components.sidebar.AddWslHostFormPanel.add', 'Add host')}
+          </Button>
+        </div>
+      </DialogFooter>
+    </>
+  )
+}
