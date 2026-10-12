@@ -3,7 +3,8 @@ import {
   buildHiddenTerminalViews,
   reportHiddenTerminalViews,
   subscribeHiddenTerminalViewBudget,
-  type HiddenViewBudgetInput
+  type HiddenViewBudgetInput,
+  type HiddenViewSize
 } from './terminal-hidden-view-budget'
 
 /**
@@ -15,7 +16,7 @@ export function useHiddenTerminalViewBudget(
   setParkingRevision: Dispatch<SetStateAction<number>>
 ): (input: HiddenViewBudgetInput | null) => ReadonlySet<string> {
   const ownerId = useId()
-  const lastKnownBytesRef = useRef(new Map<string, number>())
+  const sizeByTabIdRef = useRef(new Map<string, HiddenViewSize>())
   useEffect(() => {
     const unsubscribe = subscribeHiddenTerminalViewBudget(ownerId, () =>
       setParkingRevision((revision) => revision + 1)
@@ -29,7 +30,7 @@ export function useHiddenTerminalViewBudget(
     (input: HiddenViewBudgetInput | null) =>
       reportHiddenTerminalViews(
         ownerId,
-        input ? buildHiddenTerminalViews(input, lastKnownBytesRef.current) : []
+        input ? buildHiddenTerminalViews(input, sizeByTabIdRef.current) : []
       ),
     [ownerId]
   )

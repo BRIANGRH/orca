@@ -26,7 +26,10 @@ export function terminalRendersInlineImages(terminal: Terminal): boolean {
 /** Decoded-image cache the terminal holds (the addon reports MB), for the hidden-view budget. */
 export function getTerminalInlineImageBytes(terminal: Terminal): number {
   try {
-    return (terminalsRenderingInlineImages.get(terminal)?.storageUsage ?? 0) * 1024 * 1024
+    // Why the clamp: the addon reports -1 while its storage is absent.
+    return (
+      Math.max(0, terminalsRenderingInlineImages.get(terminal)?.storageUsage ?? 0) * 1024 * 1024
+    )
   } catch {
     // Why: storage can throw while the addon is mid-dispose.
     return 0

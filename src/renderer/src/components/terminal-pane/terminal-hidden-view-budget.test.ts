@@ -41,6 +41,26 @@ describe('selectHiddenTerminalViewsOverBudget', () => {
     expect(over).toEqual(new Set(['older']))
   })
 
+  // Why: it parks once its delay ends, so displacing an older view now would flip that view back.
+  it('does not let a view that will not fit once it can park displace an older view', () => {
+    const views = [
+      view('newest', 3, 60 * MB),
+      view('in-delay', 2, 50 * MB, false),
+      view('old', 1, 30 * MB)
+    ]
+    expect(selectHiddenTerminalViewsOverBudget(views, 100 * MB)).toEqual(new Set())
+    const afterDelay = views.map((v) => (v.tabId === 'in-delay' ? { ...v, parkable: true } : v))
+    expect(selectHiddenTerminalViewsOverBudget(afterDelay, 100 * MB)).toEqual(new Set(['in-delay']))
+  })
+
+  it('always charges a view that stays mounted for another reason', () => {
+    const over = selectHiddenTerminalViewsOverBudget(
+      [{ ...view('sleeping', 3, 90 * MB), held: true }, view('older', 2, 20 * MB)],
+      100 * MB
+    )
+    expect(over).toEqual(new Set(['older']))
+  })
+
   it('never keeps a view whose size was never measured', () => {
     const over = selectHiddenTerminalViewsOverBudget(
       [view('unknown', 3, Number.POSITIVE_INFINITY), view('known', 2, 10 * MB)],
@@ -129,6 +149,7 @@ describe('buildHiddenTerminalViews', () => {
     const views = buildHiddenTerminalViews(
       {
         worktreeId: 'wt-1',
+        isHeldMounted: (held) => held.id === 'never',
         terminalTabs: [
           tab('hidden', { lastActivatedSeq: 4 }),
           tab('visible', { isVisible: true, hiddenSinceMs: null }),
@@ -147,13 +168,32 @@ describe('buildHiddenTerminalViews', () => {
         hiddenSinceMs: 10,
         activationSeq: 4,
         bytes: Number.POSITIVE_INFINITY,
-        parkable: true
+        parkable: true,
+        held: false
       }
     ])
   })
 
+  it('keeps the largest size seen while hidden, and measures afresh on the next hide', () => {
+    const sizes = new Map<string, { hiddenSinceMs: number; bytes: number }>()
+    let bytes = 50 * MB
+    registerMountedTerminalTabView('tab-1', { getRetainedBytes: () => bytes })
+    const input = (hiddenSinceMs: number) => ({
+      worktreeId: 'wt-1',
+      terminalTabs: [tab('tab-1', { hiddenSinceMs })],
+      parkableTabIds: new Set(['tab-1']),
+      clockParkedTabIds: new Set<string>()
+    })
+    expect(buildHiddenTerminalViews(input(10), sizes)[0].bytes).toBe(50 * MB)
+    // A remount mid-restore reads small; the episode keeps the larger size.
+    bytes = 5 * MB
+    expect(buildHiddenTerminalViews(input(10), sizes)[0].bytes).toBe(50 * MB)
+    // Shown and hidden again: a new episode measures what is there now.
+    expect(buildHiddenTerminalViews(input(20), sizes)[0].bytes).toBe(5 * MB)
+  })
+
   it('measures a mounted view and remembers its size after it parks', () => {
-    const lastKnown = new Map<string, number>()
+    const lastKnown = new Map<string, { hiddenSinceMs: number; bytes: number }>()
     const input = {
       worktreeId: 'wt-1',
       terminalTabs: [tab('tab-1')],

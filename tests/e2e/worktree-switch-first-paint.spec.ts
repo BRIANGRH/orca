@@ -294,9 +294,8 @@ async function publish(testInfo: TestInfo, name: string, body: string): Promise<
   await testInfo.attach(name, { body, contentType: 'text/plain' })
 }
 
-// Why 8 extra: hot-retain keeps the 4 most recently hidden worktrees mounted and
-// exempts the last-active one, so a target only cold-parks once enough other
-// worktrees have been visited after it. That is the steady state at field scale.
+// Why 8 extra: a field-scale worktree population. The reload in each round, not
+// a hidden-view limit, is what leaves the target with no pane mounted.
 const FILLER_WORKTREE_COUNT = Number(process.env.ORCA_SWITCH_FILLER_WORKTREES ?? '8')
 
 async function addFillerWorktrees(
@@ -417,8 +416,7 @@ test.describe('Worktree switch first paint @headful', () => {
         // Leave the primary active and let the session persist before reloading:
         // startup restores the persisted active worktree, so this is what makes
         // the target come back with tabs in the session and no pane ever mounted
-        // — the state every switch lands in once the worktree count exceeds the
-        // hot-retain working set.
+        // — the state every switch lands in once the worktree's views were parked.
         await switchToWorktree(orcaPage, primaryId)
         await ensureTerminalVisible(orcaPage)
         await orcaPage.waitForTimeout(2_500)

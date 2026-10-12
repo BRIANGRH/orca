@@ -23,6 +23,8 @@ export type HiddenViewBudgetInput = {
   parkableTabIds: ReadonlySet<string>
   clockParkedTabIds: ReadonlySet<string>
   restorePolicy?: TerminalParkRestorePolicy
+  /** Tabs the pass keeps mounted even when parked (sleeping-session owner, split lease). */
+  isHeldMounted?: (tab: TerminalTabColdParkCandidate) => boolean
 }
 
 export type HiddenTerminalView = {
@@ -33,6 +35,8 @@ export type HiddenTerminalView = {
   bytes: number
   /** Past the cold-park delay and otherwise park-eligible right now. */
   parkable: boolean
+  /** Kept mounted for another reason even if parked, so it always holds its memory. */
+  held?: boolean
 }
 
 type RetainedBytesSource = { getRetainedBytes(): number }
@@ -65,20 +69,24 @@ export function readMountedTerminalTabViewBytes(tabId: string): number | null {
   }
 }
 
+/** A view's size for its current hidden episode. */
+export type HiddenViewSize = { hiddenSinceMs: number; bytes: number }
+
 /**
  * One worktree's hidden views that parking could release. Unrestorable views
  * stay out (no budget can release them), and so do views the hot-retain clock
- * already parks. Bytes are measured while the view is mounted and remembered
- * after it parks, so parking never makes a view look free and flip it back in.
+ * already parks. Size is the largest measured in the current hidden episode
+ * and is remembered after the view parks, so neither parking nor a remount
+ * mid-restore makes a view look small and flip it back in.
  */
 export function buildHiddenTerminalViews(
   input: HiddenViewBudgetInput,
-  lastKnownBytesByTabId: Map<string, number>
+  sizeByTabId: Map<string, HiddenViewSize>
 ): HiddenTerminalView[] {
   const liveTabIds = new Set(input.terminalTabs.map((tab) => tab.id))
-  for (const tabId of Array.from(lastKnownBytesByTabId.keys())) {
+  for (const tabId of Array.from(sizeByTabId.keys())) {
     if (!liveTabIds.has(tabId)) {
-      lastKnownBytesByTabId.delete(tabId)
+      sizeByTabId.delete(tabId)
     }
   }
   const views: HiddenTerminalView[] = []
@@ -92,16 +100,22 @@ export function buildHiddenTerminalViews(
     ) {
       continue
     }
+    const known = sizeByTabId.get(tab.id)
+    const sameEpisode = known?.hiddenSinceMs === tab.hiddenSinceMs
     const mountedBytes = readMountedTerminalTabViewBytes(tab.id)
     if (mountedBytes !== null) {
-      lastKnownBytesByTabId.set(tab.id, mountedBytes)
+      sizeByTabId.set(tab.id, {
+        hiddenSinceMs: tab.hiddenSinceMs,
+        bytes: sameEpisode ? Math.max(known.bytes, mountedBytes) : mountedBytes
+      })
     }
     views.push({
       tabId: tab.id,
       hiddenSinceMs: tab.hiddenSinceMs,
       ...(tab.lastActivatedSeq !== undefined ? { activationSeq: tab.lastActivatedSeq } : {}),
-      bytes: lastKnownBytesByTabId.get(tab.id) ?? Number.POSITIVE_INFINITY,
-      parkable: input.parkableTabIds.has(tab.id)
+      bytes: sizeByTabId.get(tab.id)?.bytes ?? Number.POSITIVE_INFINITY,
+      parkable: input.parkableTabIds.has(tab.id),
+      held: input.isHeldMounted?.(tab) === true
     })
   }
   return views
@@ -116,10 +130,10 @@ function compareHiddenViewRecencyDesc(a: HiddenTerminalView, b: HiddenTerminalVi
 }
 
 /**
- * Most recently hidden first, each view stays loaded while it still fits. A
- * view inside the cold-park delay cannot park yet but still holds its memory,
- * so it uses budget ahead of older views. The last-hidden view is spared only
- * while it fits on its own.
+ * Most recently hidden first, each view stays loaded while it still fits; the
+ * last-hidden view is spared only while it fits on its own. A held view always
+ * uses budget. A view that does not fit but cannot park yet (cold-park delay)
+ * uses none: it parks once it can, so older views stay put meanwhile.
  */
 export function selectHiddenTerminalViewsOverBudget(
   views: readonly HiddenTerminalView[],
@@ -128,12 +142,10 @@ export function selectHiddenTerminalViewsOverBudget(
   const overBudget = new Set<string>()
   let retainedBytes = 0
   for (const view of [...views].sort(compareHiddenViewRecencyDesc)) {
-    if (retainedBytes + view.bytes <= budgetBytes) {
-      retainedBytes += view.bytes
+    if (view.held || retainedBytes + view.bytes <= budgetBytes) {
+      retainedBytes += Number.isFinite(view.bytes) ? view.bytes : 0
     } else if (view.parkable) {
       overBudget.add(view.tabId)
-    } else if (Number.isFinite(view.bytes)) {
-      retainedBytes += view.bytes
     }
   }
   return overBudget

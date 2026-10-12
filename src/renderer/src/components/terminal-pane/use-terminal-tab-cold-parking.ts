@@ -213,7 +213,19 @@ export function useTerminalTabColdParking(args: {
         pairedRuntimeParkingEnvironmentIds
       },
       // Why null when the worktree parks: none of its views stay loaded.
-      hiddenViewBudget: (input) => reportHiddenViewBudget(coldParkTerminalPanes ? null : input),
+      hiddenViewBudget: (input) =>
+        reportHiddenViewBudget(
+          input && !coldParkTerminalPanes
+            ? {
+                ...input,
+                // Why not watcher coverage: it is costly per pass, and worktrees it
+                // withholds are bounded by the retention force-park instead.
+                isHeldMounted: (tab) =>
+                  sleepingRecordOwnedTabIds.has(tab.id) ||
+                  terminalPaneSplitMountLeaseTabIds.has(tab.id)
+              }
+            : null
+        ),
       ...overrides
     })
     const { parkedTabIds, parkVerdictPinUntilMsByTabId } = withholdUnparkableTerminalTabs({
@@ -259,6 +271,8 @@ export function useTerminalTabColdParking(args: {
     pendingStartupByTabId,
     pairedRuntimeParkingEnvironmentIds,
     shouldMeasureHiddenWorktree,
+    sleepingRecordOwnedTabIds,
+    terminalPaneSplitMountLeaseTabIds,
     terminalParkingEnabled,
     terminalSshParkingEnabled,
     terminalTabParkingRevision,
