@@ -8,8 +8,8 @@ const MAX_FILE_NAME_LENGTH = 64
 const MAX_STACK_TEXT_LENGTH = 225
 const BUNDLE_FILE_NAME = /^[\w.-]+\.[cm]?js$/
 const CODE_IDENTIFIER = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/
-// V8's own runtime frames (no script) report these fixed labels instead of a function.
-const RUNTIME_LABELS = new Set(['(root)', '(program)', '(idle)', '(V8 API)', '(garbage collector)'])
+// V8's own runtime frames (no script) report fixed parenthesized labels such as "(GC)" or "(V8 API)".
+const RUNTIME_LABEL = /^\([A-Za-z0-9 _-]{1,24}\)$/
 
 type CallFrame = {
   functionName: string
@@ -82,7 +82,7 @@ function describeFrame(frame: CallFrame, trustedScriptPrefix: string | null): st
     if (scriptId !== '0') {
       return '(other script)'
     }
-    if (RUNTIME_LABELS.has(functionName)) {
+    if (RUNTIME_LABEL.test(functionName)) {
       return functionName
     }
     return CODE_IDENTIFIER.test(functionName) && functionName.length <= MAX_FUNCTION_NAME_LENGTH

@@ -82,7 +82,7 @@ function fakeRenderer(id: number, { attached = false, holdStart = false } = {}) 
 
 const sample = (heapRatio: number): RendererHeapReading => ({
   heapRatio,
-  rendererSurface: null,
+  rendererSurface: 'main',
   isHighwaterMark: false
 })
 const mark = (heapRatio: number): RendererHeapReading => ({
@@ -104,21 +104,19 @@ afterEach(() => {
 })
 
 describe('noteRendererHeapReading', () => {
-  it('starts at 60% and refreshes on later marks and on samples a minute apart', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
+  it('starts at 60% and refreshes every 30 seconds and on later marks', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     const fake = fakeRenderer(1)
     const record = vi.fn()
 
     noteRendererHeapReading(fake.renderer, sample(0.59), record)
     expect(fake.renderer.debugger.attach).not.toHaveBeenCalled()
     noteRendererHeapReading(fake.renderer, sample(0.61), record)
-    noteRendererHeapReading(fake.renderer, mark(0.61), record)
     await sampling(fake.sendCommand)
 
     noteRendererHeapReading(fake.renderer, sample(0.62), record)
     expect(fake.reads()).toBe(0)
-    vi.setSystemTime(Date.now() + 60_000)
-    noteRendererHeapReading(fake.renderer, sample(0.65), record)
+    vi.advanceTimersByTime(30_000)
     await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1))
     expect(record.mock.calls[0][0]).toMatchObject({
       rendererSurface: 'main',
@@ -132,10 +130,12 @@ describe('noteRendererHeapReading', () => {
     expect(fake.renderer.debugger.attach).toHaveBeenCalledTimes(1)
   })
 
-  it('does not read, or spend a refresh, before sampling has started', async () => {
+  it('reads soon after a slow start even when both marks arrived during it', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     const fake = fakeRenderer(2, { holdStart: true })
     const record = vi.fn()
 
+    noteRendererHeapReading(fake.renderer, sample(0.85), record)
     noteRendererHeapReading(fake.renderer, mark(0.85), record)
     noteRendererHeapReading(fake.renderer, mark(0.85), record)
     expect(fake.reads()).toBe(0)
@@ -143,7 +143,7 @@ describe('noteRendererHeapReading', () => {
     fake.releaseStart()
     await sampling(fake.sendCommand)
     await vi.waitFor(() => {
-      noteRendererHeapReading(fake.renderer, mark(0.86), record)
+      vi.advanceTimersByTime(30_000)
       expect(record).toHaveBeenCalledTimes(1)
     })
   })
@@ -201,7 +201,7 @@ describe('profileRendererMemoryBreadcrumb', () => {
     crumb('renderer_click', 3900)
     expect(fake.renderer.debugger.attach).not.toHaveBeenCalled()
 
-    crumb('renderer_memory', 2500)
+    crumb('renderer_memory', 2500, { rendererSurface: 'main' })
     crumb('renderer_memory_highwater', 2500, { rendererSurface: 'main', thresholdPct: 60 })
     await sampling(fake.sendCommand)
     await vi.waitFor(() => {

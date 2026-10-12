@@ -15,9 +15,9 @@ const SAMPLING_INTERVAL_BYTES = 512 * 1024
 // Sampling runs while the heap is at least 60% full and stops once it falls below 50%.
 const START_HEAP_RATIO = 0.6
 const STOP_HEAP_RATIO = 0.5
-// Why: a fast leak can go from the first mark to OOM between two marks, so the profile is
-// refreshed on each periodic memory sample and the crash report keeps the newest one.
-const PROFILE_REFRESH_MS = 55_000
+// Why: main re-reads on its own clock, since a hidden window throttles the renderer's memory samples
+// and a fast leak can go from 60% to OOM between two of them. Each read forces a full GC, so not often.
+const PROFILE_REFRESH_MS = 30_000
 
 export type ProfiledDebugger = {
   isAttached(): boolean
@@ -65,8 +65,7 @@ export function profiledRendererFor(contents: WebContents): ProfiledRenderer {
 /** One heap reading from a renderer crumb: a periodic sample or a high-water mark. */
 export type RendererHeapReading = {
   heapRatio: number
-  // Periodic samples do not carry the surface; the high-water mark in the same sample does.
-  rendererSurface: string | null
+  rendererSurface: string
   isHighwaterMark: boolean
 }
 
@@ -75,9 +74,8 @@ type SamplingSession = {
   startedAtPct: number
   startedAtMs: number
   trustedScriptPrefix: string | null
-  // Reads before startSampling resolves would fail and are skipped, not counted as a refresh.
+  // Reads before startSampling resolves would fail, so they wait for it.
   ready: boolean
-  lastReadAtMs: number
   reading: boolean
   stop: () => void
 }
@@ -98,12 +96,9 @@ export function noteRendererHeapReading(
     return
   }
   const session = sessions.get(renderer.id)
-  if (session && reading.rendererSurface) {
-    session.rendererSurface = reading.rendererSurface
-  }
   if (!session) {
     if (reading.heapRatio >= START_HEAP_RATIO) {
-      startSampling(renderer, reading)
+      startSampling(renderer, reading, record)
     }
     return
   }
@@ -111,7 +106,7 @@ export function noteRendererHeapReading(
     session.stop()
     return
   }
-  if (reading.isHighwaterMark || Date.now() - session.lastReadAtMs >= PROFILE_REFRESH_MS) {
+  if (reading.isHighwaterMark) {
     refreshProfile(renderer, session, record)
   }
 }
@@ -125,7 +120,6 @@ function refreshProfile(
     return
   }
   session.reading = true
-  session.lastReadAtMs = Date.now()
   void renderer.debugger
     .sendCommand('HeapProfiler.getSamplingProfile')
     .then((result) => {
@@ -145,7 +139,11 @@ function refreshProfile(
     })
 }
 
-function startSampling(renderer: ProfiledRenderer, reading: RendererHeapReading): void {
+function startSampling(
+  renderer: ProfiledRenderer,
+  reading: RendererHeapReading,
+  record: (data: CrashReportBreadcrumbData) => void
+): void {
   const debug = renderer.debugger
   // Why: never take over a debugger someone else (DevTools, a diagnostic script) attached.
   if (debug.isAttached()) {
@@ -158,11 +156,13 @@ function startSampling(renderer: ProfiledRenderer, reading: RendererHeapReading)
   }
   let stopped = false
   let unwatch = (): void => undefined
+  let refreshTimer: ReturnType<typeof setInterval> | undefined
   const stop = (): void => {
     if (stopped) {
       return
     }
     stopped = true
+    clearInterval(refreshTimer)
     sessions.delete(renderer.id)
     debug.removeListener('detach', onDetach)
     unwatch()
@@ -179,12 +179,11 @@ function startSampling(renderer: ProfiledRenderer, reading: RendererHeapReading)
   debug.on('detach', onDetach)
   unwatch = renderer.watchDocumentEnd(stop)
   const session: SamplingSession = {
-    rendererSurface: reading.rendererSurface ?? 'unknown',
+    rendererSurface: reading.rendererSurface,
     startedAtPct: Math.round(reading.heapRatio * 100),
     startedAtMs: Date.now(),
     trustedScriptPrefix: trustedScriptPrefixFor(renderer.getURL()),
     ready: false,
-    lastReadAtMs: Date.now(),
     reading: false,
     stop
   }
@@ -197,7 +196,15 @@ function startSampling(renderer: ProfiledRenderer, reading: RendererHeapReading)
       })
     )
     .then(() => {
+      if (stopped) {
+        return
+      }
       session.ready = true
+      refreshTimer = setInterval(
+        () => refreshProfile(renderer, session, record),
+        PROFILE_REFRESH_MS
+      )
+      refreshTimer.unref?.()
     })
     .catch(stop)
 }
@@ -232,7 +239,7 @@ function readHeapReading(
   const surface = 'rendererSurface' in data ? data.rendererSurface : undefined
   return {
     heapRatio: used / limit,
-    rendererSurface: typeof surface === 'string' ? surface : null,
+    rendererSurface: typeof surface === 'string' ? surface : 'unknown',
     isHighwaterMark
   }
 }
