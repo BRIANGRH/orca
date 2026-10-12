@@ -11160,7 +11160,7 @@
           "sourceControlAiDefaults": "Recettes, prompts et valeurs par défaut de hosted review sont partagés par ce client ; les choix de modèle et la découverte restent limités à l'hôte où l'agent s'exécute.",
           "projectOnThisHost": "Projet sur cette machine",
           "repositorySourceControlAi": "Ces substitutions s'appliquent à cette configuration de projet et héritent des valeurs par défaut IA du contrôle source côté client tant qu'elles ne sont pas personnalisées.",
-          "agentLaunchDefaults": "L'agent par défaut, les substitutions de commandes, les arguments CLI et l'environnement de lancement sont des préférences du client. Les lancements SSH et serveur distant valident toujours la disponibilité de l'hôte à l'exécution.",
+          "agentLaunchDefaults": "L’agent par défaut, les commandes personnalisées, les arguments de la CLI et l’environnement de lancement sont enregistrés sur l’hôte sélectionné.",
           "clientDefaultProjectScopes": "Par défaut du client + portées projet",
           "terminalQuickCommands": "Les commandes sont enregistrées sur ce client, puis définies globalement ou pour une configuration de projet afin de s'exécuter depuis le contexte de terminal sélectionné.",
           "hostOverride": "Substitution par hôte",
@@ -17650,7 +17650,8 @@
         "expandNode": "Développer {{value0}}",
         "selectMachine": "Sélectionner toutes les discussions sur {{value0}}",
         "sshHost": "SSH",
-        "done": "Terminé"
+        "done": "Terminé",
+        "resultListLabel": "Discussions de cette reprise"
       },
       "linear-issue-attribute-filter-coverage-notice": {
         "statusPartialTeamCoverage": "Filtrage des statuts des équipes {{value0}} sur {{value1}} : les problèmes des équipes restantes ne sont pas inclus.",
@@ -17737,7 +17738,11 @@
         "resumedTitleOne": "{{value0}} discussion sur 1 reprise",
         "resumingTitleOne": "Reprise d’une discussion",
         "resumingTitle": "Reprise de {{value0}} discussions",
-        "description": "Chaque discussion est restaurée avec tout son contexte, et l’agent vérifie où il s’était arrêté. Vous pouvez fermer cette fenêtre ; la barre d’état suit la progression."
+        "description": "Chaque discussion est restaurée avec tout son contexte, et l’agent vérifie où il s’était arrêté. Vous pouvez fermer cette fenêtre ; la barre d’état suit la progression.",
+        "finished": "Ces discussions étaient en cours quand Orca s’est fermé. Orca a restauré chacune là où elle s’était arrêtée, avec tout son contexte, et a demandé à l’agent de vérifier ce qu’il faisait avant de continuer. Vos propres messages n’ont pas été renvoyés.",
+        "finishedUpdate": "Ces discussions étaient en cours quand Orca a installé une mise à jour. Orca a restauré chacune là où elle s’était arrêtée, avec tout son contexte, et a demandé à l’agent de vérifier ce qu’il faisait avant de continuer. Vos propres messages n’ont pas été renvoyés.",
+        "finishedPartial": "Ces discussions étaient en cours quand Orca s’est fermé. Celles qu’Orca a reprises ont été restaurées là où elles s’étaient arrêtées, avec tout leur contexte, et invitées à vérifier ce qu’elles faisaient avant de continuer. Vos propres messages n’ont pas été renvoyés. Consultez la liste pour voir les discussions qui nécessitent encore votre attention ou qui peuvent être reprises.",
+        "finishedPartialUpdate": "Ces discussions étaient en cours quand Orca a installé une mise à jour. Celles qu’Orca a reprises ont été restaurées là où elles s’étaient arrêtées, avec tout leur contexte, et invitées à vérifier ce qu’elles faisaient avant de continuer. Vos propres messages n’ont pas été renvoyés. Consultez la liste pour voir les discussions qui nécessitent encore votre attention ou qui peuvent être reprises."
       },
       "NativeChatResumeRunStatusIcon": {
         "waitingForReply": "En attente de réponse",
@@ -17757,6 +17762,11 @@
         "attention": "À traiter",
         "running": "En cours depuis {{value0}}",
         "filter": "Afficher les discussions"
+      },
+      "NativeChatResumeAutoNote": {
+        "resuming": "Reprise automatique après le redémarrage.",
+        "resumed": "Reprises automatiquement après le redémarrage.",
+        "changeInSettings": "Modifier dans les paramètres"
       }
     },
     "i18n": {
@@ -19509,5 +19519,16 @@
   },
   "projectField": {
     "updateFailed": "Échec de la mise à jour du champ du projet"
-  }
+  },
+  "settings.agents.environmentName": "Nom de la variable d’environnement",
+  "settings.agents.environmentValue": "Valeur de {{name}}",
+  "settings.agents.savedEnvironment": "Valeur enregistrée · saisir pour remplacer",
+  "settings.agents.newEnvironment": "Valeur",
+  "settings.agents.removeEnvironment": "Supprimer",
+  "settings.agents.loadingHost": "Chargement des paramètres des agents…",
+  "settings.agents.updateHost": "Mettez ce serveur à jour pour modifier ses paramètres de lancement des agents.",
+  "settings.agents.readFailed": "Impossible de lire les paramètres des agents. Vérifiez la connexion à l’hôte et réessayez.",
+  "settings.agents.saveFailed": "Impossible d’enregistrer les paramètres des agents. Vérifiez la connexion à l’hôte et réessayez.",
+  "settings.agents.hostDefaults": "Paramètres par défaut des nouveaux agents sur l’hôte sélectionné.",
+  "settings.agents.save": "Enregistrer"
 }

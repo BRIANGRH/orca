@@ -11076,7 +11076,7 @@
           "sourceControlAiDefaults": "方案、提示和托管评审默认值由此客户端共享；模型选择和发现则限定在智能体运行的主机内。",
           "projectOnThisHost": "此主机上的项目",
           "repositorySourceControlAi": "这些覆盖项应用于此项目设置，并继承客户端的源代码管理 AI 默认值，直至自定义。",
-          "agentLaunchDefaults": "默认智能体、命令覆盖、CLI 参数和启动环境是客户端偏好。SSH 和远程服务器启动仍会在运行时验证主机可用性。",
+          "agentLaunchDefaults": "默认代理、命令覆盖、CLI 参数和启动环境保存在所选主机上。",
           "clientDefaultProjectScopes": "客户端默认 + 项目范围",
           "terminalQuickCommands": "命令保存在此客户端，然后限定为全局或某项目设置，以便从所选终端上下文运行。",
           "hostOverride": "主机覆盖",
@@ -17547,7 +17547,8 @@
         "expandNode": "展开 {{value0}}",
         "selectMachine": "选择 {{value0}} 上的全部聊天",
         "sshHost": "SSH",
-        "done": "完成"
+        "done": "完成",
+        "resultListLabel": "本次恢复的聊天"
       },
       "linear-issue-attribute-filter-coverage-notice": {
         "statusPartialTeamCoverage": "过滤 {{value1}} 团队状态中的 {{value0}} — 不包括其余团队的问题。",
@@ -17649,7 +17650,11 @@
         "resumedTitleOne": "已恢复 {{value0}}/1 个聊天",
         "resumingTitleOne": "正在恢复 1 个聊天",
         "resumingTitle": "正在恢复 {{value0}} 个聊天",
-        "description": "每个聊天都会带着完整上下文恢复，并被要求检查它停在了哪里。你可以关闭此窗口，状态栏会继续显示进度。"
+        "description": "每个聊天都会带着完整上下文恢复，并被要求检查它停在了哪里。你可以关闭此窗口，状态栏会继续显示进度。",
+        "finished": "Orca 关闭时这些聊天正在工作。Orca 已将每个聊天恢复到停止的位置并保留完整上下文，并让智能体在继续之前先检查它之前在做什么。你自己的提示没有被重新发送。",
+        "finishedUpdate": "Orca 安装更新时这些聊天正在工作。Orca 已将每个聊天恢复到停止的位置并保留完整上下文，并让智能体在继续之前先检查它之前在做什么。你自己的提示没有被重新发送。",
+        "finishedPartial": "Orca 关闭时这些聊天正在工作。Orca 恢复的聊天已回到停止的位置并保留完整上下文，并被要求在继续之前先检查之前在做什么。你自己的提示没有被重新发送。请在列表中查看仍需处理或可以恢复的聊天。",
+        "finishedPartialUpdate": "Orca 安装更新时这些聊天正在工作。Orca 恢复的聊天已回到停止的位置并保留完整上下文，并被要求在继续之前先检查之前在做什么。你自己的提示没有被重新发送。请在列表中查看仍需处理或可以恢复的聊天。"
       },
       "NativeChatResumeRunStatusIcon": {
         "waitingForReply": "等待回复",
@@ -17669,6 +17674,11 @@
         "attention": "需要处理",
         "running": "已运行 {{value0}}",
         "filter": "显示聊天"
+      },
+      "NativeChatResumeAutoNote": {
+        "resuming": "重启后正在自动恢复。",
+        "resumed": "重启后已自动恢复。",
+        "changeInSettings": "在设置中更改"
       }
     },
     "i18n": {
@@ -19522,5 +19532,16 @@
   },
   "projectField": {
     "updateFailed": "无法更新项目字段"
-  }
+  },
+  "settings.agents.environmentName": "环境变量名称",
+  "settings.agents.environmentValue": "{{name}} 的值",
+  "settings.agents.savedEnvironment": "已保存的值 · 输入以替换",
+  "settings.agents.newEnvironment": "值",
+  "settings.agents.removeEnvironment": "删除",
+  "settings.agents.loadingHost": "正在加载代理设置…",
+  "settings.agents.updateHost": "请更新此服务器以编辑其代理启动设置。",
+  "settings.agents.readFailed": "无法读取代理设置。请检查主机连接并重试。",
+  "settings.agents.saveFailed": "无法保存代理设置。请检查主机连接并重试。",
+  "settings.agents.hostDefaults": "所选主机上新代理的默认设置。",
+  "settings.agents.save": "保存"
 }

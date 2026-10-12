@@ -217,8 +217,11 @@ export const SQLITE_RUNTIME_INCLUDE = [
   'src/main/runtime/orchestration/orchestration-party-location.test.ts',
   'src/main/runtime/orchestration/structured-worker-journal-page.test.ts',
   'src/main/runtime/rpc/methods/agent-launch-caller-selection.test.ts',
+  'tests/e2e/agent-launch-cli.unit.test.ts',
   'src/main/runtime/rpc/methods/agent-launch-folder-workspace-create.test.ts',
   'src/main/runtime/rpc/methods/agent-launch-instant-tab.test.ts',
+  'src/main/runtime/orca-runtime.test.ts',
+  'tests/e2e/agent-launch-setup-choice.unit.test.ts',
   'src/main/runtime/rpc/methods/agent-launch-pane-reservation.test.ts',
   'src/main/runtime/rpc/methods/agent-launch-prestart-failure.test.ts',
   'src/main/runtime/rpc/methods/agent-launch-replay.test.ts',
@@ -237,6 +240,7 @@ export const SQLITE_RUNTIME_INCLUDE = [
   'src/main/runtime/runtime-worktree-structured-agent-rows-liveness.test.ts',
   'src/main/runtime/structured-agent-session-codex-interrupt-order.test.ts',
   'src/main/runtime/structured-agent-session-codex-opening-send-hold.test.ts',
+  'src/main/runtime/runtime-client-agent-launch-settings-durability.test.ts',
   'src/main/runtime/structured-agent-session-codex-settlement-order.test.ts',
   'src/main/runtime/structured-agent-session-integration-replay.test.ts',
   'src/main/runtime/structured-agent-session-integration.test.ts',
@@ -267,6 +271,7 @@ export const SQLITE_RUNTIME_INCLUDE = [
   'tests/e2e/cross-version-wire/cross-version-agent-session-wire.unit.test.ts',
   'tests/e2e/cross-version-wire/submission-positions-downgrade.unit.test.ts',
   'tests/e2e/folder-upgrade-identity-persistence.unit.test.ts',
+  'tests/e2e/host-agent-launch-settings-hook-bookkeeping.unit.test.ts',
   'tests/e2e/structured-agent-session-read-owner.unit.test.ts',
   'tests/e2e/structured-chat-owner-status-activation.unit.test.ts'
 ]
