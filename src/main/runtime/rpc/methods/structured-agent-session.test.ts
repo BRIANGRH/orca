@@ -337,7 +337,7 @@ describe('capability gating', () => {
     }
   )
 
-  it.each(CLEANUP_METHODS)(
+  it.each(CLEANUP_METHODS.filter(({ method }) => method !== 'agentSession.close'))(
     'does not install a host for cleanup-only method $method',
     async ({ method, params }) => {
       const ensureHost = vi.fn()

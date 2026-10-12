@@ -37,6 +37,22 @@ async function unloadSavedChat() {
   return { install, census }
 }
 
+it('closes idempotently without installing a host when no saved chat store exists', async () => {
+  expect(store.listRecords()).toEqual([])
+  setStructuredAgentSessionHost(null)
+  Object.assign(runtime, { hasPersistedStructuredAgentSessionStore: () => false })
+  const install = vi.spyOn(runtime, 'ensureStructuredAgentSessionHost').mockResolvedValue()
+  const stop = vi.spyOn(host, 'close')
+
+  expect(await call('agentSession.close', { sessionId: HOST_TEST_SESSION })).toMatchObject({
+    ok: true,
+    result: { ok: true }
+  })
+  expect(install).not.toHaveBeenCalled()
+  expect(stop).not.toHaveBeenCalled()
+  expect(store.listRecords()).toEqual([])
+})
+
 function closeChat(
   worktree = WORKTREE,
   clientCapabilities = [STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY]

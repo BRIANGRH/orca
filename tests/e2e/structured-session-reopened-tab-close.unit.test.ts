@@ -8,10 +8,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { RuntimeMobileSessionTabsResult } from '../../src/shared/runtime-types'
 import type * as RuntimeRpcClient from '../../src/renderer/src/runtime/runtime-rpc-client'
 import { OrcaRuntimeService } from '../../src/main/runtime/orca-runtime'
 import { setStructuredAgentSessionHost } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-registry'
+import {
+  openTestAgentSessionRecordStore,
+  seedTestAgentSessionRecordStore
+} from '../../src/main/runtime/agent-session-record-store-test-harness'
+import { foundAgentSessionRecord } from '../../src/main/runtime/agent-session-record-founding'
+import { closeTestJournalHostDatabase } from '../../src/main/native-chat/agent-session-journal/journal-host-database-test-support'
+import { createStructuredAgentSessionLogger } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-logger'
+import { structuredAgentSessionTabId } from '../../src/shared/structured-agent-session-projection'
 import { useAppStore } from '../../src/renderer/src/store'
 import { applyStructuredSessionTabSnapshots } from '../../src/renderer/src/runtime/local-structured-session-tabs-sync/snapshot-apply'
 import { resetLocalStructuredSessionVersionForTests } from '../../src/renderer/src/runtime/local-structured-session-tabs-sync'
@@ -21,10 +32,11 @@ import { registerTerminalUiRoutingIpcBridge } from '../../src/renderer/src/hooks
 import { resetWebSessionCloseIntentForTests } from '../../src/renderer/src/runtime/web-session-close-intent'
 
 const WORKTREE = 'repo-1::/tmp/wt-reopen'
-const CURRENT_SESSION = 'clear-x'
+const CURRENT_SESSION = 'clear-current'
 const REOPENED_SESSION = 'session-s'
 const CURRENT_TAB = `structured-agent-session-${REOPENED_SESSION}`
 const REOPENED_TAB = `${CURRENT_TAB}:history-1`
+let directory: string
 
 type CloseRequest = { requestId: string; tabId: string; worktreeId: string; expiresAt?: number }
 type Listener<T> = (payload: T) => void
@@ -70,6 +82,31 @@ vi.mock('../../src/renderer/src/runtime/structured-agent-session-close', () => (
 }))
 
 async function setup() {
+  const sessionIds = [CURRENT_SESSION, REOPENED_SESSION]
+  await seedTestAgentSessionRecordStore(directory, {
+    records: sessionIds.map((sessionId) =>
+      foundAgentSessionRecord(
+        {
+          sessionId,
+          location: {
+            executionHostId: 'local',
+            wslDistro: null,
+            workspaceId: WORKTREE,
+            workspaceKind: 'git-worktree'
+          },
+          provider: 'claude',
+          accountHome: { variable: 'CLAUDE_CONFIG_DIR', path: directory }
+        },
+        { claimKeyId: 'key-1', now: 1_800_000_000_000 }
+      )
+    ),
+    sessionTabs: sessionIds.map((sessionId) => ({
+      tabId: structuredAgentSessionTabId(sessionId),
+      sessionId
+    }))
+  })
+  const store = await openTestAgentSessionRecordStore(directory)
+  expect(store.listVisibleSessionIds()).toEqual(sessionIds)
   const listeners: {
     closeSessionTab?: Listener<{ tabId: string; worktreeId: string }>
     closeRequest?: Listener<CloseRequest>
@@ -121,7 +158,7 @@ async function setup() {
         listeners.focusEditorTab!({ tabId, worktreeId })
     } as never
   )
-  // No durable store, PTYs or workspace session on disk: the host tab list below is the whole state.
+  // The real saved tab index owns visibility; PTYs and the workspace profile are absent.
   Object.assign(runtime, {
     hasPersistedStructuredAgentSessionStore: () => true,
     getKnownWorkspaceSessionWorktreeIds: () => new Set(),
@@ -130,18 +167,23 @@ async function setup() {
     ensureStructuredAgentSessionHost: async () => undefined
   })
   setStructuredAgentSessionHost(
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: restore and tab close call only these host members.
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: restore and tab close use these host members and the real record store.
     {
+      deps: { store, logger: createStructuredAgentSessionLogger() },
+      getPersistedVisibleSessionTabIndex: () => store.getVisibleSessionTabIndex(),
       reconcileRestartLeases: async () => undefined,
       restoreReadableSessions: async () => undefined,
       close: async (sessionId: string) => {
         hostSessionCloses.push(sessionId)
       },
-      setSessionTabVisibility: async () => undefined,
-      listSessionTabs: () => [
-        { sessionId: CURRENT_SESSION, workspaceId: WORKTREE, agent: 'claude' },
-        { sessionId: REOPENED_SESSION, workspaceId: WORKTREE, agent: 'claude' }
-      ]
+      setSessionTabVisibility: (sessionId: string, visible: boolean) =>
+        store.setSessionTabVisibility(sessionId, visible),
+      listSessionTabs: () =>
+        store.listVisibleSessionIds().map((sessionId) => ({
+          sessionId,
+          workspaceId: WORKTREE,
+          agent: 'claude' as const
+        }))
     } as never
   )
   await runtime.restoreStructuredAgentSessionTabs()
@@ -162,16 +204,17 @@ async function setup() {
     (useAppStore.getState().unifiedTabsByWorktree[WORKTREE] ?? [])
       .filter((tab) => tab.contentType === 'agent-session')
       .map((tab) => ({ id: tab.id, entityId: tab.entityId }))
-  return { runtime, agentTabs, hostSessionCloses, closeResponses }
+  return { runtime, agentTabs, hostSessionCloses, closeResponses, store }
 }
 
 const initialStoreState = useAppStore.getState()
 
-beforeEach(() => {
+beforeEach(async () => {
+  directory = await mkdtemp(join(tmpdir(), 'orca-reopened-tab-close-'))
   bridge.rendererSessionCloses = []
 })
 
-afterEach(() => {
+afterEach(async () => {
   setStructuredAgentSessionHost(null)
   bridge.runtime = null
   useAppStore.setState(initialStoreState, true)
@@ -180,6 +223,8 @@ afterEach(() => {
   // A close's follow-up re-read can outlive its test, which tears the host down under it.
   resetWebSessionCloseIntentForTests()
   vi.unstubAllGlobals()
+  closeTestJournalHostDatabase(directory)
+  await rm(directory, { recursive: true, force: true })
 })
 
 describe('closing a chat reopened from history after /clear', () => {
@@ -195,7 +240,7 @@ describe('closing a chat reopened from history after /clear', () => {
   })
 
   it('closes only the reopened tab when the user closes it on the desktop', async () => {
-    const { agentTabs, hostSessionCloses, closeResponses } = await setup()
+    const { agentTabs, hostSessionCloses, closeResponses, store } = await setup()
 
     useAppStore.getState().closeUnifiedTab(REOPENED_TAB)
 
@@ -207,10 +252,12 @@ describe('closing a chat reopened from history after /clear', () => {
     expect(hostSessionCloses).toEqual([REOPENED_SESSION])
     // The window already removed the tab, so main's relay is acknowledged, not reported missing.
     expect(closeResponses).toEqual([undefined])
+    expect(store.listVisibleSessionIds()).toEqual([CURRENT_SESSION])
+    expect(store.getRecord(REOPENED_SESSION)).not.toBeNull()
   })
 
   it('closes only the reopened tab when a phone closes it through the runtime', async () => {
-    const { runtime, agentTabs, hostSessionCloses } = await setup()
+    const { runtime, agentTabs, hostSessionCloses, store } = await setup()
 
     await runtime.closeMobileSessionTab(`id:${WORKTREE}`, `agent-session:${REOPENED_SESSION}`, {
       reason: 'user'
@@ -221,6 +268,9 @@ describe('closing a chat reopened from history after /clear', () => {
     )
     expect(bridge.rendererSessionCloses).not.toContain(CURRENT_SESSION)
     expect(hostSessionCloses).not.toContain(CURRENT_SESSION)
+    expect([...new Set(hostSessionCloses)]).toEqual([REOPENED_SESSION])
+    expect(store.listVisibleSessionIds()).toEqual([CURRENT_SESSION])
+    expect(store.getRecord(REOPENED_SESSION)).not.toBeNull()
   })
 
   it('focuses the reopened tab when a phone activates it through the runtime', async () => {

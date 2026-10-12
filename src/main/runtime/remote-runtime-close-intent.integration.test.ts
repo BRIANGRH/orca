@@ -22,6 +22,7 @@ it(
       snapshotRepublished: true
     })
     const closeMobileSessionTab = vi.fn()
+    const resolveStructuredAgentSessionTabCloseSessionId = vi.fn(() => null)
     const listMobileSessionTabs = vi.fn().mockResolvedValue({
       worktree: 'wt-1',
       publicationEpoch: 'epoch-1',
@@ -43,6 +44,7 @@ it(
         }
       ]
     })
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the server invokes only these runtime members for this terminal close request.
     const runtime = {
       configureNotificationDismissalStore: () => {},
       getRuntimeId: () => 'close-intent-runtime-test',
@@ -50,6 +52,7 @@ it(
       cleanupSubscriptionsForConnection: () => {},
       cancelMobileDictationForConnection: () => {},
       onClientDisconnected: () => {},
+      resolveStructuredAgentSessionTabCloseSessionId,
       listMobileSessionTabs,
       refuseUnattributedMobileSessionTabClose,
       closeMobileSessionTab
@@ -88,6 +91,7 @@ it(
           }
         })
         expect(listMobileSessionTabs).toHaveBeenCalledWith('id:wt-1', pairing.pairedDeviceId)
+        expect(resolveStructuredAgentSessionTabCloseSessionId).toHaveBeenCalledWith('tab-1')
         expect(refuseUnattributedMobileSessionTabClose).toHaveBeenCalledWith('id:wt-1', 'tab-1')
         expect(closeMobileSessionTab).not.toHaveBeenCalled()
       } finally {
