@@ -18,18 +18,14 @@ try {
   const identity = await evaluateMain(
     `({pid:process.pid,type:${contents}.getType(),rendererPid:${contents}.getOSProcessId(),attached:${contents}.debugger.isAttached()})`
   )
-  if (identity.pid !== expectedPid || identity.type !== 'window') {
-    throw new Error(`Unexpected target: ${JSON.stringify(identity)}`)
+  if (identity.pid !== expectedPid || identity.type !== 'window' || identity.attached) {
+    throw new Error(`Unexpected or already-debugged target: ${JSON.stringify(identity)}`)
   }
   const before = await evaluateRenderer('window.__orcaTypingDiagnostic.report()')
   if (before.sampling.running) {
     throw new Error('An existing typing diagnostic is running')
   }
-  // Why one evaluation: Orca's near-OOM allocation sampler may hold the debugger; it gives way to this
-  // capture and cannot re-attach in between, since it never takes over an attached debugger.
-  await evaluateMain(
-    `(${contents}.debugger.isAttached() && ${contents}.debugger.detach(), ${contents}.debugger.attach('1.3'))`
-  )
+  await evaluateMain(`${contents}.debugger.attach('1.3')`)
   attached = true
   const page = {
     evaluate: (fn, arg) => evaluateRenderer(`(${fn.toString()})(${JSON.stringify(arg) ?? ''})`),
