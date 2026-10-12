@@ -144,7 +144,7 @@ export async function resolveHostAgentBaseEnvironment(
 }
 
 export type StructuredAgentEnvironmentSources = {
-  /** Replaces the host's shell env, read on every acquisition; such a runtime never rereads. */
+  /** Replaces the host's shell env, read once when the resolvers are made; never reread. */
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
   resolveShellEnvironmentPolicy?: () => NativeChatShellEnvironmentPolicy
   /** The user's per-agent environment overlay from settings. */
@@ -162,9 +162,10 @@ export function createStructuredAgentEnvironmentResolvers(
   resolveAgentEnvironment: (agent: string) => Promise<Record<string, string>>
   refreshAfterMissingProgram: (askedAt: number) => Promise<void>
 } {
-  const shellEnvironment = sources.resolveEnvironment ?? hostShellEnvironment
-  if (!sources.resolveEnvironment) {
-    // Why: start as soon as the runtime exists so the first chat rarely waits for the profile.
+  // Why: start as soon as the runtime exists so the first chat rarely waits for the profile.
+  const injected = sources.resolveEnvironment?.()
+  const shellEnvironment = injected ? () => injected : hostShellEnvironment
+  if (!injected) {
     void hostShellEnvironment().catch(() => {})
   }
   const resolveBase = async (): Promise<Record<string, string>> =>
@@ -173,7 +174,7 @@ export function createStructuredAgentEnvironmentResolvers(
       policy: sources.resolveShellEnvironmentPolicy?.() ?? nativeChatShellEnvironmentPolicy(null)
     })
   return {
-    refreshAfterMissingProgram: sources.resolveEnvironment
+    refreshAfterMissingProgram: injected
       ? async () => {}
       : refreshHostAgentBaseEnvironmentAfterMiss,
     resolveBaseEnvironment: resolveBase,

@@ -441,7 +441,7 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
     }
   )
 
-  it('rereads settings on every acquisition', async () => {
+  it('rereads settings on every acquisition while the shell env is read once', async () => {
     let overlay = 'A'
     const resolveEnvironment = vi.fn(async () => ({ PATH: '/shell/A' }))
     const resolvers = createStructuredAgentEnvironmentResolvers({
@@ -458,6 +458,7 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
       PATH: '/shell/A',
       CURRENT_SETTING: 'B'
     })
+    expect(resolveEnvironment).toHaveBeenCalledOnce()
   })
 
   it("gives every agent the same base, with each agent's own overlay on it", async () => {
