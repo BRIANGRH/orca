@@ -13,6 +13,7 @@ import type { OwedStoppedMessage } from '../../../shared/agent-session-stopped-h
 import type { NativeChatBlock } from '../../../shared/native-chat-types'
 import {
   fitStoppedHistory,
+  STOPPED_HISTORY_MAX_CHARS,
   type StoppedHistoryFitInput
 } from './structured-agent-session-stopped-history-fit'
 import {
@@ -172,7 +173,7 @@ describe('what fits beside the send', () => {
     expect(kept?.[1]!.length).toBeGreaterThan(1000)
   })
 
-  it('leaves a message owed only when not even its stub fits, and says how many are not included', async () => {
+  it('leaves a later message that does not fit whole owed with every one after it, and says how many', async () => {
     const widest = stoppedHistoryFrame({
       elements: [],
       notIncluded: 3,
@@ -197,6 +198,93 @@ describe('what fits beside the send', () => {
       'This history is incomplete: 2 earlier stopped messages are not included in this message.'
     )
     expect(fitted.frame.length).toBeLessThanOrEqual(room)
+  })
+
+  it('shortens a giant stopped paste to the shared history cap, however much the agent admits', async () => {
+    const fitted = (await fit([owed('a', text('p'.repeat(300_000)))]).result)!
+    expect(fitted.carries).toEqual(['a'])
+    expect(fitted.frame.length).toBeLessThanOrEqual(STOPPED_HISTORY_MAX_CHARS)
+    expect(fitted.frame.length).toBeGreaterThan(STOPPED_HISTORY_MAX_CHARS - 100)
+    expect(fitted.frame).toContain('<stopped-message number="1" images="none" shortened="true">')
+    expect(fitted.frame).toMatch(/\[shortened: \d+ of 300000 characters left out\]/)
+  })
+
+  it('never shortens a later message: it waits for the next send and goes whole then', async () => {
+    const later = owed('b', text('b'.repeat(500)))
+    const alone = stoppedHistoryElement({
+      number: 1,
+      text: 'b'.repeat(500),
+      images: { first: 1, count: 0 },
+      omittedImages: 0
+    })
+    const narrowest = stoppedHistoryFrame({
+      elements: [],
+      notIncluded: 1,
+      shortened: 1,
+      sendImages: { first: 1, count: 0 }
+    })
+    // Room for the later message alone, not beside the earlier one, yet for a stub of it.
+    const room = { chars: narrowest.length + alone.length + 2 }
+    const now = (await fit([owed('a', text('a'.repeat(300))), later], { room }).result)!
+    expect(now.carries).toEqual(['a'])
+    expect(now.frame).not.toContain('shortened')
+    expect(now.frame).toContain(
+      'This history is incomplete: 1 earlier stopped message is not included in this message.'
+    )
+    const next = (await fit([later], { room }).result)!
+    expect(next.carries).toEqual(['b'])
+    expect(next.frame).toContain(`\n${'b'.repeat(500)}\n</stopped-message>`)
+  })
+
+  it('never carries a stub with none of a message’s words', async () => {
+    // The probe's room: the earlier message and a later stub with no words once fit.
+    const pair = await fit([owed('a', text('a'.repeat(100))), owed('b', text('b'.repeat(500)))], {
+      room: { chars: 852 }
+    }).result
+    expect(pair?.carries).toEqual(['a'])
+    expect(pair?.frame).not.toContain('shortened')
+    const stub = stoppedHistoryElement({
+      number: 1,
+      text: '',
+      images: { first: 1, count: 0 },
+      omittedImages: 0,
+      shortened: { leftOut: 500, total: 500 }
+    })
+    const frame = stoppedHistoryFrame({
+      elements: [],
+      notIncluded: 1,
+      shortened: 1,
+      sendImages: { first: 1, count: 0 }
+    })
+    // Room for the oldest's tag and marker, not one of its characters.
+    const room = { chars: frame.length + stub.length + 2 }
+    expect(await fit([owed('b', text('b'.repeat(500)))], { room }).result).toBeNull()
+  })
+
+  it('never drops a later message’s images: it waits and goes with them next send', async () => {
+    const later = owed('b', image('two.png'), image('three.png'), text('look'))
+    const now = (await fit([owed('a', image('one.png')), later], { room: { images: 2 } }).result)!
+    expect(now.carries).toEqual(['a'])
+    expect(now.images).toEqual(['one.png'])
+    expect(now.frame).not.toContain('omitted-images')
+    expect(now.frame).toContain('1 earlier stopped message is not included')
+    const next = (await fit([later], { room: { images: 2 } }).result)!
+    expect(next.carries).toEqual(['b'])
+    expect(next.images).toEqual(['two.png', 'three.png'])
+  })
+
+  it('carries a later message now, words whole, when the agent refuses its images for good', async () => {
+    const fitted = (await fit(
+      [owed('a', text('first')), owed('b', image('gone.png'), text('look'))],
+      {
+        image: async () => null
+      }
+    ).result)!
+    expect(fitted.carries).toEqual(['a', 'b'])
+    expect(fitted.frame).toContain(
+      '<stopped-message number="2" images="none" omitted-images="1">\nlook\n'
+    )
+    expect(fitted.frame).not.toContain('not included')
   })
 
   it('carries nothing when the send leaves no room for the frame itself', async () => {

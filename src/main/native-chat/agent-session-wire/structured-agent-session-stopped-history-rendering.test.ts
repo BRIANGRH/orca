@@ -24,6 +24,7 @@ import {
 } from '../../codex/codex-structured-turn-start'
 import { createCodexDispatchEchoes } from '../../codex/codex-structured-dispatch-echo'
 import { preparePiRpcDispatch } from '../../pi/rpc-prompt'
+import { STOPPED_HISTORY_MAX_CHARS } from './structured-agent-session-stopped-history-fit'
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
 const dir = mkdtempSync(join(tmpdir(), 'stopped-history-rendering-'))
@@ -132,6 +133,18 @@ describe('Claude: one user frame', () => {
     expect(String(field(prepared.content[0], 'text'))).toContain('omitted-images="21"')
   })
 
+  it('shortens a giant stopped paste to the shared history cap', async () => {
+    const paste = owed('a', message(text('p'.repeat(300_000))))
+    const prepared = (await prepareClaudeDispatch(NEXT, [paste]))!
+    expect(prepared.carries).toEqual(['a'])
+    const prompt = String(field(prepared.content.at(-1), 'text'))
+    const history = prompt.slice(0, -'\nwhat did I send?'.length)
+    expect(prompt.endsWith('</stopped-history>\n\nUser message:\nwhat did I send?')).toBe(true)
+    expect(history.length).toBeLessThanOrEqual(STOPPED_HISTORY_MAX_CHARS)
+    expect(history).toContain('shortened="true"')
+    expect(history).toMatch(/\[shortened: \d+ of 300000 characters left out\]/)
+  })
+
   it('prepares nothing for a send Claude would refuse on its own', async () => {
     expect(await prepareClaudeDispatch(message(), [STOPPED])).toBeNull()
   })
@@ -175,17 +188,32 @@ describe('Codex: the same turn/start or turn/steer', () => {
     }
   })
 
+  it('shortens a giant stopped paste to the shared history cap', async () => {
+    const paste = owed('a', message(text('p'.repeat(300_000))))
+    const prepared = (await prepareCodexDispatch(NEXT, [paste]))!
+    expect(prepared.carries).toEqual(['a'])
+    const frame = String(prepared.input[0]!.text)
+    expect(frame.length).toBeLessThanOrEqual(STOPPED_HISTORY_MAX_CHARS)
+    expect(frame).toContain('shortened="true"')
+    expect(frame).toMatch(/\[shortened: \d+ of 300000 characters left out\]/)
+    expect(prepared.input[1]).toEqual({ type: 'text', text: 'what did I send?' })
+  })
+
   it("shortens what passes Codex's text limit, counted across the whole input", async () => {
-    const half = (id: string) => owed(id, message(text('x'.repeat(600_000))))
-    const prepared = (await prepareCodexDispatch(NEXT, [half('one'), half('two')]))!
+    // A send that leaves Codex's limit less room than the shared history cap.
+    const long = message(text('w'.repeat((1 << 20) - 30_000)))
+    const prepared = (await prepareCodexDispatch(long, [
+      owed('one', message(text('x'.repeat(40_000)))),
+      owed('two', message(text('y')))
+    ]))!
     const chars = prepared.input.reduce(
       (sum, item) => sum + (typeof item.text === 'string' ? item.text.length : 0),
       0
     )
-    expect(prepared.carries).toEqual(['one', 'two'])
+    expect(prepared.carries).toEqual(['one'])
     expect(chars).toBeLessThanOrEqual(1 << 20)
     expect(String(prepared.input[0]!.text)).toContain(
-      '<stopped-message number="2" images="none" shortened="true">'
+      '<stopped-message number="1" images="none" shortened="true">'
     )
   })
 })
@@ -203,12 +231,13 @@ describe('Pi: one text and the images in numbered order', () => {
     ])
   })
 
-  it('fits what its prompt queue can still hold, shortening the rest', async () => {
+  it('fits what its prompt queue can still hold, shortening the oldest and leaving the rest owed', async () => {
     const long = owed('long', message(text('y'.repeat(50_000))))
-    const prepared = (await preparePiRpcDispatch(NEXT, [STOPPED, long], 4_000))!
-    expect(prepared.carries).toEqual(['a', 'long'])
+    const prepared = (await preparePiRpcDispatch(NEXT, [long, STOPPED], 4_000))!
+    expect(prepared.carries).toEqual(['long'])
     expect(Buffer.byteLength(JSON.stringify(prepared.prompt))).toBeLessThanOrEqual(4_000)
     expect(prepared.prompt.message).toContain('shortened="true"')
+    expect(prepared.prompt.message).toContain('1 earlier stopped message is not included')
   })
 
   it('carries nothing when the queue is all but full', async () => {

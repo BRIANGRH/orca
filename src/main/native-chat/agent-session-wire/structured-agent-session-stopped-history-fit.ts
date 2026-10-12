@@ -12,6 +12,9 @@ import {
   type StoppedHistoryElement
 } from './structured-agent-session-stopped-history-frame'
 
+// Carried history stays a small part of any model's context.
+export const STOPPED_HISTORY_MAX_CHARS = 64_000
+
 /** An amount per admission limit, keyed by the adapter's own names; a missing key costs nothing. */
 export type StoppedHistoryCost = Readonly<Record<string, number>>
 
@@ -84,7 +87,7 @@ async function readImages<TImage>(
   return read
 }
 
-/** The longest start of `element.text` whose element fits `room`, down to none of it. */
+/** The longest start of `element.text` whose element fits `room`, keeping at least one character. */
 function shortenedToFit(
   element: StoppedHistoryElement,
   room: StoppedHistoryCost,
@@ -101,10 +104,12 @@ function shortenedToFit(
   }
   const fitsKeeping = (kept: number): boolean =>
     fits(textCost(stoppedHistoryElementSpan(render(kept))), room)
-  if (!fitsKeeping(0)) {
+  const first = element.text.codePointAt(0)
+  const least = first === undefined ? 0 : String.fromCodePoint(first).length
+  if (least === 0 || !fitsKeeping(least)) {
     return null
   }
-  let low = 0
+  let low = least
   let high = total - 1
   while (low < high) {
     const middle = Math.ceil((low + high) / 2)
@@ -117,13 +122,17 @@ function shortenedToFit(
   return render(low)
 }
 
-/** Oldest first, each owed message rides with its images if the whole still fits, else without
- *  them, else with its words shortened; only when not even that fits does it, and every later one,
- *  wait for a send with room, the frame saying so. Null when none rides. */
+/** Oldest first, each owed message rides whole while it fits, less any image the agent refuses.
+ *  Only the oldest may ride without its images or with its words shortened for want of room, so a
+ *  message squeezed out by earlier ones waits whole for a send with room, the frame saying so. Null
+ *  when none rides. */
 export async function fitStoppedHistory<TImage>(
   input: StoppedHistoryFitInput<TImage>
 ): Promise<StoppedHistoryFit<TImage> | null> {
-  const { owed, textCost } = input
+  const { owed } = input
+  const textCost = (text: string): StoppedHistoryCost =>
+    plus(input.textCost(text), { stoppedHistoryChars: text.length })
+  const startingRoom = { ...input.room, stoppedHistoryChars: STOPPED_HISTORY_MAX_CHARS }
   const historyImages = owed.reduce((sum, entry) => sum + imagesOf(entry).length, 0)
   // The frame around the elements at its longest: every count and image number at its widest.
   const skeleton = stoppedHistoryFrame({
@@ -132,10 +141,10 @@ export async function fitStoppedHistory<TImage>(
     shortened: owed.length,
     sendImages: { first: historyImages + 1, count: input.sendImages }
   })
-  if (!fits(textCost(skeleton), input.room)) {
+  if (!fits(textCost(skeleton), startingRoom)) {
     return null
   }
-  let room = minus(input.room, textCost(skeleton))
+  let room = minus(startingRoom, textCost(skeleton))
   const carries: string[] = []
   const images: TImage[] = []
   const elements: string[] = []
@@ -149,6 +158,7 @@ export async function fitStoppedHistory<TImage>(
       omittedImages: blocks.length
     }
     let chosen: { text: string; cost: StoppedHistoryCost; images: TImage[] } | null = null
+    let refused = false
     if (blocks.length > 0) {
       const text = stoppedHistoryElement({
         ...element,
@@ -156,18 +166,24 @@ export async function fitStoppedHistory<TImage>(
         omittedImages: 0
       })
       const cost = textCost(stoppedHistoryElementSpan(text))
-      const read = fits(cost, room) ? await readImages(blocks, input.image) : null
+      const read = fits(cost, room) ? await readImages(blocks, input.image) : undefined
+      refused = read === null
       const whole = read ? read.reduce((sum, item) => plus(sum, item.cost), cost) : null
       if (read && whole && fits(whole, room)) {
         chosen = { text, cost: whole, images: read.map((item) => item.content) }
       }
     }
-    if (!chosen) {
+    // An image the agent refuses never rides, so without it a message is whole; leaving out images
+    // only for want of room is the oldest's alone.
+    if (!chosen && (blocks.length === 0 || refused || elements.length === 0)) {
       const text = stoppedHistoryElement(element)
       const cost = textCost(stoppedHistoryElementSpan(text))
       if (fits(cost, room)) {
         chosen = { text, cost, images: [] }
       }
+    }
+    if (!chosen && elements.length > 0) {
+      break
     }
     if (!chosen) {
       const text = shortenedToFit(element, room, textCost)

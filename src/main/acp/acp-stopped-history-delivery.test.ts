@@ -107,23 +107,22 @@ describe('ACP stopped history', () => {
 
   it('fits a text-only backlog within the real line limit: the send goes, the excess is shortened or left owed', async () => {
     const maxLineBytes = resolveAcpPeerOptions().maxLineBytes
-    const big = (id: string) => owed(id, message('x'.repeat(Math.floor(maxLineBytes / 3))))
-    const { rig, prepared, outcome } = await prepareAndSend([
-      big('one'),
-      big('two'),
-      big('three'),
-      big('four')
-    ])
+    // A send that leaves the line less room than the shared history cap.
+    const long = message('w'.repeat(maxLineBytes - 64 * 1024 - 30_000))
+    const { rig, prepared, outcome } = await prepareAndSend(
+      [owed('one', message('x'.repeat(40_000))), owed('two', message('y'))],
+      long
+    )
 
     expect(outcome).toEqual({ state: 'admitted' })
     const written = await rig.frame('session/prompt')
     expect(Buffer.byteLength(JSON.stringify(written))).toBeLessThanOrEqual(maxLineBytes)
     const frame = textOf(promptOf(written)[0])
-    expect(prepared?.carries).toEqual(['one', 'two', 'three'])
-    expect(frame.match(/<stopped-message number=/g)).toHaveLength(3)
+    expect(prepared?.carries).toEqual(['one'])
+    expect(frame.match(/<stopped-message number=/g)).toHaveLength(1)
     expect(frame).toContain('shortened="true"')
     expect(frame).toContain('1 earlier stopped message is not included in this message')
-    expect(promptOf(written).at(-1)).toEqual({ type: 'text', text: 'what did I send?' })
+    expect(promptOf(written).at(-1)).toEqual(long.blocks[0])
   })
 
   it('refuses a text-only send too large for one line before writing it', async () => {
