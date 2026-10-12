@@ -109,7 +109,8 @@ export function terminalVerdictOf(verdict: WslLivenessVerdict): 'exited' | 'unve
       return 'exited'
     case 'unverifiable':
       return 'unverifiable'
-    default:
+    case 'live':
+    case 'orcad-exited':
       return null
   }
 }

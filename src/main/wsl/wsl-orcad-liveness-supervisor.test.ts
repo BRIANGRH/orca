@@ -23,11 +23,17 @@ function harness(options: { visible?: boolean } = {}) {
   let connection: WslOrcadConnection | null = null
   const statuses: WslOrcadConnectionStatus[] = []
   const watches: { exit: (code: number | null) => void; closed: boolean }[] = []
-  const state = {
+  const state: {
+    visible: boolean
+    running: WslRunningDistrosRead
+    identity: WslGuestIdentity | null
+    watchSignal: WslOrcadWatch['signal']
+    ensureFails: number
+  } = {
     visible: options.visible ?? true,
-    running: { status: 'confirmed', distros: ['Ubuntu'] } as WslRunningDistrosRead,
-    identity: { distroInstance: 'boot:1', orcad: 'orcad:100' } as WslGuestIdentity | null,
-    watchSignal: 'ready' as WslOrcadWatch['signal'],
+    running: { status: 'confirmed', distros: ['Ubuntu'] },
+    identity: { distroInstance: 'boot:1', orcad: 'orcad:100' },
+    watchSignal: 'ready',
     ensureFails: 0
   }
   const deferred: (() => unknown)[] = []
