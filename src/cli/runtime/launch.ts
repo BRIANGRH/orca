@@ -29,8 +29,20 @@ import {
   type ServeOrcaAppArgs
 } from './serve-orcad-launch'
 import { waitForRecipeJson } from './serve-recipe-json'
-import { preflightElectronServe, recordElectronServeStartupAbort } from './serve-electron-preflight'
+import {
+  preflightElectronServe,
+  recordElectronServeStartupAbort,
+  refuseIfProfileServed
+} from './serve-electron-preflight'
 import { MacServeStartupAbortError } from './serve-signal-exit-diagnostic'
+import { superviseServeService } from './serve-supervised-service'
+import { isSupervisedSpawnHeld } from './serve-supervised-stop'
+import { openServeBundlePark } from './serve-bundle-park'
+import {
+  redactingSpawn,
+  shouldRedactSupervisedStdout,
+  type ServeSpawnChild
+} from './serve-pairing-redaction'
 
 const USER_NAMESPACE_PROBE_TIMEOUT_MS = 2_000
 const STARTUP_ABORT_MS = 30_000
@@ -114,6 +126,31 @@ export function serveOrcaApp(args: ServeOrcaAppArgs = {}): Promise<number> {
   const executable = resolveForegroundOrcaExecutable()
   // Why one value: the selector, orcad and Electron must all serve the profile the caller chose.
   const userDataPath = resolveLaunchUserDataPath()
+  if (args.supervise) {
+    let attempt = 0
+    return superviseServeService({
+      userDataPath,
+      executable,
+      appRoot: resolveAppRoot(),
+      force: args.force === true,
+      park: openServeBundlePark({ executable }),
+      // Why first only: --force overrides a remembered abort once; the brake owns later attempts.
+      runOnce: () =>
+        serveOnce(
+          executable,
+          { ...args, force: args.force === true && attempt++ === 0 },
+          userDataPath
+        )
+    })
+  }
+  return serveOnce(executable, args, userDataPath)
+}
+
+function serveOnce(
+  executable: string,
+  args: ServeOrcaAppArgs,
+  userDataPath: string
+): Promise<number> {
   // Why synchronous on the opt-out: it must spawn Electron exactly as before, without asking.
   if (process.env[SERVE_RUNTIME_ENV] === SERVE_RUNTIME_ELECTRON) {
     return serveWithElectron(executable, args, userDataPath)
@@ -133,6 +170,12 @@ async function serveWithSelectedRuntime(
     usesMacUpdateHandoff: args.recipeJson !== true && getMacAppBundlePath(executable) !== null
   })
   if (selection.kind === 'orcad') {
+    // Why only supervised: orcad refuses a held profile as a configuration fault (exit 78), which
+    // the brake would count; exit 3 here lets the supervisor wait for the other Orca instead.
+    const refusal = args.supervise ? await refuseIfProfileServed(args, userDataPath) : null
+    if (refusal !== null) {
+      return refusal
+    }
     process.stderr.write(`[serve] running on orcad ${selection.version}\n`)
     return serveWithOrcad(selection, args, userDataPath, stripElectronRunAsNode(process.env))
   }
@@ -191,6 +234,9 @@ function spawnElectronServe(
     ...getExecutableSpawnOptions(executable),
     env: childEnv
   }
+  const spawnServeChild: ServeSpawnChild = shouldRedactSupervisedStdout(args.supervise === true)
+    ? redactingSpawn(spawnProcess)
+    : spawnProcess
   const interruptedHandoff = handoffPath ? readServeUpdateHandoffSync(handoffPath) : null
   if (interruptedHandoff?.phase === 'install-requested') {
     // Why: the node-mode CLI is not an NSRunningApplication, so it can retain launchd ownership while ShipIt swaps the app.
@@ -198,12 +244,15 @@ function spawnElectronServe(
       executable,
       childArgs,
       spawnOptions,
-      spawnChild: spawnProcess,
+      spawnChild: spawnServeChild,
       handoffPath: handoffPath!,
       handoff: interruptedHandoff
     })
   }
-  const child = spawnProcess(executable, childArgs, spawnOptions)
+  if (isSupervisedSpawnHeld()) {
+    return Promise.resolve(0)
+  }
+  const child = spawnServeChild(executable, childArgs, spawnOptions)
   const spawnedAt = Date.now()
 
   if (args.recipeJson) {
@@ -213,7 +262,7 @@ function spawnElectronServe(
     executable,
     childArgs,
     spawnOptions,
-    spawnChild: spawnProcess,
+    spawnChild: spawnServeChild,
     child,
     handoffPath,
     expectedHandoff: null
