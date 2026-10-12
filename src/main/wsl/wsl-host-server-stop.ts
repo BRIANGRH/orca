@@ -1,8 +1,9 @@
 /**
- * Removing a WSL host ends what Orca runs in its distro: the terminals (through orcad's own
- * terminal RPC), then orcad and its terminal daemon through the managed decommission SSH hosts use
- * (`--complete-managed-stop` with `retireIdleDaemon`). The terminal census proves nothing is left
- * before the daemon is asked to retire, since a busy daemon keeps its sessions by design.
+ * Removing a WSL host ends what Orca runs in its distro: each terminal (through orcad's own
+ * terminal RPC, by handle, so a terminal whose project is already gone still closes), then orcad
+ * and its terminal daemon through the managed decommission SSH hosts use (`--complete-managed-stop`
+ * with `retireIdleDaemon`). It reports "stopped" only on proof: the census says no session is
+ * left, the decommission addressed the very orcad the bridge was serving, and the daemon retired.
  */
 import { z } from 'zod'
 import type { OrcadDecommissionResult } from '../../shared/orcad-decommission'
@@ -11,6 +12,7 @@ import type { OrcadTerminalCensus } from '../../shared/orcad-terminal-census'
 import type { RuntimeTerminalListResult } from '../../shared/runtime-terminal-contracts'
 import type { WslHostServerStop } from '../../shared/wsl-host-types'
 import type { OrcadHostTransport } from '../ssh/orcad-host-transport'
+import { readRemoteOrcadManagedStopTarget } from '../ssh/orcad-managed-remote-stop'
 import { managedOrcadSlot } from '../ssh/orcad-managed-runtime-context'
 import { resolveOrcadRemoteContext } from '../ssh/orcad-remote-context'
 import { decommissionRemoteOrcad } from '../ssh/orcad-remote-decommission'
@@ -19,27 +21,38 @@ import type { WslOrcadHostTarget } from './wsl-orcad-host-target'
 const CENSUS_ATTEMPTS = 20
 const CENSUS_INTERVAL_MS = 250
 
+/** A terminal Orca asked to close but that may still run, named so the user can find it. */
+export type WslHostTerminalLeftover = { handle: string; worktreeId: string; reason: string }
+
 export type WslHostServerStopSteps = {
-  /** Ends every terminal orcad runs, through its own RPC. */
-  endTerminals: () => Promise<void>
+  /** Closes every terminal orcad runs; returns the ones that refused instead of stopping. */
+  endTerminals: () => Promise<WslHostTerminalLeftover[]>
   census: () => Promise<OrcadTerminalCensus>
+  /** The runtime id of the orcad the bridge is serving; read before the bridge closes. */
+  servingRuntimeId: () => Promise<string | null>
   /** After the bridge closed: liveness must not see this exit as a crash to recover. */
   closeBridge: () => Promise<void>
-  decommission: (census: OrcadTerminalCensus) => Promise<OrcadDecommissionResult>
+  decommission: (
+    census: OrcadTerminalCensus,
+    servingRuntimeId: string | null
+  ) => Promise<OrcadDecommissionResult>
   sleep?: (ms: number) => Promise<void>
 }
 
-function partial(reason: string): WslHostServerStop {
-  return { stopped: false, reason }
+function describeLeftovers(leftovers: readonly WslHostTerminalLeftover[]): string {
+  return leftovers
+    .map((leftover) => `${leftover.handle} (${leftover.worktreeId}): ${leftover.reason}`)
+    .join('; ')
 }
 
 export async function stopWslHostServer(steps: WslHostServerStopSteps): Promise<WslHostServerStop> {
   const sleep = steps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+  const problems: string[] = []
+  let leftovers: WslHostTerminalLeftover[] = []
   try {
-    await steps.endTerminals()
+    leftovers = await steps.endTerminals()
   } catch (error) {
-    await steps.closeBridge()
-    return partial(`Orca couldn’t end the host’s terminals: ${errorMessage(error)}`)
+    problems.push(`Orca couldn’t list the host’s terminals: ${errorMessage(error)}`)
   }
   // Shells take a moment to exit after their PTYs close; the census is the proof they did.
   let census = await steps.census()
@@ -47,21 +60,26 @@ export async function stopWslHostServer(steps: WslHostServerStopSteps): Promise<
     await sleep(CENSUS_INTERVAL_MS)
     census = await steps.census()
   }
+  const servingRuntimeId = await steps.servingRuntimeId().catch(() => null)
   await steps.closeBridge()
+  if (leftovers.length > 0) {
+    problems.push(`Terminals that refused to close: ${describeLeftovers(leftovers)}`)
+  }
   if (census.liveSessions !== 0) {
-    return partial(
+    problems.push(
       census.liveSessions === null
-        ? 'The terminal daemon did not answer a session count, so Orca left it running.'
-        : `${census.liveSessions} terminal${census.liveSessions === 1 ? '' : 's'} kept running, so Orca left the server running.`
+        ? 'The terminal daemon did not answer a session count.'
+        : `${census.liveSessions} terminal session${census.liveSessions === 1 ? '' : 's'} kept running.`
     )
   }
-  const result = await steps.decommission(census)
+  // Why decommission even now: it refuses on live sessions by design, and its reason is the proof.
+  const result = await steps.decommission(census, servingRuntimeId)
   if (result.outcome === 'refused') {
-    return partial(result.reason)
+    problems.push(`Orca’s server kept running: ${result.reason}`)
+  } else if (result.retirement !== 'retired') {
+    problems.push('Orca’s server stopped, but its terminal daemon is still running.')
   }
-  return result.retirement === 'retired'
-    ? { stopped: true }
-    : partial('Orca’s server stopped, but its terminal daemon is still running.')
+  return problems.length === 0 ? { stopped: true } : { stopped: false, reason: problems.join(' ') }
 }
 
 /**
@@ -73,43 +91,70 @@ export type WslHostRuntimeAccess = {
   census: (environmentId: string) => Promise<OrcadTerminalCensus>
 }
 
-// Only what removal reads: each live terminal's workspace.
-const TerminalOwnersSchema = z.object({
-  terminals: z.array(z.object({ worktreeId: z.string().min(1) }))
+// Only what removal reads from each live terminal.
+const TerminalHandlesSchema = z.object({
+  terminals: z.array(z.object({ handle: z.string().min(1), worktreeId: z.string() }))
 }) satisfies z.ZodType<{
-  terminals: Pick<RuntimeTerminalListResult['terminals'][number], 'worktreeId'>[]
+  terminals: Pick<RuntimeTerminalListResult['terminals'][number], 'handle' | 'worktreeId'>[]
 }>
 
-/** Ending terminals and counting what is left, both through the host's own orcad. */
+const RuntimeIdSchema = z.object({ runtimeId: z.string().min(1) })
+
+/** Closing terminals, counting what is left and naming the serving orcad, all through its RPC. */
 export function wslHostRuntimeStopSteps(
   access: WslHostRuntimeAccess,
   environmentId: string
-): Pick<WslHostServerStopSteps, 'endTerminals' | 'census'> {
+): Pick<WslHostServerStopSteps, 'endTerminals' | 'census' | 'servingRuntimeId'> {
   return {
     endTerminals: async () => {
-      const list = TerminalOwnersSchema.parse(
+      const list = TerminalHandlesSchema.parse(
         await access.call(environmentId, 'terminal.list', { limit: 1000 })
       )
-      for (const owner of new Set(list.terminals.map((terminal) => terminal.worktreeId))) {
-        await access.call(environmentId, 'terminal.stop', { worktree: `id:${owner}` })
+      const leftovers: WslHostTerminalLeftover[] = []
+      // Why by handle: a workspace selector fails once its project is gone (`selector_not_found`),
+      // and one failure must not keep the rest, or the server, running.
+      for (const terminal of list.terminals) {
+        try {
+          await access.call(environmentId, 'terminal.close', { terminal: terminal.handle })
+        } catch (error) {
+          leftovers.push({ ...terminal, reason: errorMessage(error) })
+        }
       }
+      return leftovers
     },
-    census: () => access.census(environmentId)
+    census: () => access.census(environmentId),
+    servingRuntimeId: async () =>
+      RuntimeIdSchema.parse(await access.call(environmentId, 'status.get', undefined)).runtimeId
   }
 }
 
-/** The managed decommission, over wsl.exe rather than the bridge (which is closed by then). */
+/**
+ * The managed decommission, over wsl.exe rather than the bridge (closed by then). It first checks
+ * that the instance the host records as active is the one the bridge was serving; a re-add can
+ * adopt an orcad the record does not name, and stopping the named one would prove nothing.
+ */
 export function decommissionWslHostOrcad(
   target: WslOrcadHostTarget,
   transport: OrcadHostTransport
 ): WslHostServerStopSteps['decommission'] {
-  return async (census) => {
+  return async (census, servingRuntimeId) => {
     const context = await resolveOrcadRemoteContext(target, transport)
-    return decommissionRemoteOrcad({
-      ...managedOrcadSlot(context, ORCAD_MANAGED_REMOTE_PORT),
-      record: context.activationRecord,
-      census
-    })
+    const slot = managedOrcadSlot(context, ORCAD_MANAGED_REMOTE_PORT)
+    const active = context.activationRecord.active
+    if (active) {
+      const stopTarget = await readRemoteOrcadManagedStopTarget(slot, active)
+      const recordedRuntimeId = stopTarget.state === 'ready' ? stopTarget.context.runtimeId : null
+      if (!servingRuntimeId || recordedRuntimeId !== servingRuntimeId) {
+        return {
+          outcome: 'refused',
+          verdict: 'unverifiable',
+          code: 'orcad_wsl_host_serving_instance_unproven',
+          reason:
+            'the orcad this computer was connected to is not the one the distro records as active, so Orca could not prove it stopped.'
+        }
+      }
+    }
+    return decommissionRemoteOrcad({ ...slot, record: context.activationRecord, census })
   }
 }
 

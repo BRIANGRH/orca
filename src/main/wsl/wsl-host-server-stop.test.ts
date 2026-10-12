@@ -1,31 +1,44 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { OrcadDecommissionResult } from '../../shared/orcad-decommission'
 import type { OrcadTerminalCensus } from '../../shared/orcad-terminal-census'
-import { stopWslHostServer, type WslHostServerStopSteps } from './wsl-host-server-stop'
+import {
+  stopWslHostServer,
+  wslHostRuntimeStopSteps,
+  type WslHostRuntimeAccess,
+  type WslHostServerStopSteps
+} from './wsl-host-server-stop'
 
 function census(liveSessions: number | null): OrcadTerminalCensus {
   return { liveSessions, startedSinceActivation: liveSessions, daemonProtocolVersion: 1 }
 }
 
+const RETIRED: OrcadDecommissionResult = {
+  outcome: 'decommissioned',
+  version: '1.0.0',
+  retirement: 'retired'
+}
+
 function steps(overrides: Partial<WslHostServerStopSteps> = {}) {
   const order: string[] = []
-  const all = {
+  const all: WslHostServerStopSteps = {
     endTerminals: vi.fn(async () => {
       order.push('endTerminals')
+      return []
     }),
     census: vi.fn(async () => {
       order.push('census')
       return census(0)
+    }),
+    servingRuntimeId: vi.fn(async () => {
+      order.push('servingRuntimeId')
+      return 'runtime-a'
     }),
     closeBridge: vi.fn(async () => {
       order.push('closeBridge')
     }),
     decommission: vi.fn(async () => {
       order.push('decommission')
-      return {
-        outcome: 'decommissioned' as const,
-        version: '1.0.0',
-        retirement: 'retired' as const
-      }
+      return RETIRED
     }),
     sleep: vi.fn(async () => {}),
     ...overrides
@@ -34,44 +47,89 @@ function steps(overrides: Partial<WslHostServerStopSteps> = {}) {
 }
 
 describe('stopWslHostServer', () => {
-  it('ends terminals, proves none remain, closes the bridge, then retires orcad and its daemon', async () => {
+  it('closes terminals, proves none remain, names the serving orcad, then retires it', async () => {
     const { all, order } = steps()
     await expect(stopWslHostServer(all)).resolves.toEqual({ stopped: true })
-    expect(order).toEqual(['endTerminals', 'census', 'closeBridge', 'decommission'])
-    expect(all.decommission).toHaveBeenCalledWith(census(0))
+    expect(order).toEqual([
+      'endTerminals',
+      'census',
+      'servingRuntimeId',
+      'closeBridge',
+      'decommission'
+    ])
+    expect(all.decommission).toHaveBeenCalledWith(census(0), 'runtime-a')
   })
 
-  it('waits for shells to exit before asking the daemon to retire', async () => {
-    const counts = [census(2), census(1), census(0)]
-    const { all } = steps({ census: vi.fn(async () => counts.shift() ?? census(0)) })
-    await expect(stopWslHostServer(all)).resolves.toEqual({ stopped: true })
-    expect(all.census).toHaveBeenCalledTimes(3)
-  })
-
-  it('leaves the server running and says why when terminals remain or cannot be counted', async () => {
-    const live = steps({ census: vi.fn(async () => census(1)) })
-    await expect(stopWslHostServer(live.all)).resolves.toEqual({
-      stopped: false,
-      reason: '1 terminal kept running, so Orca left the server running.'
+  it('names each terminal that refused, and still asks the server to stop', async () => {
+    const { all } = steps({
+      endTerminals: vi.fn(async () => [
+        { handle: 'term_1', worktreeId: 'gone::/home/me/old', reason: 'selector_not_found' }
+      ]),
+      census: vi.fn(async () => census(1)),
+      decommission: vi.fn(async (): Promise<OrcadDecommissionResult> => ({
+        outcome: 'refused',
+        verdict: 'live',
+        code: 'orcad_decommission_terminals_running',
+        reason: '1 terminal is still running on this host.'
+      }))
     })
-    expect(live.all.decommission).not.toHaveBeenCalled()
-    expect(live.all.closeBridge).toHaveBeenCalled()
+    const result = await stopWslHostServer(all)
+    expect(all.decommission).toHaveBeenCalled()
+    expect(result).toEqual({
+      stopped: false,
+      reason:
+        'Terminals that refused to close: term_1 (gone::/home/me/old): selector_not_found 1 terminal session kept running. Orca’s server kept running: 1 terminal is still running on this host.'
+    })
+  })
 
-    const unknown = steps({ census: vi.fn(async () => census(null)) })
-    await expect(stopWslHostServer(unknown.all)).resolves.toMatchObject({ stopped: false })
+  it('never reports stopped when the decommission could not prove it stopped the serving orcad', async () => {
+    const { all } = steps({
+      decommission: vi.fn(async (): Promise<OrcadDecommissionResult> => ({
+        outcome: 'refused',
+        verdict: 'unverifiable',
+        code: 'orcad_wsl_host_serving_instance_unproven',
+        reason: 'the orcad this computer was connected to is not the one the distro records'
+      }))
+    })
+    await expect(stopWslHostServer(all)).resolves.toMatchObject({ stopped: false })
   })
 
   it('reports a daemon that did not retire', async () => {
     const { all } = steps({
-      decommission: vi.fn(async () => ({
-        outcome: 'decommissioned' as const,
-        version: '1.0.0',
-        retirement: 'live' as const
+      decommission: vi.fn(async (): Promise<OrcadDecommissionResult> => ({
+        ...RETIRED,
+        retirement: 'live'
       }))
     })
     await expect(stopWslHostServer(all)).resolves.toEqual({
       stopped: false,
       reason: 'Orca’s server stopped, but its terminal daemon is still running.'
     })
+  })
+})
+
+describe('wslHostRuntimeStopSteps', () => {
+  it('closes every terminal by handle and keeps going past one that fails', async () => {
+    const call = vi.fn(async (_environmentId: string, method: string, params: unknown) => {
+      if (method === 'terminal.list') {
+        return {
+          terminals: [
+            { handle: 'term_orphan', worktreeId: 'gone::/home/me/old' },
+            { handle: 'term_live', worktreeId: 'app::/home/me/app' }
+          ]
+        }
+      }
+      if (method === 'terminal.close' && JSON.stringify(params).includes('term_orphan')) {
+        throw new Error('selector_not_found')
+      }
+      return {}
+    })
+    const access: WslHostRuntimeAccess = { call, census: async () => census(0) }
+
+    await expect(wslHostRuntimeStopSteps(access, 'wsl:ubuntu').endTerminals()).resolves.toEqual([
+      { handle: 'term_orphan', worktreeId: 'gone::/home/me/old', reason: 'selector_not_found' }
+    ])
+    expect(call).toHaveBeenCalledWith('wsl:ubuntu', 'terminal.close', { terminal: 'term_live' })
+    expect(call).not.toHaveBeenCalledWith('wsl:ubuntu', 'terminal.stop', expect.anything())
   })
 })
