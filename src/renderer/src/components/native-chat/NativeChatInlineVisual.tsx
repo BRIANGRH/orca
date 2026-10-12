@@ -8,11 +8,16 @@ import { getConnectionIdFromState } from '@/lib/connection-context'
 import { useAppStore } from '@/store'
 import { NATIVE_CHAT_VISUAL_RESERVED_HEIGHT, NativeChatVisualFrame } from './NativeChatVisualFrame'
 import { observeTranscriptVisibility } from './NativeChatTranscriptChrome'
+import type { NativeChatFileLinkContext } from './native-chat-file-link'
 import type { NativeChatVisualOwner } from './native-chat-visual-owner'
 import { openNativeChatVisualFile } from './native-chat-visual-open'
 import { useNativeChatFileLinkContext } from './use-native-chat-file-link-context'
 import { useNativeChatFileLinkRecheckGeneration } from './use-native-chat-file-link-existence'
-import { resolveNativeChatVisualFile } from './native-chat-visual-file'
+import {
+  resolveNativeChatVisualFile,
+  type NativeChatVisualDocument,
+  type NativeChatVisualFile
+} from './native-chat-visual-file'
 import {
   nativeChatVisualArtifactSourceKey,
   readNativeChatVisualArtifactRequest
@@ -44,8 +49,6 @@ export function NativeChatInlineVisual({
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [near, setNear] = useState(false)
   const [retired, setRetired] = useState(false)
-  // Share's popover is portalled and takes focus, so hover and focus-within can't hold the toolbar.
-  const [shareOpen, setShareOpen] = useState(false)
   // Null until a floating chat's folder is pinned: the placeholder shows and nothing is read.
   const fileLinkContext = useNativeChatFileLinkContext(owner.tabId)
   // Why the connection too: an SSH workspace's host can resolve after its context does.
@@ -79,7 +82,6 @@ export function NativeChatInlineVisual({
     return <NativeChatVisualUnavailable />
   }
   const label = title ?? path
-  const openLabel = translate('components.native-chat.visualOpenInNewTab', 'Open in new tab')
 
   return (
     <div ref={boxRef} className="group/visual relative my-3">
@@ -92,35 +94,13 @@ export function NativeChatInlineVisual({
             themeScope={boxRef}
             onRetired={() => setRetired(true)}
           />
-          {fileLinkContext ? (
-            <div
-              data-share-open={shareOpen}
-              className="absolute top-2 right-2 flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5 shadow-xs transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100 data-[share-open=true]:opacity-100"
-            >
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={openLabel}
-                    onClick={() => openNativeChatVisualFile(path, fileLinkContext)}
-                  >
-                    <SquareArrowOutUpRight />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" sideOffset={4}>
-                  {openLabel}
-                </TooltipContent>
-              </Tooltip>
-              {file ? (
-                <ArtifactPublishButton
-                  sourceKey={nativeChatVisualArtifactSourceKey(file)}
-                  createRequest={() => readNativeChatVisualArtifactRequest(file, showDocument)}
-                  open={shareOpen}
-                  onOpenChange={setShareOpen}
-                />
-              ) : null}
-            </div>
+          {fileLinkContext && file ? (
+            <NativeChatInlineVisualToolbar
+              path={path}
+              fileLinkContext={fileLinkContext}
+              file={file}
+              showDocument={showDocument}
+            />
           ) : null}
         </>
       ) : (
@@ -131,6 +111,51 @@ export function NativeChatInlineVisual({
           style={{ height: NATIVE_CHAT_VISUAL_RESERVED_HEIGHT }}
         />
       )}
+    </div>
+  )
+}
+
+/** Owns Share's open state, so it unmounts with the toolbar and a returning visual starts closed. */
+function NativeChatInlineVisualToolbar({
+  path,
+  fileLinkContext,
+  file,
+  showDocument
+}: {
+  path: string
+  fileLinkContext: NativeChatFileLinkContext
+  file: NativeChatVisualFile
+  showDocument: (document: NativeChatVisualDocument) => void
+}): React.JSX.Element {
+  // Share's popover is portalled and takes focus, so hover and focus-within can't hold the toolbar.
+  const [shareOpen, setShareOpen] = useState(false)
+  const openLabel = translate('components.native-chat.visualOpenInNewTab', 'Open in new tab')
+  return (
+    <div
+      data-share-open={shareOpen}
+      className="absolute top-2 right-2 flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5 shadow-xs transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100 data-[share-open=true]:opacity-100"
+    >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={openLabel}
+            onClick={() => openNativeChatVisualFile(path, fileLinkContext)}
+          >
+            <SquareArrowOutUpRight />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" sideOffset={4}>
+          {openLabel}
+        </TooltipContent>
+      </Tooltip>
+      <ArtifactPublishButton
+        sourceKey={nativeChatVisualArtifactSourceKey(file)}
+        createRequest={() => readNativeChatVisualArtifactRequest(file, showDocument)}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
     </div>
   )
 }

@@ -403,6 +403,29 @@ describe('NativeChatMarkdown visuals', () => {
       await waitFor(() => expect(toolbar).toHaveAttribute('data-share-open', 'false'))
     })
 
+    it('starts closed when a visual that went away while Share was open comes back', async () => {
+      const existence = fakeExistence()
+      const { container } = render(
+        withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />, owner, existence)
+      )
+      await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+      fireEvent.click(screen.getByRole('button', SHARE))
+      await screen.findByRole('button', { name: 'Generate link' })
+
+      readRuntimeFilePreview.mockRejectedValue(new Error('ENOENT: no such file or directory'))
+      act(() => existence.fire())
+      await waitFor(() => expect(container).toHaveTextContent('Visualization unavailable'))
+
+      readRuntimeFilePreview.mockResolvedValue({ content: '<p>back</p>', isBinary: false })
+      act(() => existence.fire())
+      await waitFor(() => expect(frameDocument(container)).toContain('<p>back</p>'))
+      expect(screen.getByRole('button', SHARE).parentElement).toHaveAttribute(
+        'data-share-open',
+        'false'
+      )
+      expect(screen.queryByRole('button', { name: 'Generate link' })).toBeNull()
+    })
+
     it('is not offered for an unavailable visual or before a floating chat is pinned', async () => {
       fileLink.hostResolved = false
       const { container } = render(
