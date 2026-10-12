@@ -4,28 +4,23 @@ import { getRemoteRuntimePtyEnvironmentId } from '@/runtime/runtime-terminal-str
 import { PTY_SESSION_ID_SEPARATOR } from '../../../../shared/pty-session-id-format'
 import { parseAppSshPtyId } from '../../../../shared/ssh-pty-id'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
+import type { HiddenViewBudgetInput } from './terminal-hidden-view-budget'
 
 // Why: cold-park hysteresis keeps a hidden pane mounted for 30s so quick tab
-// flips never pay a re-hydrate; hot-retain keeps a bounded recently-visible
-// working set warm for 5 minutes beyond that. The cap (not the clock) is the
-// primary evictor — 4 worktrees covers the ordinary working set, so parking
-// only engages for the many-worktree tail it
-// was built for. Reveal cost is a flat ~170ms remount regardless of buffer
-// size, so cutting remount *frequency* beats shaving replay.
+// flips never pay a re-hydrate; hot-retain keeps recently hidden views warm for
+// 5 minutes beyond that. How MANY stay warm is bounded by memory, not count:
+// see terminal-hidden-view-budget.ts.
 export const TERMINAL_WORKTREE_COLD_PARK_DELAY_MS = 30_000
 export const TERMINAL_WORKTREE_HOT_RETAIN_MS = 5 * 60_000
-export const TERMINAL_WORKTREE_HOT_RETAIN_LIMIT = 4
 export const TERMINAL_WORKTREE_PARK_DELAY_MS = TERMINAL_WORKTREE_COLD_PARK_DELAY_MS
 export const TERMINAL_TAB_COLD_PARK_DELAY_MS = 30_000
 export const TERMINAL_TAB_HOT_RETAIN_MS = 5 * 60_000
-export const TERMINAL_TAB_HOT_RETAIN_LIMIT = 6
 
 // Why: tests override these per call (instead of process.env reads inside the
 // module) to shrink the 30s hysteresis to test-friendly durations.
 export type TerminalColdParkPolicyOverrides = {
   coldParkDelayMs?: number
   hotRetainMs?: number
-  hotRetainLimit?: number
   retentionTtlMs?: number
   retentionLimit?: number
 }
@@ -227,12 +222,13 @@ function selectLastActiveRetainedId(candidates: ColdParkRetainCandidate[]): stri
   return lastActive?.id ?? null
 }
 
-// Why: hot-retain keeps the most recently hidden ids warm up to the limit;
-// ids hidden past hotRetainMs or beyond the limit cold-park. The last-active
-// id is exempt from both so returning to it never pays a remount.
+// Why: hot-retain keeps recently hidden ids warm; ids hidden past hotRetainMs
+// or beyond the optional count limit cold-park. The last-active id is exempt
+// from both so returning to it never pays a remount. Cold parking passes no
+// limit: the memory budget (terminal-hidden-view-budget.ts) bounds how many stay.
 export function selectIdsBeyondHotRetain(
   candidates: ColdParkRetainCandidate[],
-  args: { nowMs: number; hotRetainMs: number; hotRetainLimit: number }
+  args: { nowMs: number; hotRetainMs: number; hotRetainLimit?: number }
 ): Set<string> {
   const lastActiveId = selectLastActiveRetainedId(candidates)
   const coldParkedIds = new Set<string>()
@@ -246,6 +242,9 @@ export function selectIdsBeyondHotRetain(
     } else {
       retainedCandidates.push(candidate)
     }
+  }
+  if (args.hotRetainLimit === undefined) {
+    return coldParkedIds
   }
   retainedCandidates.sort(compareColdParkRecencyDesc)
   // Why: the last-active id already holds one slot in the warm working set, so
@@ -289,8 +288,7 @@ export function selectColdParkedTerminalWorktrees(
   }
   return selectIdsBeyondHotRetain(candidates, {
     nowMs: args.nowMs,
-    hotRetainMs: args.hotRetainMs ?? TERMINAL_WORKTREE_HOT_RETAIN_MS,
-    hotRetainLimit: args.hotRetainLimit ?? TERMINAL_WORKTREE_HOT_RETAIN_LIMIT
+    hotRetainMs: args.hotRetainMs ?? TERMINAL_WORKTREE_HOT_RETAIN_MS
   })
 }
 
@@ -303,9 +301,12 @@ export function selectColdParkedTerminalTabs(
     nowMs: number
     parkCooldownUntilMs?: number | null
     restorePolicy?: TerminalParkRestorePolicy
+    /** Reports this pass to the shared memory budget; returns the tabs over it (null = none loaded). */
+    hiddenViewBudget?: (input: HiddenViewBudgetInput | null) => ReadonlySet<string>
   } & TerminalColdParkPolicyOverrides
 ): Set<string> {
   if (!args.parkingEnabled) {
+    args.hiddenViewBudget?.(null)
     return new Set()
   }
   const coldParkDelayMs = args.coldParkDelayMs ?? TERMINAL_TAB_COLD_PARK_DELAY_MS
@@ -332,9 +333,19 @@ export function selectColdParkedTerminalTabs(
       lastActivatedSeq: tab.lastActivatedSeq
     })
   }
-  return selectIdsBeyondHotRetain(candidates, {
+  const parkedIds = selectIdsBeyondHotRetain(candidates, {
     nowMs: args.nowMs,
-    hotRetainMs: args.hotRetainMs ?? TERMINAL_TAB_HOT_RETAIN_MS,
-    hotRetainLimit: args.hotRetainLimit ?? TERMINAL_TAB_HOT_RETAIN_LIMIT
+    hotRetainMs: args.hotRetainMs ?? TERMINAL_TAB_HOT_RETAIN_MS
   })
+  const overBudgetIds = args.hiddenViewBudget?.({
+    worktreeId: args.worktreeId,
+    terminalTabs: args.terminalTabs,
+    parkableTabIds: new Set(candidates.map((candidate) => candidate.id)),
+    clockParkedTabIds: parkedIds,
+    ...(args.restorePolicy ? { restorePolicy: args.restorePolicy } : {})
+  })
+  for (const tabId of overBudgetIds ?? []) {
+    parkedIds.add(tabId)
+  }
+  return parkedIds
 }

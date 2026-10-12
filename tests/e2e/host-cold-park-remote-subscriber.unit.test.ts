@@ -33,7 +33,7 @@ import {
 } from '../../src/shared/terminal-stream-protocol'
 import {
   TERMINAL_TAB_COLD_PARK_DELAY_MS,
-  TERMINAL_TAB_HOT_RETAIN_LIMIT,
+  TERMINAL_TAB_HOT_RETAIN_MS,
   canParkTerminalTabRenderer,
   selectColdParkedTerminalTabs
 } from '../../src/renderer/src/components/terminal-pane/terminal-hidden-view-parking'
@@ -59,13 +59,11 @@ function tabModel(id: string, ptyId: string): TerminalTab {
   return { id, ptyId, generation: 1 } as unknown as TerminalTab
 }
 
-/** The report's topology, shrunk to the smallest set that still evicts:
- *  hot-retain limit + 1 hidden host tabs, one of them remotely subscribed. */
+/** The report's topology, shrunk to the smallest set that still evicts: the
+ *  remotely subscribed hidden host tab plus one that takes the last-active slot. */
 function hiddenHostTabs(): TerminalTab[] {
   const tabs: TerminalTab[] = [tabModel(SUBSCRIBED_TAB_ID, ptyIdFor(0))]
-  for (let i = 1; i <= TERMINAL_TAB_HOT_RETAIN_LIMIT + 1; i += 1) {
-    tabs.push(tabModel(`tab-${i}`, ptyIdFor(i)))
-  }
+  tabs.push(tabModel('tab-1', ptyIdFor(1)))
   return tabs
 }
 
@@ -90,9 +88,9 @@ describe('STA-2854 A: host cold-park policy vs an active remote subscriber', () 
     })
     expect(hiddenSinceByTabId.get(SUBSCRIBED_TAB_ID)).toBe(t0)
 
-    // Pass 2: exactly the cold-park hysteresis later. The remote client has
+    // Pass 2: exactly the hot-retain window later. The remote client has
     // been driving this tab the whole time; the policy has no input for that.
-    const nowMs = t0 + TERMINAL_TAB_COLD_PARK_DELAY_MS
+    const nowMs = t0 + TERMINAL_TAB_HOT_RETAIN_MS
     const candidates = buildTerminalTabColdParkCandidates({
       terminalTabs: tabs,
       assignments: new Map(),

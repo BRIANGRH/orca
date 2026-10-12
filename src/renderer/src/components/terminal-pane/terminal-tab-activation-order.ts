@@ -5,10 +5,12 @@ export type TerminalTabActivationOrder = {
   retainTabIds(liveTabIds: ReadonlySet<string>): void
 }
 
+// Why module-wide: the hidden-view memory budget ranks tabs across worktrees.
+let nextActivationSeq = 0
+
 export function createTerminalTabActivationOrder(): TerminalTabActivationOrder {
   const activationSeqByTabId = new Map<string, number>()
   let previousActiveTabId: string | null = null
-  let nextActivationSeq = 0
 
   return {
     recordActiveTabId(activeTabId) {

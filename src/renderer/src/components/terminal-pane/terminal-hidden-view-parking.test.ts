@@ -365,49 +365,30 @@ describe('selectColdParkedTerminalWorktrees', () => {
     }
   }
 
-  it('keeps recent hidden local worktrees hot up to the retain limit', () => {
+  // Why: their tabs are views in the renderer-wide memory budget, so no worktree count applies.
+  it('keeps any number of recently hidden local worktrees hot', () => {
     const selected = selectColdParkedTerminalWorktrees({
-      worktrees: [
-        localCandidate('wt-1', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS),
-        localCandidate('wt-2', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 1)
-      ],
+      worktrees: Array.from({ length: 8 }, (_, index) =>
+        localCandidate(`wt-${index}`, nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - index)
+      ),
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 2
+      nowMs
     })
 
     expect(selected).toEqual(new Set())
   })
 
-  it('cold-parks the oldest hidden local worktrees beyond the retain limit', () => {
+  it('cold-parks local worktrees hidden past hot-retain', () => {
     const selected = selectColdParkedTerminalWorktrees({
       worktrees: [
-        localCandidate('wt-1', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS),
-        localCandidate('wt-2', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 1),
-        localCandidate('wt-3', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 2)
-      ],
-      pendingStartupByTabId: {},
-      parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 2
-    })
-
-    expect(selected).toEqual(new Set(['wt-3']))
-  })
-
-  it('cold-parks aged local worktrees even when under the retain limit', () => {
-    const selected = selectColdParkedTerminalWorktrees({
-      worktrees: [
-        // Why: wt-recent is the last-active exempt one; wt-1 proves the TTL
-        // sweep still parks an aged worktree that is under the cap.
+        // Why: wt-recent is the last-active exempt one; wt-1 is past hot-retain.
         localCandidate('wt-recent', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS),
         localCandidate('wt-1', nowMs - TERMINAL_WORKTREE_HOT_RETAIN_MS)
       ],
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 4
+      nowMs
     })
 
     expect(selected).toEqual(new Set(['wt-1']))
@@ -418,29 +399,10 @@ describe('selectColdParkedTerminalWorktrees', () => {
       worktrees: [localCandidate('wt-1', nowMs - TERMINAL_WORKTREE_HOT_RETAIN_MS)],
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 0
+      nowMs
     })
 
     expect(selected).toEqual(new Set())
-  })
-
-  it('exempts only the last-active worktree from the cap, counting it against the limit', () => {
-    const selected = selectColdParkedTerminalWorktrees({
-      worktrees: [
-        localCandidate('wt-1', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS),
-        localCandidate('wt-2', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 1),
-        localCandidate('wt-3', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 2)
-      ],
-      pendingStartupByTabId: {},
-      parkingEnabled: true,
-      nowMs,
-      // Why: wt-1 (last-active) takes one of the two warm slots, so only wt-2
-      // fits the remaining slot and wt-3 parks.
-      hotRetainLimit: 2
-    })
-
-    expect(selected).toEqual(new Set(['wt-3']))
   })
 
   it('selects nothing when the settings kill switch disables parking', () => {
@@ -451,8 +413,7 @@ describe('selectColdParkedTerminalWorktrees', () => {
       ],
       pendingStartupByTabId: {},
       parkingEnabled: false,
-      nowMs,
-      hotRetainLimit: 0
+      nowMs
     })
 
     expect(selected).toEqual(new Set())
@@ -477,8 +438,7 @@ describe('selectColdParkedTerminalWorktrees', () => {
       ],
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 0
+      nowMs
     })
 
     expect(selected).toEqual(new Set(['wt-local']))
@@ -513,8 +473,7 @@ describe('selectColdParkedTerminalWorktrees', () => {
       ],
       pendingStartupByTabId: { 'tab-wt-startup': { command: 'echo pending' } },
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 0
+      nowMs
     })
 
     expect(selected).toEqual(new Set())
@@ -535,38 +494,21 @@ describe('selectColdParkedTerminalTabs', () => {
     }
   }
 
-  it('keeps visible and recent inactive terminal tabs mounted', () => {
+  it('keeps visible and any number of recent inactive terminal tabs mounted', () => {
     const selected = selectColdParkedTerminalTabs({
       worktreeId: 'wt-1',
       terminalTabs: [
         { ...localTab('tab-visible', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS), isVisible: true },
-        localTab('tab-recent-1', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS),
-        localTab('tab-recent-2', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 1)
+        ...Array.from({ length: 12 }, (_, index) =>
+          localTab(`tab-recent-${index}`, nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - index)
+        )
       ],
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 2
+      nowMs
     })
 
     expect(selected).toEqual(new Set())
-  })
-
-  it('cold-parks the oldest inactive local tabs beyond the retain limit', () => {
-    const selected = selectColdParkedTerminalTabs({
-      worktreeId: 'wt-1',
-      terminalTabs: [
-        localTab('tab-1', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS),
-        localTab('tab-2', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 1),
-        localTab('tab-3', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 2)
-      ],
-      pendingStartupByTabId: {},
-      parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 2
-    })
-
-    expect(selected).toEqual(new Set(['tab-3']))
   })
 
   // Why worktree-scoped: measure windows mount every tab of the worktree, so
@@ -576,35 +518,32 @@ describe('selectColdParkedTerminalTabs', () => {
       worktreeId: 'wt-1',
       terminalTabs: [
         localTab('tab-1', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS),
-        localTab('tab-2', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 1),
-        localTab('tab-3', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS - 2)
+        localTab('tab-2', nowMs - TERMINAL_TAB_HOT_RETAIN_MS),
+        localTab('tab-3', nowMs - TERMINAL_TAB_HOT_RETAIN_MS - 1)
       ],
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 2
+      nowMs
     }
     expect(selectColdParkedTerminalTabs({ ...args, parkCooldownUntilMs: nowMs + 1 })).toEqual(
       new Set()
     )
     expect(selectColdParkedTerminalTabs({ ...args, parkCooldownUntilMs: nowMs })).toEqual(
-      new Set(['tab-3'])
+      new Set(['tab-2', 'tab-3'])
     )
   })
 
-  it('cold-parks aged inactive local tabs even when under the retain limit', () => {
+  it('cold-parks inactive local tabs hidden past hot-retain', () => {
     const selected = selectColdParkedTerminalTabs({
       worktreeId: 'wt-1',
       terminalTabs: [
-        // Why: tab-recent is last-active exempt; tab-1 proves the TTL sweep
-        // still parks an aged tab under the cap.
+        // Why: tab-recent is last-active exempt; tab-1 is past hot-retain.
         localTab('tab-recent', nowMs - TERMINAL_WORKTREE_PARK_DELAY_MS),
         localTab('tab-1', nowMs - TERMINAL_TAB_HOT_RETAIN_MS)
       ],
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 12
+      nowMs
     })
 
     expect(selected).toEqual(new Set(['tab-1']))
@@ -616,8 +555,7 @@ describe('selectColdParkedTerminalTabs', () => {
       terminalTabs: [localTab('tab-1', nowMs - TERMINAL_TAB_HOT_RETAIN_MS)],
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 0
+      nowMs
     })
 
     expect(selected).toEqual(new Set())
@@ -634,27 +572,7 @@ describe('selectColdParkedTerminalTabs', () => {
       ],
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 0
-    })
-
-    expect(selected).toEqual(new Set(['tab-aaa']))
-  })
-
-  // Why: the cap and exemption must share one recency ranking.
-  it('keeps the most recently activated tab warm when the cap evicts a tie', () => {
-    const hiddenSinceMs = nowMs - TERMINAL_TAB_HOT_RETAIN_MS + 1
-    const selected = selectColdParkedTerminalTabs({
-      worktreeId: 'wt-1',
-      terminalTabs: [
-        { ...localTab('tab-aaa', hiddenSinceMs), lastActivatedSeq: 1 },
-        { ...localTab('tab-bbb', hiddenSinceMs), lastActivatedSeq: 3 },
-        { ...localTab('tab-ccc', hiddenSinceMs), lastActivatedSeq: 2 }
-      ],
-      pendingStartupByTabId: {},
-      parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 2
+      nowMs
     })
 
     expect(selected).toEqual(new Set(['tab-aaa']))
@@ -669,8 +587,7 @@ describe('selectColdParkedTerminalTabs', () => {
       ],
       pendingStartupByTabId: {},
       parkingEnabled: false,
-      nowMs,
-      hotRetainLimit: 0
+      nowMs
     })
 
     expect(selected).toEqual(new Set())
@@ -695,8 +612,7 @@ describe('selectColdParkedTerminalTabs', () => {
       ],
       pendingStartupByTabId: {},
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 0
+      nowMs
     })
 
     expect(selected).toEqual(new Set(['tab-local']))
@@ -718,8 +634,7 @@ describe('selectColdParkedTerminalTabs', () => {
       ],
       pendingStartupByTabId: { 'tab-startup': { command: 'echo pending' } },
       parkingEnabled: true,
-      nowMs,
-      hotRetainLimit: 0
+      nowMs
     })
 
     expect(selected).toEqual(new Set())

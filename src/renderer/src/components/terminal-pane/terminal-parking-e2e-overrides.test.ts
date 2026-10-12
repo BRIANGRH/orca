@@ -24,7 +24,6 @@ type TerminalParkingE2EOverridesModule = {
   getTerminalParkingPolicyOverrides: () => {
     coldParkDelayMs?: number
     hotRetainMs?: number
-    hotRetainLimit?: number
     retentionTtlMs?: number
     retentionLimit?: number
   }

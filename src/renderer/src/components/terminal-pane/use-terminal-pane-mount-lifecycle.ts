@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { PaneManager } from '@/lib/pane-manager/pane-manager'
+import { estimatePanesRetainedBytes } from '@/lib/pane-manager/pane-retained-bytes'
 import { configureTerminalOutputBacklogCap } from '@/lib/pane-manager/pane-terminal-output-scheduler'
 import { scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
 import { e2eConfig } from '@/lib/e2e-config'
@@ -10,6 +11,7 @@ import { restoreTerminalPaneLayout } from './terminal-pane-layout-restore'
 import { runTerminalPaneBootstrapSplits } from './terminal-pane-mount-bootstrap'
 import { installTerminalPaneMountEvents } from './terminal-pane-mount-events'
 import { cleanupTerminalPaneMount } from './terminal-pane-mount-cleanup'
+import { registerMountedTerminalTabView } from './terminal-hidden-view-budget'
 import type { UseTerminalPaneLifecycleDeps } from './terminal-pane-lifecycle-types'
 import type { TerminalPaneLifecycleRefs } from './use-terminal-pane-lifecycle-refs'
 
@@ -77,6 +79,9 @@ export function useTerminalPaneMountLifecycle(
       window.__paneManagers = window.__paneManagers ?? new Map()
       window.__paneManagers.set(deps.tabId, manager)
     }
+    const unregisterHiddenViewCost = registerMountedTerminalTabView(deps.tabId, {
+      getRetainedBytes: () => estimatePanesRetainedBytes(manager.getPanes())
+    })
     restoreTerminalPaneLayout({
       manager,
       deps,
@@ -112,6 +117,7 @@ export function useTerminalPaneMountLifecycle(
       ptyDeps
     })
     return () => {
+      unregisterHiddenViewCost()
       removeMountEvents()
       cleanupTerminalPaneMount({
         manager,

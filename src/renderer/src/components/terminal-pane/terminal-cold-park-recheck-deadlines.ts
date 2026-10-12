@@ -76,3 +76,45 @@ export function getTerminalTabColdParkRecheckDelayMs(args: {
     parkVerdictPinUntilMs: args.parkVerdictPinUntilMs
   })
 }
+
+/** Next recheck deadline per hidden, still-mounted tab; parked and visible tabs need none. */
+export function collectTerminalTabColdParkRecheckDeadlines(args: {
+  candidates: readonly {
+    id: string
+    isVisible: boolean
+    hasActivityTerminalPortal: boolean
+    hiddenSinceMs: number | null
+  }[]
+  parkedTabIds: ReadonlySet<string>
+  parkVerdictPinUntilMsByTabId: ReadonlyMap<string, number>
+  parkingEnabled: boolean
+  parkCooldownUntilMs: number | null
+  nowMs: number
+  coldParkDelayMs?: number
+  hotRetainMs?: number
+}): Map<string, number> {
+  const deadlineMsByTabId = new Map<string, number>()
+  for (const candidate of args.candidates) {
+    if (
+      candidate.isVisible ||
+      candidate.hasActivityTerminalPortal ||
+      args.parkedTabIds.has(candidate.id)
+    ) {
+      continue
+    }
+    const delayMs = getTerminalTabColdParkRecheckDelayMs({
+      parkingEnabled: args.parkingEnabled,
+      hiddenSinceMs: candidate.hiddenSinceMs,
+      parkCooldownUntilMs: args.parkCooldownUntilMs,
+      // Why: pin expiry may be the only remaining wakeup after damping stops churn.
+      parkVerdictPinUntilMs: args.parkVerdictPinUntilMsByTabId.get(candidate.id) ?? null,
+      nowMs: args.nowMs,
+      ...(args.coldParkDelayMs !== undefined ? { coldParkDelayMs: args.coldParkDelayMs } : {}),
+      ...(args.hotRetainMs !== undefined ? { hotRetainMs: args.hotRetainMs } : {})
+    })
+    if (delayMs !== null && delayMs > 0) {
+      deadlineMsByTabId.set(candidate.id, args.nowMs + delayMs)
+    }
+  }
+  return deadlineMsByTabId
+}

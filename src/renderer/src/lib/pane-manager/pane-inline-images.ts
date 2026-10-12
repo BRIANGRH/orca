@@ -16,11 +16,21 @@ const panesAwaitingImageAddon = new Set<ManagedPaneInternal>()
 
 // Keyed on the terminal, not the pane: PTY connections hold a toPublicPane()
 // wrapper, which does not carry imageAddon.
-const terminalsRenderingInlineImages = new WeakSet<Terminal>()
+const terminalsRenderingInlineImages = new WeakMap<Terminal, ImageAddon>()
 
 /** True only once the addon is really attached — not while its chunk loads or after it fails. */
 export function terminalRendersInlineImages(terminal: Terminal): boolean {
   return terminalsRenderingInlineImages.has(terminal)
+}
+
+/** Decoded-image cache the terminal holds (the addon reports MB), for the hidden-view budget. */
+export function getTerminalInlineImageBytes(terminal: Terminal): number {
+  try {
+    return (terminalsRenderingInlineImages.get(terminal)?.storageUsage ?? 0) * 1024 * 1024
+  } catch {
+    // Why: storage can throw while the addon is mid-dispose.
+    return 0
+  }
 }
 
 setTerminalImageAddonLoadHandlers({
@@ -60,7 +70,7 @@ export function attachInlineImages(pane: ManagedPaneInternal): void {
     imageAddon = new ImageAddonConstructor(buildInlineImageAddonOptions())
     pane.terminal.loadAddon(imageAddon)
     pane.imageAddon = imageAddon
-    terminalsRenderingInlineImages.add(pane.terminal)
+    terminalsRenderingInlineImages.set(pane.terminal, imageAddon)
   } catch (err) {
     console.warn('[terminal] inline-image addon failed to attach for pane', pane.id, err)
     try {

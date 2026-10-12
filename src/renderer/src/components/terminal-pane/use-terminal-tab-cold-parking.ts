@@ -14,7 +14,7 @@ import {
   findActivityTerminalPortal,
   type ActivityTerminalPortalTarget
 } from '../activity/activity-terminal-portal'
-import { getTerminalTabColdParkRecheckDelayMs } from './terminal-cold-park-recheck-deadlines'
+import { collectTerminalTabColdParkRecheckDeadlines } from './terminal-cold-park-recheck-deadlines'
 import {
   clearTerminalTabColdParkRecheckTimers,
   reconcileTerminalTabColdParkRecheckTimers,
@@ -38,6 +38,7 @@ import { usePendingStartupParkPresence } from './terminal-pending-startup-park-p
 import { canWatcherCoverParkedTerminalTab } from './terminal-parked-tab-watchers'
 import { captureNewlyParkedTerminalTabs } from './parked-terminal-tab-capture-episodes'
 import { createTerminalTabActivationOrder } from './terminal-tab-activation-order'
+import { useHiddenTerminalViewBudget } from './use-hidden-terminal-view-budget'
 import { buildTerminalTabColdParkCandidates } from './terminal-tab-park-candidates'
 import {
   getTerminalParkingAssignmentsKey,
@@ -138,6 +139,7 @@ export function useTerminalTabColdParking(args: {
   const parkVerdictRecordsRef = useRef(new Map<string, ParkVerdictFlipRecord>())
   const parkedTabCaptureDoneRef = useRef(new Set<string>())
   const [terminalTabParkingRevision, setTerminalTabParkingRevision] = useState(0)
+  const reportHiddenViewBudget = useHiddenTerminalViewBudget(setTerminalTabParkingRevision)
   const [coldParkedTerminalTabIds, setColdParkedTerminalTabIds] = useState<ReadonlySet<string>>(
     () => new Set()
   )
@@ -210,6 +212,8 @@ export function useTerminalTabColdParking(args: {
         sshParkingEnabled: terminalSshParkingEnabled,
         pairedRuntimeParkingEnvironmentIds
       },
+      // Why null when the worktree parks: none of its views stay loaded.
+      hiddenViewBudget: (input) => reportHiddenViewBudget(coldParkTerminalPanes ? null : input),
       ...overrides
     })
     const { parkedTabIds, parkVerdictPinUntilMsByTabId } = withholdUnparkableTerminalTabs({
@@ -232,32 +236,17 @@ export function useTerminalTabColdParking(args: {
       setColdParkedTerminalTabIds(parkedTabIds)
     }
 
-    const recheckDeadlineMsByTabId = new Map<string, number>()
-    for (const candidate of candidates) {
-      if (
-        candidate.isVisible ||
-        candidate.hasActivityTerminalPortal ||
-        parkedTabIds.has(candidate.id)
-      ) {
-        continue
-      }
-      const delayMs = getTerminalTabColdParkRecheckDelayMs({
-        parkingEnabled: terminalParkingEnabled,
-        hiddenSinceMs: candidate.hiddenSinceMs,
-        parkCooldownUntilMs: measureParkCooldownUntilRef.current,
-        // Why: pin expiry may be the only remaining wakeup after damping stops churn.
-        parkVerdictPinUntilMs: parkVerdictPinUntilMsByTabId.get(candidate.id) ?? null,
-        nowMs,
-        ...overrides
-      })
-      if (delayMs !== null && delayMs > 0) {
-        recheckDeadlineMsByTabId.set(candidate.id, nowMs + delayMs)
-      }
-    }
-
     reconcileTerminalTabColdParkRecheckTimers({
       timers,
-      deadlineMsByTabId: recheckDeadlineMsByTabId,
+      deadlineMsByTabId: collectTerminalTabColdParkRecheckDeadlines({
+        candidates,
+        parkedTabIds,
+        parkVerdictPinUntilMsByTabId,
+        parkingEnabled: terminalParkingEnabled,
+        parkCooldownUntilMs: measureParkCooldownUntilRef.current,
+        nowMs,
+        ...overrides
+      }),
       nowMs,
       onDeadline: () => setTerminalTabParkingRevision((revision) => revision + 1)
     })
@@ -265,6 +254,7 @@ export function useTerminalTabColdParking(args: {
   }, [
     activityTerminalPortals,
     activeTerminalTabId,
+    coldParkTerminalPanes,
     isWorktreeActive,
     pendingStartupByTabId,
     pairedRuntimeParkingEnvironmentIds,

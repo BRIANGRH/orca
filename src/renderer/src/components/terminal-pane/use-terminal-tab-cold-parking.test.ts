@@ -24,7 +24,10 @@ const mocks = vi.hoisted(() => ({
   exemptSelectCalls: 0,
   coldParkSelectCalls: 0,
   /** Toggled to churn the park verdict the way the crash cluster does. */
-  watcherCoverage: true
+  watcherCoverage: true,
+  /** Tabs the shared hidden-view memory budget reports over it; empty keeps the clock rules isolated. */
+  overBudgetTabIds: new Set<string>(),
+  budgetInputs: [] as unknown[]
 }))
 
 vi.mock('../../store', () => ({
@@ -48,6 +51,19 @@ vi.mock('./terminal-hidden-view-parking', async (importOriginal) => {
     }
   }
 })
+
+vi.mock('./use-hidden-terminal-view-budget', () => ({
+  useHiddenTerminalViewBudget:
+    () =>
+    (input: { terminalTabs: readonly { id: string }[] } | null): ReadonlySet<string> => {
+      mocks.budgetInputs.push(input)
+      return new Set(
+        (input?.terminalTabs ?? [])
+          .filter((tab) => mocks.overBudgetTabIds.has(tab.id))
+          .map((tab) => tab.id)
+      )
+    }
+}))
 
 vi.mock('./terminal-eviction-exempt-tabs', () => ({
   selectEvictionExemptTerminalTabIds: (_worktreeId: string, tabs: readonly { id: string }[]) => {
@@ -120,6 +136,8 @@ describe('useTerminalTabColdParking measure-clock contract', () => {
     mocks.exemptTabIds = new Set()
     mocks.exemptSelectCalls = 0
     mocks.watcherCoverage = true
+    mocks.overBudgetTabIds = new Set()
+    mocks.budgetInputs = []
     mocks.storeState.terminalLayoutsByTabId = {}
     mocks.storeState.sleepingAgentSessionsByPaneKey = {}
     mocks.storeState.runtimeStatusByEnvironmentId = new Map()
@@ -509,6 +527,25 @@ describe('useTerminalTabColdParking measure-clock contract', () => {
       rerender(hookArgs(false))
     })
     expect(result.current).toEqual(new Set(['tab-2']))
+  })
+
+  it('parks a warm hidden tab the shared memory budget cannot keep, and withdraws when the worktree parks', () => {
+    const { result, rerender } = renderHook(
+      (args: ReturnType<typeof hookArgs>) => useTerminalTabColdParking(args),
+      { initialProps: hookArgs(false) }
+    )
+    act(() => {
+      vi.advanceTimersByTime(TERMINAL_TAB_COLD_PARK_DELAY_MS + 1)
+    })
+    expect(result.current).toEqual(new Set())
+
+    mocks.overBudgetTabIds = new Set(['tab-1'])
+    rerender({ ...hookArgs(false), activeTerminalTabId: 'tab-2' })
+    expect(result.current).toEqual(new Set(['tab-1']))
+
+    mocks.budgetInputs = []
+    rerender({ ...hookArgs(false), coldParkTerminalPanes: true })
+    expect(mocks.budgetInputs).toEqual([null])
   })
 
   it('does not exempt a tab from a truncated malformed pane key', () => {

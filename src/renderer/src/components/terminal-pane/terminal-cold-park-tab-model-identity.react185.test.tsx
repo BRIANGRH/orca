@@ -72,6 +72,10 @@ vi.mock('./terminal-parking-e2e-overrides', () => ({
 }))
 
 vi.mock('@/lib/crash-breadcrumb-recorder', () => ({ recordRendererCrashBreadcrumb: vi.fn() }))
+// Why: slots are stubbed, so no view is ever measured; keep the memory budget out of this cascade.
+vi.mock('./use-hidden-terminal-view-budget', () => ({
+  useHiddenTerminalViewBudget: () => () => new Set<string>()
+}))
 
 import { useAppStore } from '../../store'
 import TerminalPaneOverlayLayer from './TerminalPaneOverlayLayer'
