@@ -129,7 +129,8 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         runtimeEnvironments,
         runtimeStatusByEnvironmentId,
         hostLabelOverrides,
-        wslHostStatuses
+        wslHostStatuses,
+        wslHostsEnabled: args.settings?.experimentalWslHosts === true
       }),
     [
       repos,

@@ -5370,7 +5370,8 @@
           "addRemoteHostDetail": "SSH host or Orca server",
           "addWslHost": "Add WSL distro",
           "addWslHostDetail": "Run an Orca server inside a WSL 2 distro. Experimental.",
-          "addRemoteHostDetailWithWsl": "SSH host, Orca server, or WSL distro"
+          "addRemoteHostDetailWithWsl": "SSH host, Orca server, or WSL distro",
+          "turnOnWslHosts": "Turn on"
         },
         "AddRepoNestedImportStep": {
           "496f68cf8c": "Scanning repositories. Click to stop.",
@@ -6323,7 +6324,8 @@
           "alsoForgetLocal": "Also remove these {{value0}} from Orca",
           "advanced": "Advanced",
           "alsoDeleteRemoteHint": "Permanently deletes the remote Git worktrees and their branches. Cannot be undone.",
-          "alsoForgetLocalHint": "Clears them from Orca only. Remote files, worktrees, and branches are left untouched."
+          "alsoForgetLocalHint": "Clears them from Orca only. Remote files, worktrees, and branches are left untouched.",
+          "wslHost": "Removes {{value0}} from Orca and stops Orca’s server in that distro. Files in the distro are untouched."
         },
         "HostRenameDialog": {
           "1a2b3c4d5e": "Rename host",
@@ -6708,7 +6710,9 @@
           "unverifiable": "Can’t verify",
           "idle": "Idle",
           "failed": "Failed to start",
-          "kind": "WSL distro"
+          "kind": "WSL distro",
+          "turnedOff": "WSL hosts are turned off in Settings → Experimental",
+          "turnedOffShort": "Turned off in Settings → Experimental"
         }
       },
       "shared": {
@@ -12748,7 +12752,8 @@
           "description": "Orca runs a server inside each distro. A stopped distro starts only when you open one of its projects or connect it here.",
           "add": "Add WSL distro",
           "connect": "Connect",
-          "remove": "Remove"
+          "remove": "Remove",
+          "turnOn": "Turn on in Experimental"
         }
       },
       "right": {

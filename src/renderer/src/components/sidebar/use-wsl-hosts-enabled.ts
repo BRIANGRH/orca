@@ -9,3 +9,10 @@ export function useWslHostsEnabled(): boolean {
   const enabled = useAppStore((s) => s.settings?.experimentalWslHosts === true)
   return enabled && wslHostsAvailable()
 }
+
+/** Settings → Experimental → WSL distros as hosts. */
+export function openWslHostsExperimentalSetting(): void {
+  const { openSettingsPage, openSettingsTarget } = useAppStore.getState()
+  openSettingsPage()
+  openSettingsTarget({ pane: 'experimental', repoId: null, sectionId: 'wsl-hosts' })
+}

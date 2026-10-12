@@ -22,7 +22,11 @@ import type { PublicKnownRuntimeEnvironment } from '../../../../shared/runtime-e
 import type { RuntimeEnvironmentStatus } from '../../../../shared/runtime-host-status'
 import type { WslHostStatus } from '../../../../shared/wsl-host-types'
 import { translate } from '@/i18n/i18n'
-import { getWslHostRowDetail, getWslHostRowHealth } from './wsl-host-row-status'
+import {
+  getWslHostRowDetail,
+  getWslHostRowHealth,
+  getWslHostRowTurnedOffDetail
+} from './wsl-host-row-status'
 
 export type SidebarHostOption = {
   id: ExecutionHostId
@@ -39,6 +43,8 @@ export type SidebarHostOption = {
   mergedIntoHostId?: ExecutionHostId
   /** Set on a WSL host's row: the distro its Orca server runs in. */
   wslDistro?: string
+  /** A WSL host whose experiment is off: listed so its projects stay visible, never connected. */
+  wslTurnedOff?: true
 }
 
 export type SidebarHostScopeOption = {
@@ -64,6 +70,8 @@ export function buildSidebarHostOptions(args: {
   // options feed (host headers, scope picker, focus menu).
   hostLabelOverrides?: ReadonlyMap<ExecutionHostId, string>
   wslHostStatuses?: Readonly<Record<string, WslHostStatus>>
+  /** False keeps WSL hosts' rows but marks them turned off. */
+  wslHostsEnabled?: boolean
 }): SidebarHostOption[] {
   const configuredSshTargetIds = new Set(args.sshTargetLabels.keys())
   const projectSshTargetIds = new Set<string>()
@@ -116,13 +124,20 @@ export function buildSidebarHostOptions(args: {
     const status = wsl ? args.wslHostStatuses?.[wsl.environmentId] : undefined
     return {
       ...host,
-      ...(wsl
+      ...(wsl && args.wslHostsEnabled === false
         ? {
             wslDistro: wsl.distro,
-            detail: getWslHostRowDetail(status),
-            health: getWslHostRowHealth(host.health, status)
+            wslTurnedOff: true as const,
+            detail: getWslHostRowTurnedOffDetail(),
+            health: 'disconnected' as const
           }
-        : {}),
+        : wsl
+          ? {
+              wslDistro: wsl.distro,
+              detail: getWslHostRowDetail(status),
+              health: getWslHostRowHealth(host.health, status)
+            }
+          : {}),
       presence: host.id === activeRuntimeHostId ? 'active' : 'project'
     }
   })

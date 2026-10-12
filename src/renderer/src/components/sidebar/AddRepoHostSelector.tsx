@@ -22,9 +22,15 @@ type AddRepoHostSelectorProps = {
   onAddRemoteServer?: () => void
   /** Present only where WSL hosts are available and turned on. */
   onAddWslHost?: () => void
+  /** Opens Experimental → WSL distros as hosts, for a WSL host listed while that is off. */
+  onOpenWslHostsSetting?: () => void
 }
 
 function getHostStatusDetail(host: SidebarHostOption): string {
+  // Why only the detail: "Disconnected" would read as a failure, not a switched-off feature.
+  if (host.wslTurnedOff) {
+    return host.detail
+  }
   if (host.compatibility?.kind === 'blocked') {
     return describeRuntimeCompatBlock(host.compatibility)
   }
@@ -40,7 +46,8 @@ export function AddRepoHostSelector({
   onConnectHost,
   onAddSshHost,
   onAddRemoteServer,
-  onAddWslHost
+  onAddWslHost,
+  onOpenWslHostsSetting
 }: AddRepoHostSelectorProps): React.JSX.Element | null {
   const [addHostOpen, setAddHostOpen] = useState(false)
   const showHostSetupActions = Boolean(onAddSshHost || onAddRemoteServer || onAddWslHost)
@@ -196,7 +203,10 @@ export function AddRepoHostSelector({
               {hosts.map((host) => {
                 const selected = host.id === selectedHostId
                 const disabled = !canSelectAddRepoHost(host)
-                const canConnect = canConnectAddRepoHost(host)
+                const canConnectHost = canConnectAddRepoHost(host)
+                const canTurnOn = host.wslTurnedOff === true && onOpenWslHostsSetting !== undefined
+                // Why one flag: either action keeps the otherwise unselectable row interactive.
+                const canConnect = canConnectHost || canTurnOn
                 const isConnecting = host.health === 'connecting'
                 return (
                   <CommandItem
@@ -230,7 +240,7 @@ export function AddRepoHostSelector({
                         <span className="min-w-0 flex-1 truncate">{getHostStatusDetail(host)}</span>
                       </span>
                     </span>
-                    {canConnect ? (
+                    {canConnectHost ? (
                       <Button
                         type="button"
                         variant="link"
@@ -253,6 +263,24 @@ export function AddRepoHostSelector({
                               'auto.components.sidebar.AddRepoHostSelector.connect',
                               'Connect'
                             )}
+                      </Button>
+                    ) : canTurnOn ? (
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="xs"
+                        className="ml-2 self-center"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          onOpenChange(false)
+                          onOpenWslHostsSetting()
+                        }}
+                      >
+                        {translate(
+                          'auto.components.sidebar.AddRepoHostSelector.turnOnWslHosts',
+                          'Turn on'
+                        )}
                       </Button>
                     ) : null}
                   </CommandItem>

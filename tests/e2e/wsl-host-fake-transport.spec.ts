@@ -76,6 +76,13 @@ async function launchDesktopWithFakeWsl(
   }
 }
 
+async function setWslHostsEnabled(page: Page, enabled: boolean): Promise<void> {
+  await page.evaluate(async (experimentalWslHosts) => {
+    const settings = await window.api.settings.set({ experimentalWslHosts })
+    window.__store?.setState({ settings })
+  }, enabled)
+}
+
 async function settleAnimations(page: Page): Promise<void> {
   // Why finite only: spinners and pulses run forever; the dialog and popover fades do not.
   await page.waitForFunction(() =>
@@ -112,10 +119,7 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
   const projectPath = createGitProject()
   try {
     const { page } = desktop
-    await page.evaluate(async () => {
-      const settings = await window.api.settings.set({ experimentalWslHosts: true })
-      window.__store?.setState({ settings })
-    })
+    await setWslHostsEnabled(page, true)
 
     await openSidebarProjectDialog(page)
     const addProject = page.getByRole('dialog', { name: /Add a project/i })
@@ -212,6 +216,59 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     await page.keyboard.press('Enter')
     await waitForTerminalOutput(page, 'WSL_HOST_TERMINAL_ready', 30_000)
     await page.screenshot({ path: testInfo.outputPath('wsl-host-terminal.png') })
+
+    // Experiment off: the host stays listed so its projects never seem to vanish, but turned off.
+    await setWslHostsEnabled(page, false)
+    await openSidebarProjectDialog(page)
+    await page
+      .getByRole('dialog', { name: /Add a project/i })
+      .getByRole('combobox')
+      .click()
+    const offRow = page.locator('[cmdk-item]').filter({ hasText: WSL_HOST_LABEL })
+    await expect(offRow).toContainText('Turned off in Settings → Experimental')
+    await expect(offRow.getByRole('button', { name: 'Turn on' })).toBeVisible()
+    await expect(offRow.getByRole('button', { name: 'Connect' })).toHaveCount(0)
+    await settleAnimations(page)
+    await page.screenshot({ path: testInfo.outputPath('wsl-host-row-turned-off.png') })
+    await page.keyboard.press('Escape')
+    const addProjectAgain = page.getByRole('dialog', { name: /Add a project/i })
+    await expect(offRow).toBeHidden()
+    await page.keyboard.press('Escape')
+    await expect(addProjectAgain).toBeHidden()
+
+    await page.evaluate(() => {
+      const state = window.__store?.getState()
+      state?.openSettingsPage()
+      state?.openSettingsTarget({ pane: 'servers', repoId: null })
+    })
+    const section = page.locator('[data-settings-section="wsl-hosts"]')
+    await section.scrollIntoViewIfNeeded()
+    await expect(section).toContainText('WSL hosts are turned off in Settings → Experimental')
+    await expect(section.getByRole('button', { name: 'Connect' })).toBeDisabled()
+    await settleAnimations(page)
+    await section.screenshot({ path: testInfo.outputPath('wsl-hosts-settings-turned-off.png') })
+
+    // Remove asks first, with WSL-specific copy, then drops the host.
+    await setWslHostsEnabled(page, true)
+    await section.getByRole('button', { name: 'Remove' }).click()
+    const confirm = page.getByRole('dialog', { name: `Remove ${WSL_HOST_LABEL}?` })
+    await expect(confirm).toContainText('stops Orca’s server in that distro')
+    await expect(confirm).toContainText('Files in the distro are untouched.')
+    await settleAnimations(page)
+    await page.screenshot({ path: testInfo.outputPath('wsl-host-remove-confirm.png') })
+    await confirm.getByRole('button', { name: 'Remove host' }).click()
+    await expect(confirm).toBeHidden({ timeout: 30_000 })
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (environmentId) =>
+            window.__store
+              ?.getState()
+              .runtimeEnvironments.some((environment) => environment.id === environmentId) ?? true,
+          WSL_ENVIRONMENT_ID
+        )
+      )
+      .toBe(false)
   } finally {
     await desktop.dispose()
     rmSync(projectPath, { recursive: true, force: true })

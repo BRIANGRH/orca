@@ -34,7 +34,8 @@ export function useSidebarHostScopeOptions(): {
         runtimeEnvironments,
         runtimeStatusByEnvironmentId,
         hostLabelOverrides,
-        wslHostStatuses
+        wslHostStatuses,
+        wslHostsEnabled: settings?.experimentalWslHosts === true
       }),
     [
       repos,

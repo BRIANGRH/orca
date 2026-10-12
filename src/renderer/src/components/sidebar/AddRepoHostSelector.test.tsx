@@ -183,4 +183,40 @@ describe('AddRepoHostSelector', () => {
     )
     expect(withoutWsl).not.toContain('Add WSL distro')
   })
+
+  it('offers Turn on instead of Connect for a WSL host whose experiment is off', () => {
+    const html = renderToStaticMarkup(
+      <AddRepoHostSelector
+        hosts={[
+          {
+            id: 'local',
+            label: 'Local PC',
+            detail: 'This computer',
+            kind: 'local',
+            health: 'local',
+            presence: 'local'
+          },
+          {
+            id: 'runtime:wsl%3Aubuntu',
+            label: 'Ubuntu (WSL)',
+            detail: 'Turned off in Settings → Experimental',
+            kind: 'runtime',
+            health: 'disconnected',
+            presence: 'project',
+            wslDistro: 'Ubuntu',
+            wslTurnedOff: true
+          }
+        ]}
+        selectedHostId="local"
+        open
+        onOpenChange={vi.fn()}
+        onSelectHost={vi.fn()}
+        onOpenWslHostsSetting={vi.fn()}
+      />
+    )
+    expect(html).toContain('Turned off in Settings → Experimental')
+    expect(html).not.toContain('Disconnected')
+    expect(html).toContain('Turn on')
+    expect(html).not.toContain('>Connect<')
+  })
 })

@@ -51,3 +51,19 @@ export function getWslHostRowDetail(status: WslHostStatus | undefined): string {
   const label = getWslHostStatusLabel(status)
   return label ? `${kind} · ${label}` : kind
 }
+
+/** Where a WSL host's row and settings say the experiment is off. */
+export function getWslHostsTurnedOffLabel(): string {
+  return translate(
+    'auto.components.sidebar.wslHostRowStatus.turnedOff',
+    'WSL hosts are turned off in Settings → Experimental'
+  )
+}
+
+/** The same state, short enough for a host-picker row. */
+export function getWslHostRowTurnedOffDetail(): string {
+  return translate(
+    'auto.components.sidebar.wslHostRowStatus.turnedOffShort',
+    'Turned off in Settings → Experimental'
+  )
+}

@@ -48,4 +48,29 @@ describe('WSL host row status', () => {
     expect(canSelectAddRepoHost(wsl)).toBe(false)
     expect(canConnectAddRepoHost(wsl)).toBe(true)
   })
+
+  it('keeps a WSL host’s row while the experiment is off, turned off and never connectable', () => {
+    const [, wsl] = buildSidebarHostOptions({
+      repos: [],
+      sshTargetLabels: new Map(),
+      settings: { activeRuntimeEnvironmentId: null },
+      runtimeEnvironments: [
+        {
+          id: 'wsl:ubuntu',
+          name: 'Ubuntu (WSL)',
+          orcadDeployment: { kind: 'wsl', distro: 'Ubuntu', localPort: 42000, remotePort: 6768 }
+        }
+      ],
+      wslHostStatuses: { 'wsl:ubuntu': status('ready') },
+      wslHostsEnabled: false
+    })
+    expect(wsl).toMatchObject({
+      label: 'Ubuntu (WSL)',
+      detail: 'Turned off in Settings → Experimental',
+      health: 'disconnected',
+      wslTurnedOff: true
+    })
+    expect(canSelectAddRepoHost(wsl)).toBe(false)
+    expect(canConnectAddRepoHost(wsl)).toBe(false)
+  })
 })
