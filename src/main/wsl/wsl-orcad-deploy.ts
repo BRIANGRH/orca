@@ -33,6 +33,7 @@ import { wslDistroHolderKey } from './wsl-distro-holder-record'
 import { readWslDistroRegistryId } from './wsl-distro-registry-id'
 import type { WslOrcadHostTarget } from './wsl-orcad-host-target'
 import { createWslOrcadHostTransport } from './wsl-orcad-host-transport'
+import { adoptUnrecordedWslOrcad } from './wsl-orcad-instance-adoption'
 
 export type WslOrcadLaunch =
   | {
@@ -46,6 +47,8 @@ export type WslOrcadLaunch =
       pid: number | null
       readiness: ServeReadiness
       holder: 'adopted' | 'spawned' | 'unverifiable'
+      /** An orcad the record did not name (e.g. left by a failed Remove), now recorded. */
+      adoptedInstance?: { version: string; pid: number }
     }
   | {
       outcome: 'deferred'
@@ -110,6 +113,11 @@ export async function deployAndLaunchWslOrcad(
   if (recovery.outcome === 'recovered') {
     context = { ...context, activationRecord: await readOrcadActivationRecord(slot) }
   }
+  // Before deploy or wake: an orcad the record does not name would keep the instance lock.
+  const adoption = await adoptUnrecordedWslOrcad(slot, context.activationRecord)
+  if (adoption.outcome === 'adopted') {
+    context = { ...context, activationRecord: adoption.record }
+  }
   const localOrcadDir = await materializeOrcadArtifact(context.serverTarget, { signal })
   const appVersion = getAppEnvironment().getVersion()
   const deployed = await deployOrcad({
@@ -169,7 +177,10 @@ export async function deployAndLaunchWslOrcad(
     fullVersion: deployed.fullVersion,
     pid: Number.isSafeInteger(pid) && pid > 0 ? pid : null,
     readiness,
-    holder: held.outcome
+    holder: held.outcome,
+    ...(adoption.outcome === 'adopted'
+      ? { adoptedInstance: { version: adoption.version, pid: adoption.pid } }
+      : {})
   }
 }
 

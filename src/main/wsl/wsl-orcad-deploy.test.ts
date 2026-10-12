@@ -14,8 +14,10 @@ const mocks = vi.hoisted(() => ({
   deploy: vi.fn(),
   probe: vi.fn(),
   prune: vi.fn(),
-  wake: vi.fn()
+  wake: vi.fn(),
+  adopt: vi.fn()
 }))
+vi.mock('./wsl-orcad-instance-adoption', () => ({ adoptUnrecordedWslOrcad: mocks.adopt }))
 
 vi.mock('../../shared/app-environment', () => ({
   getAppEnvironment: () => ({ getVersion: () => '1.5.0', getPath: () => '/user-data' })
@@ -103,6 +105,10 @@ describe('deployAndLaunchWslOrcad', () => {
       }
     })
     mocks.recover.mockResolvedValue({ outcome: 'none' })
+    mocks.adopt.mockImplementation(async () => {
+      mocks.steps.push('adopt-check')
+      return { outcome: 'none' }
+    })
     mocks.deploy.mockImplementation(async () => {
       mocks.steps.push('deploy+launch')
       return { outcome: 'installed-and-activated', fullVersion: '1.5.0+ab', verdict: {} }
@@ -121,7 +127,13 @@ describe('deployAndLaunchWslOrcad', () => {
       readiness: READINESS,
       holder: 'spawned'
     })
-    expect(mocks.steps).toEqual(['uname', 'hold:Ubuntu-24.04', 'context', 'deploy+launch'])
+    expect(mocks.steps).toEqual([
+      'uname',
+      'hold:Ubuntu-24.04',
+      'context',
+      'adopt-check',
+      'deploy+launch'
+    ])
     expect(seenTarget).toEqual({
       kind: 'wsl',
       id: 'wsl:ubuntu-24.04',
@@ -174,6 +186,56 @@ describe('deployAndLaunchWslOrcad', () => {
     mocks.wake.mockResolvedValueOnce({ outcome: 'started', readiness: READINESS })
     await expect(launch()).resolves.toMatchObject({ outcome: 'ready', port: 6790 })
     expect(mocks.wake).toHaveBeenCalledTimes(1)
+  })
+
+  // Real host (awin): a Remove that failed partway left orcad serving; the record named nothing.
+  it('deploys over an adopted unrecorded orcad under the SSH terminal gate, never a fresh launch', async () => {
+    const adoptedRecord = {
+      ...emptyOrcadActivationRecord(),
+      active: '0.1.0+aa',
+      activatedAt: '2026-10-12T01:00:00.000Z'
+    }
+    mocks.adopt.mockResolvedValueOnce({
+      outcome: 'adopted',
+      version: '0.1.0+aa',
+      pid: 500,
+      record: adoptedRecord
+    })
+    mocks.deploy.mockResolvedValueOnce({
+      outcome: 'installed-not-activated',
+      fullVersion: '1.5.0+ab',
+      code: 'orcad_update_terminal_census_unavailable',
+      reason: 'unknown census'
+    })
+    await expect(launch()).resolves.toMatchObject({ outcome: 'deferred', forceable: false })
+    expect(mocks.deploy.mock.calls[0][0]).toMatchObject({
+      censusRecord: adoptedRecord,
+      census: { liveSessions: null, startedSinceActivation: null, daemonProtocolVersion: null }
+    })
+  })
+
+  it('reports the adopted instance once the same version is serving', async () => {
+    mocks.adopt.mockResolvedValueOnce({
+      outcome: 'adopted',
+      version: '1.5.0+ab',
+      pid: 500,
+      record: { ...emptyOrcadActivationRecord(), active: '1.5.0+ab' }
+    })
+    mocks.deploy.mockResolvedValueOnce({ outcome: 'already-active', fullVersion: '1.5.0+ab' })
+    mocks.wake.mockResolvedValueOnce({ outcome: 'serving' })
+    await expect(launch()).resolves.toMatchObject({
+      outcome: 'ready',
+      adoptedInstance: { version: '1.5.0+ab', pid: 500 }
+    })
+  })
+
+  it('refuses to deploy or launch when an unrecorded orcad cannot be proven', async () => {
+    mocks.adopt.mockRejectedValueOnce(
+      Object.assign(new Error('cannot be identified'), { name: 'WslOrcadUnrecordedInstanceError' })
+    )
+    await expect(launch()).rejects.toMatchObject({ name: 'WslOrcadUnrecordedInstanceError' })
+    expect(mocks.deploy).not.toHaveBeenCalled()
+    expect(mocks.wake).not.toHaveBeenCalled()
   })
 
   it('returns a deferral rather than launching over live terminals', async () => {
