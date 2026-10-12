@@ -4,8 +4,9 @@
  * local WSL pane uses, and sends the result as env on the calls that start a process there.
  *
  * Only calls whose env cannot change their meaning are patched: a create that already brings its
- * own launch (env, launch config or launch agent), a plain shell, and `agent.launch`'s optional
- * `accountEnv`. A bare `command` keeps the host's Settings-default launch untouched.
+ * own launch (env, launch config or launch agent), a plain shell, `agent.launch`'s optional
+ * `accountEnv`, and the agent-session creates' `accountEnv` on a host advertising it. A bare
+ * `command` keeps the host's Settings-default launch untouched.
  */
 import { posix } from 'node:path'
 import {
@@ -16,7 +17,11 @@ import { isTuiAgent } from '../../shared/tui-agent-config'
 import type { TuiAgent } from '../../shared/tui-agent'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 import type { ClaudeRuntimeAuthPreparation } from '../claude-accounts/runtime-auth/runtime-auth-types'
-import { wslOrcadHostDistro } from './wsl-orcad-host-environments'
+import { AGENT_SESSION_ACCOUNT_ENV_RUNTIME_CAPABILITY } from '../../shared/agent-session-create-capabilities'
+import {
+  wslOrcadHostDistro,
+  type WslOrcadHostCapabilityVerdict
+} from './wsl-orcad-host-environments'
 
 export type WslAccountTarget = { runtime: 'wsl'; wslDistro: string }
 
@@ -27,6 +32,10 @@ export type WslOrcadAccountEnvDependencies = {
   claudeTerminalEnv(target: WslAccountTarget): Record<string, string>
   /** The selected Codex account's home (a UNC or guest path); null on System default. */
   prepareCodexHome(target: WslAccountTarget): Promise<string | null>
+  /** Whether an Orca-managed Claude or Codex account is selected for the distro. */
+  managedAccountSelected(target: WslAccountTarget): boolean
+  /** Tells the user the selected account was not applied: the distro's orcad predates it. */
+  accountNotApplied(distro: string): void
 }
 
 let installed: WslOrcadAccountEnvDependencies | null = null
@@ -42,6 +51,10 @@ export class WslOrcadAccountEnvError extends Error {
     super(message)
     this.name = 'WslOrcadAccountEnvError'
   }
+}
+
+function distroTarget(distro: string): WslAccountTarget {
+  return { runtime: 'wsl', wslDistro: distro }
 }
 
 function sameDistro(a: string | null | undefined, b: string): boolean {
@@ -74,7 +87,7 @@ export async function prepareWslOrcadAccountEnv(
   agent: TuiAgent | null,
   dependencies: WslOrcadAccountEnvDependencies
 ): Promise<Record<string, string>> {
-  const target: WslAccountTarget = { runtime: 'wsl', wslDistro: distro }
+  const target = distroTarget(distro)
   const env: Record<string, string> = {}
   if (agent === 'claude') {
     const preparation = await dependencies.prepareClaudeLaunch(target)
@@ -118,13 +131,28 @@ function tuiAgentOf(value: unknown): TuiAgent | null {
   return isTuiAgent(value) ? value : null
 }
 
-type EnvPatchPlan = { field: 'env' | 'accountEnv'; agent: TuiAgent | null }
+type EnvPatchPlan = {
+  field: 'env' | 'accountEnv'
+  agent: TuiAgent | null
+  /** Set when the host refuses an unknown field, so only an advertising host gets it. */
+  capability?: typeof AGENT_SESSION_ACCOUNT_ENV_RUNTIME_CAPABILITY
+}
 
 /** Null leaves the call untouched. */
 function envPatchPlan(method: string, params: Record<string, unknown>): EnvPatchPlan | null {
   if (method === 'agent.launch' || method === 'agent.launchReplay') {
     // A reused terminal starts no process, so it has no home to choose.
     return params.reuseTerminal ? null : { field: 'accountEnv', agent: tuiAgentOf(params.agent) }
+  }
+  if (
+    method === 'terminal.createAgentSession' ||
+    (method === 'terminal.ensureAgentSession' && params.kind === 'explicit')
+  ) {
+    return {
+      field: 'accountEnv',
+      agent: tuiAgentOf(params.agent),
+      capability: AGENT_SESSION_ACCOUNT_ENV_RUNTIME_CAPABILITY
+    }
   }
   if (method !== 'terminal.create' && method !== 'session.tabs.createTerminal') {
     return null
@@ -140,18 +168,35 @@ export type WslOrcadAccountEnvResult =
   | { ok: true; params: unknown }
   | { ok: false; message: string }
 
+export type WslOrcadAccountEnvCall = {
+  environmentId: string
+  method: string
+  params: unknown
+  /** Whether the host behind `environmentId` advertises `capability`. */
+  hostSupports: (capability: string) => Promise<WslOrcadHostCapabilityVerdict>
+}
+
 /** `params` with the account env of the WSL distro behind `environmentId`; as is for any other. */
 export async function withWslOrcadAccountEnv(
-  environmentId: string,
-  method: string,
-  params: unknown,
+  call: WslOrcadAccountEnvCall,
   dependencies: WslOrcadAccountEnvDependencies | null = installed,
   distroOf: (environmentId: string) => string | null = wslOrcadHostDistro
 ): Promise<WslOrcadAccountEnvResult> {
-  const distro = distroOf(environmentId)
-  const plan = distro && dependencies && isRecord(params) ? envPatchPlan(method, params) : null
+  const { params } = call
+  const distro = distroOf(call.environmentId)
+  const plan = distro && dependencies && isRecord(params) ? envPatchPlan(call.method, params) : null
   if (!plan || !distro || !dependencies || !isRecord(params)) {
     return { ok: true, params }
+  }
+  if (plan.capability) {
+    const verdict = await call.hostSupports(plan.capability)
+    if (verdict !== 'supported') {
+      // Why not refuse: this host has always started these with its default account.
+      if (verdict === 'unsupported' && dependencies.managedAccountSelected(distroTarget(distro))) {
+        dependencies.accountNotApplied(distro)
+      }
+      return { ok: true, params }
+    }
   }
   let env: Record<string, string>
   try {

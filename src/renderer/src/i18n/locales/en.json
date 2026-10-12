@@ -19564,6 +19564,10 @@
     "removePath": "Remove {{name}}"
   },
   "accounts": {
+    "wslAccountNotApplied": {
+      "title": "Account selection not applied in {{distro}}",
+      "description": "Agents there use the distro's default Claude and Codex accounts until Orca in WSL is updated."
+    },
     "antigravity": {
       "scope": "Manage the native agy account on {{host}}.",
       "signIn": "Start agy on this host and complete its browser sign-in, then save the current account. To add a different account, use /logout in agy and sign in again.",

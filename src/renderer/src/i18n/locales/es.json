@@ -19199,6 +19199,10 @@
     }
   },
   "accounts": {
+    "wslAccountNotApplied": {
+      "title": "No se aplicó la selección de cuenta en {{distro}}",
+      "description": "Los agentes allí usan las cuentas predeterminadas de Claude y Codex de la distribución hasta que se actualice Orca en WSL."
+    },
     "managedData": {
       "description": "Añade cuentas ejecutando este comando en una terminal del host de Orca. La selección se aplica a nuevos inicios del agente en ese host; las conexiones SSH directas y WSL alojado en Windows usan sus propias credenciales.",
       "copied": "Copiado",

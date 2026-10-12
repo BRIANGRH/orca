@@ -19353,6 +19353,10 @@
     "removePath": "Remove {{name}}"
   },
   "accounts": {
+    "wslAccountNotApplied": {
+      "title": "未在 {{distro}} 中应用账户选择",
+      "description": "在 WSL 中的 Orca 更新之前，那里的智能体将使用该发行版默认的 Claude 和 Codex 账户。"
+    },
     "managedData": {
       "description": "在 Orca 主机的终端中运行此命令以添加账户。选择适用于该主机上新启动的智能体；直接 SSH 连接和 Windows 托管的 WSL 使用各自的凭据。",
       "copied": "已复制",

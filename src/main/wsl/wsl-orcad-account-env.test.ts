@@ -6,6 +6,8 @@ import {
   withWslOrcadAccountEnv,
   type WslOrcadAccountEnvDependencies
 } from './wsl-orcad-account-env'
+import type { WslOrcadHostCapabilityVerdict } from './wsl-orcad-host-environments'
+import { AGENT_SESSION_ACCOUNT_ENV_RUNTIME_CAPABILITY } from '../../shared/agent-session-create-capabilities'
 
 const POINTER = '~/.orca-claude-profile-pointer-test'
 const CLAUDE_HOME = '/home/u/.orca/claude-accounts/acct-a/config'
@@ -35,6 +37,8 @@ function dependencies(
     prepareClaudeLaunch: vi.fn(async () => claudeLaunch()),
     claudeTerminalEnv: vi.fn(() => ({ ORCA_CLAUDE_PROFILE_POINTER: POINTER })),
     prepareCodexHome: vi.fn(async () => '\\\\wsl.localhost\\Ubuntu\\home\\u\\.orca\\codex-b'),
+    managedAccountSelected: vi.fn(() => true),
+    accountNotApplied: vi.fn(),
     ...overrides
   }
 }
@@ -98,8 +102,14 @@ describe('guestCodexHomePath', () => {
 
 describe('withWslOrcadAccountEnv', () => {
   const wsl = (id: string) => (id === 'wsl:ubuntu' ? 'Ubuntu' : null)
-  const run = (method: string, params: unknown, deps = dependencies(), id = 'wsl:ubuntu') =>
-    withWslOrcadAccountEnv(id, method, params, deps, wsl)
+  const run = (
+    method: string,
+    params: unknown,
+    deps = dependencies(),
+    id = 'wsl:ubuntu',
+    hostSupports: (capability: string) => Promise<WslOrcadHostCapabilityVerdict> = async () =>
+      'supported'
+  ) => withWslOrcadAccountEnv({ environmentId: id, method, params, hostSupports }, deps, wsl)
 
   it('leaves calls to any other environment untouched', async () => {
     const params = { worktree: 'id:wt' }
@@ -160,5 +170,84 @@ describe('withWslOrcadAccountEnv', () => {
     const deps = dependencies()
     await expect(run('terminal.list', {}, deps)).resolves.toEqual({ ok: true, params: {} })
     expect(deps.prepareCodexHome).not.toHaveBeenCalled()
+  })
+
+  describe('agent-session creates (strict schemas, capability-gated)', () => {
+    const create = { clientOperationId: 'op', worktree: 'id:wt', agent: 'claude' }
+    const resume = {
+      kind: 'explicit',
+      worktree: 'id:wt',
+      agent: 'codex',
+      providerSession: { key: 'session_id', id: 's-1' }
+    }
+
+    it('sets accountEnv on createAgentSession and an explicit ensure for an advertising host', async () => {
+      const hostSupports = vi.fn(async () => 'supported' as const)
+      const deps = dependencies()
+      await expect(
+        run('terminal.createAgentSession', create, deps, 'wsl:ubuntu', hostSupports)
+      ).resolves.toEqual({
+        ok: true,
+        params: {
+          ...create,
+          accountEnv: {
+            ORCA_CLAUDE_PROFILE_POINTER: POINTER,
+            CLAUDE_CONFIG_DIR: CLAUDE_HOME,
+            ORCA_CLAUDE_INJECTED_CONFIG_DIR: CLAUDE_HOME,
+            CODEX_HOME: '/home/u/.orca/codex-b'
+          }
+        }
+      })
+      expect(hostSupports).toHaveBeenCalledWith(AGENT_SESSION_ACCOUNT_ENV_RUNTIME_CAPABILITY)
+      await expect(
+        run('terminal.ensureAgentSession', resume, deps, 'wsl:ubuntu', hostSupports)
+      ).resolves.toMatchObject({ params: { accountEnv: { CODEX_HOME: '/home/u/.orca/codex-b' } } })
+      expect(deps.accountNotApplied).not.toHaveBeenCalled()
+    })
+
+    it('leaves the call as is and tells the user once the host is older', async () => {
+      const deps = dependencies()
+      const older = async () => 'unsupported' as const
+      await expect(
+        run('terminal.createAgentSession', create, deps, 'wsl:ubuntu', older)
+      ).resolves.toEqual({ ok: true, params: create })
+      await expect(
+        run('terminal.ensureAgentSession', resume, deps, 'wsl:ubuntu', older)
+      ).resolves.toEqual({ ok: true, params: resume })
+      expect(deps.prepareCodexHome).not.toHaveBeenCalled()
+      expect(deps.accountNotApplied).toHaveBeenCalledWith('Ubuntu')
+    })
+
+    it('stays silent on an older host when no managed account is selected', async () => {
+      const deps = dependencies({ managedAccountSelected: vi.fn(() => false) })
+      await run(
+        'terminal.createAgentSession',
+        create,
+        deps,
+        'wsl:ubuntu',
+        async () => 'unsupported'
+      )
+      expect(deps.accountNotApplied).not.toHaveBeenCalled()
+    })
+
+    it('treats an unanswered capability probe as unknown: no field, no notice', async () => {
+      const deps = dependencies()
+      await expect(
+        run('terminal.createAgentSession', create, deps, 'wsl:ubuntu', async () => 'unknown')
+      ).resolves.toEqual({ ok: true, params: create })
+      expect(deps.accountNotApplied).not.toHaveBeenCalled()
+    })
+
+    it('never probes or patches an automatic ensure or another environment', async () => {
+      const hostSupports = vi.fn(async () => 'supported' as const)
+      const automatic = { kind: 'automatic', sleepingCheckpointId: 'x'.repeat(32) }
+      await expect(
+        run('terminal.ensureAgentSession', automatic, dependencies(), 'wsl:ubuntu', hostSupports)
+      ).resolves.toEqual({ ok: true, params: automatic })
+      await expect(
+        run('terminal.createAgentSession', create, dependencies(), 'ssh-1', hostSupports)
+      ).resolves.toEqual({ ok: true, params: create })
+      expect(hostSupports).not.toHaveBeenCalled()
+    })
   })
 })

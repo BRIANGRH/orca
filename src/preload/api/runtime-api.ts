@@ -16,6 +16,7 @@ import type {
   BrowserPageCreationPlacement
 } from '../../shared/browser-client-host-placement'
 import type { RemoteRuntimeSharedConnectionDiagnostics } from '../../shared/remote-runtime-shared-control-types'
+import type { WslOrcadAccountNotAppliedEvent } from '../../shared/wsl-orcad-account-notice'
 
 export type RuntimeEnvironmentSubscriptionHandle = {
   unsubscribe: () => void
@@ -112,6 +113,10 @@ export type RuntimeApi = {
         transportGeneration: number
         diagnostics: RemoteRuntimeSharedConnectionDiagnostics
       }) => void
+    ) => () => void
+    // Absent in the web client, which has no desktop account shim.
+    onWslAccountNotApplied?: (
+      callback: (event: WslOrcadAccountNotAppliedEvent) => void
     ) => () => void
     prepareBrowserClientHostPlacement: (
       args: BrowserClientHostPlacementPreparationRequest

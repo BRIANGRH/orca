@@ -19340,6 +19340,10 @@
     "removePath": "Remove {{name}}"
   },
   "accounts": {
+    "wslAccountNotApplied": {
+      "title": "Sélection de compte non appliquée dans {{distro}}",
+      "description": "Les agents y utilisent les comptes Claude et Codex par défaut de la distribution jusqu'à la mise à jour d'Orca dans WSL."
+    },
     "managedData": {
       "description": "Ajoutez des comptes en exécutant cette commande dans un terminal sur l’hôte Orca. La sélection s’applique aux nouveaux lancements sur cet hôte ; les connexions SSH directes et WSL sous Windows utilisent leurs propres identifiants.",
       "copied": "Copié",

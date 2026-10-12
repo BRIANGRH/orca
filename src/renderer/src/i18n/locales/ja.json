@@ -19339,6 +19339,10 @@
     "removePath": "Remove {{name}}"
   },
   "accounts": {
+    "wslAccountNotApplied": {
+      "title": "{{distro}} ではアカウントの選択が適用されていません",
+      "description": "WSL 内の Orca が更新されるまで、そこの Agent はディストリビューションの既定の Claude と Codex アカウントを使用します。"
+    },
     "managedData": {
       "description": "Orca ホストのターミナルでこのコマンドを実行してアカウントを追加します。選択はそのホストでの新規 Agent 起動に適用されます。直接 SSH 接続とWindows上の WSL は独自の認証情報を使用します。",
       "copied": "コピーしました",
