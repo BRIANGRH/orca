@@ -4,7 +4,7 @@ import type * as ExternalEditorLaunch from '../external-editor-launch'
 
 const { handleMock, launchMock, showItemInFolderMock, statMock, distroForEnvironmentMock } =
   vi.hoisted(() => ({
-    handleMock: vi.fn(),
+    handleMock: vi.fn<(channel: string, handler: (...args: unknown[]) => unknown) => void>(),
     launchMock: vi.fn(),
     showItemInFolderMock: vi.fn(),
     statMock: vi.fn(),
@@ -59,13 +59,13 @@ import { toRuntimeExecutionHostId } from '../../shared/execution-host'
 const WSL_OWNER = toRuntimeExecutionHostId('wsl:Ubuntu')
 const UNC = '\\\\wsl.localhost\\Ubuntu\\home\\me\\my repo'
 
-function getHandler(channel: string): (event: unknown, ...args: unknown[]) => Promise<unknown> {
-  registerShellHandlers({ getSshTarget: () => undefined } as never)
-  const call = handleMock.mock.calls.find((c: unknown[]) => c[0] === channel)
-  if (!call) {
+function getHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+  registerShellHandlers({ getSshTarget: () => undefined })
+  const handler = handleMock.mock.calls.find(([name]) => name === channel)?.[1]
+  if (!handler) {
     throw new Error(`${channel} handler not registered`)
   }
-  return call[1] as (event: unknown, ...args: unknown[]) => Promise<unknown>
+  return async (...args) => handler(...args)
 }
 
 describe('shell handlers for a WSL-owned path', () => {

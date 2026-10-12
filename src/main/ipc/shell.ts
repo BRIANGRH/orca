@@ -50,7 +50,7 @@ async function openInFileManager(
 }
 
 async function openInExternalEditor(
-  store: Store,
+  store: Pick<Store, 'getSshTarget'>,
   request: ShellOpenExternalEditorRequest
 ): Promise<ShellOpenExternalEditorResult> {
   const connectionId = request.connectionId?.trim()
@@ -117,7 +117,7 @@ async function openWithSystemDefault(pathValue: string, ownerHostId: unknown): P
   }
 }
 
-export function registerShellHandlers(store: Store): void {
+export function registerShellHandlers(store: Pick<Store, 'getSshTarget'>): void {
   ipcMain.handle(
     'shell:openPath',
     async (_event, path: string, ownerHostId: unknown): Promise<void> => {
