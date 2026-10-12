@@ -126,6 +126,27 @@ describe("each subagent's saved row", () => {
     })
   })
 
+  it("names a nested helper's parent by the parent's own id, and keeps it once that record is gone", async () => {
+    const r = await rig()
+    const parent = child({ id: 'record-parent', providerId: 'agent-parent' })
+    const nested = child({
+      id: 'record-nested',
+      providerId: 'agent-nested',
+      parentChildWorkId: 'record-parent'
+    })
+    await r.report([parent, nested])
+    const parentOf = (id: string) => r.saved().find(({ block }) => block.id === id)?.block.parentId
+    expect(parentOf('agent-nested')).toBe('agent-parent')
+    expect(parentOf('agent-parent')).toBeUndefined()
+
+    // The parent's record retired; the nested helper's next change keeps the parent its row names.
+    await r.report([{ ...nested, parentChildWorkId: undefined, totalTokens: 30 }])
+    expect(r.saved().find(({ block }) => block.id === 'agent-nested')?.block).toMatchObject({
+      parentId: 'agent-parent',
+      tokens: 30
+    })
+  })
+
   it('writes nothing for a record its row already says', async () => {
     const r = await rig()
     await r.report([child()])

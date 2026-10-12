@@ -25,8 +25,8 @@ import { structuredAgentSessionConversationFence } from './structured-agent-sess
 
 /** The chat strip's roster: the host's running child records for one session, the same selection
  *  the session list carries, with the legacy task rows an older client reads derived from them. No
- *  running child, and none the host failed to record, is `null`, and the strip hides. Each subscriber's frames carry it; see
- *  `agent-session-subscriber-frame-fields`. */
+ *  running child, and none the host failed to record, is `null`, and the strip hides. Each
+ *  subscriber's frames carry it; see `agent-session-subscriber-frame-fields`. */
 export class StructuredAgentSessionBackgroundTaskChannel {
   constructor(
     private readonly deps: StructuredAgentSessionHostDeps,

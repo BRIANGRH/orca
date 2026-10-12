@@ -56,7 +56,9 @@ export type AgentSessionBackgroundTaskState = {
    *  rows are settled: to it, as before, the roster is live work. */
   children?: AgentChildWorkView[]
   /** The host refused some of this session's child work for room, so what is listed is not all
-   *  that runs; no row's absence means it ended. Lasts until the provider session ends. */
+   *  that runs; no row's absence means it ended. A refused child stops counting once a later
+   *  report of it is admitted or it reports its own end; past the host's bound, and in every case
+   *  once the provider session ends, the whole flag goes. */
   incomplete?: true
 }
 
