@@ -4,6 +4,7 @@
 // sealed environment; it only adds what is that agent's.
 
 import type { AgentSessionJournalIdentity } from '../../shared/agent-session-journal-types'
+import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import type { AgentSessionRecord } from '../../shared/agent-session-record'
 import { isNativeLocalLocation } from '../../shared/execution-host'
 import type { StructuredAgentDefinition } from '../native-chat/agent-session-wire/structured-agent-definition'
@@ -53,12 +54,15 @@ export type StructuredAgentLaunchBasis = {
   /** For a part that found no program: refreshes the environment, after which both environment
    *  reads return the refreshed one. Absent when the runtime never retries. */
   refreshAfterMissingProgram?: (askedAt: number) => Promise<void>
+  /** The permission mode the host decided this start runs with; absent asks. */
+  permissionMode?: AgentChatPermissionMode
 }
 
 export type StructuredLaunchRequest = {
   identity: AgentSessionJournalIdentity
   /** The reservation's token, which the seal hands the child. */
   spawnToken: string
+  permissionMode?: AgentChatPermissionMode
 }
 
 export type StructuredAgentLaunchPart<L> = {
@@ -132,7 +136,8 @@ async function composedPart<L>(
   definition: StructuredAgentDefinition,
   sources: StructuredAgentLaunchSources,
   part: StructuredAgentLaunchPartResolver<L>,
-  identity: AgentSessionJournalIdentity
+  identity: AgentSessionJournalIdentity,
+  permissionMode?: AgentChatPermissionMode
 ): Promise<StructuredAgentLaunchPart<L> & { cwd: string }> {
   const record = admittedRecord(definition, sources.store, identity.sessionId)
   const launchEnv = once(() => sources.resolveAgentLaunchEnv?.(definition.agent) ?? {})
@@ -157,7 +162,8 @@ async function composedPart<L>(
             environments = readEnvironments()
           }
         }
-      : {})
+      : {}),
+    ...(permissionMode ? { permissionMode } : {})
   }
   const composed = await part(basis, identity)
   return { ...composed, cwd: await basis.launchDirectory() }
@@ -168,12 +174,13 @@ export function composeStructuredLaunch<L>(
   sources: StructuredAgentLaunchSources,
   part: StructuredAgentLaunchPartResolver<L>
 ): StructuredAgentLaunchResolver<L> {
-  return async ({ identity, spawnToken }) => {
+  return async ({ identity, spawnToken, permissionMode }) => {
     const { launch, cwd, env, inheritedEnvToDelete, cliRuntimeCommand } = await composedPart(
       definition,
       sources,
       part,
-      identity
+      identity,
+      permissionMode
     )
     const child = sealStructuredSessionChild({
       sessionId: identity.sessionId,

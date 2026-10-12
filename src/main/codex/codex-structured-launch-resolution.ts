@@ -12,7 +12,7 @@ import { resolveCodexCommand } from '../codex-cli/command'
 import { resolveAgainAfterRefreshOnMissingProgram } from '../native-chat/structured-agent-command-resolution'
 import type { StructuredAgentLaunchPartResolver } from '../runtime/structured-agent-launch-composition'
 import type { CodexStructuredLaunch } from './codex-structured-session-adapter'
-import type { CodexStructuredPermissionPolicy } from './codex-structured-permission-policy'
+import { codexStructuredPermissionPolicy } from './codex-structured-permission-policy'
 import { resolvePinnedCodexRolloutProof } from './codex-pinned-rollout-proof'
 import { codexStructuredLaunchArgs } from './codex-structured-launch-args'
 import {
@@ -25,9 +25,6 @@ export type CodexStructuredLaunchPartDeps = {
   /** Overridden in tests; production scans the boot-cached PATH and version-manager dirs. */
   resolveCommand?: (options?: { pathEnv?: string | null; homePath?: string }) => string
   resolveRollout?: typeof resolvePinnedCodexRolloutProof
-  /** The user's Agent Permissions setting as thread policy, re-read per acquisition.
-   *  States both postures outright — a resume inherits the last one for any field left absent. */
-  resolvePermissionPolicy?: () => CodexStructuredPermissionPolicy
 }
 
 export type CodexStructuredInvocationDeps = Pick<
@@ -88,7 +85,6 @@ export function codexStructuredLaunchPart(
     })
     const environment = await basis.environment()
     const args = codexStructuredLaunchArgs(await deps.resolveLaunchArgs())
-    const permissionPolicy = deps.resolvePermissionPolicy?.()
     const head = agentSessionProviderHandleChainHead(record.providerHandleChain)
     // A Codex record's chain holds only Codex handles; the launch admission refuses anything else.
     const resumeThreadId = head?.handle.nativeId ?? null
@@ -108,7 +104,8 @@ export function codexStructuredLaunchPart(
         // Only a thread this session created may still be one Codex never saved: a resumed,
         // forked or adopted head names a conversation Codex held.
         ...(resumeThreadId && head?.origin === 'created' ? { supersedeIfUnsaved: true } : {}),
-        ...(permissionPolicy ? { permissionPolicy } : {}),
+        // States every posture outright: a resume inherits the last one for any field left absent.
+        permissionPolicy: codexStructuredPermissionPolicy(basis.permissionMode ?? 'ask'),
         ...(model ? { model } : {}),
         ...(visuals ? { visuals } : {}),
         ...(resumeThreadId

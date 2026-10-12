@@ -184,6 +184,8 @@
   },
   "settings": {
     "chat": {
+      "permissionsTitle": "Permissions for new chats",
+      "permissionsDescription": "Applies to new chats only. Agents you open in a terminal use Settings → Agents → Agent Permissions.",
       "description": "Choose how chats look and behave.",
       "names": {
         "title": "Chat names",
@@ -18337,6 +18339,19 @@
         "attachmentOwnerChanged": "This workspace changed hosts while attaching — drop the files again.",
         "attachmentUnreadable": "Couldn't read the dropped files.",
         "tooManyAttachments": "Attach {{value0}} or fewer files at a time.",
+        "permissions": "Permissions",
+        "permissionAsk": "Ask for approval",
+        "permissionAskDescription": "Asks before edits and commands your settings don't allow",
+        "permissionAskCodexDescription": "Edits files and runs commands in this workspace; asks before anything else",
+        "permissionAskSharedDescription": "Asks before edits or commands it isn't already allowed to make",
+        "permissionAcceptEdits": "Accept edits",
+        "permissionAcceptEditsDescription": "Approves file edits and file commands; asks for the rest",
+        "permissionAuto": "Approve for me",
+        "permissionAutoDescription": "Reviews approval requests for you",
+        "permissionFullAccess": "Full access",
+        "permissionFullAccessDescription": "Never asks before edits or commands",
+        "permissionFullAccessCodexDescription": "Never asks; can edit any file and use the network",
+        "permissionFullAccessSharedDescription": "Never asks before edits or commands",
         "pasteFailed": "Paste failed.",
         "commandAttachmentsUnsupported": "Remove attachments before using a chat-session command."
       },

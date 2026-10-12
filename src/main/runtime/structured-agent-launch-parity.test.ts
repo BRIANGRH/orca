@@ -126,6 +126,7 @@ import {
 } from '../../shared/agent-hook-scrub-safe-env'
 import { STRUCTURED_WORKER_HANDLE_PREFIX } from '../../shared/structured-worker-handle'
 import { YOLO_TUI_AGENT_ARGS } from '../../shared/tui-agent-permissions'
+import { agentChatPermissionModes } from '../../shared/agent-chat-permission-mode'
 import {
   AGENT_HOOK_RUNTIME_ENV_KEYS,
   ORCA_AGENT_SESSION_CALLER_ENV_KEYS
@@ -637,6 +638,10 @@ describe.skipIf(process.platform === 'win32')('native-chat launch parity', () =>
         },
         fence: 1,
         spawnToken: SPAWN_TOKEN,
+        // Claude and Codex chats run their own mode, which the host hands the start.
+        ...(launch.configured && agentChatPermissionModes(launch.agent)
+          ? { permissionMode: 'full-access' as const }
+          : {}),
         events: eventSink()
       }
       capture.spawns.length = 0

@@ -79,7 +79,9 @@ exports[`native-chat launch parity > claude floating fresh 1`] = `
       "nodeEnv": {},
     },
   },
-  "launchPosture": {},
+  "launchPosture": {
+    "permissionMode": "default",
+  },
   "pinnedLaunchDirectories": [
     "<root>/floating",
   ],
@@ -165,7 +167,9 @@ exports[`native-chat launch parity > claude floating resumed 1`] = `
       "nodeEnv": {},
     },
   },
-  "launchPosture": {},
+  "launchPosture": {
+    "permissionMode": "default",
+  },
   "pinnedLaunchDirectories": [],
 }
 `;
@@ -249,7 +253,9 @@ exports[`native-chat launch parity > claude worktree fresh 1`] = `
       "nodeEnv": {},
     },
   },
-  "launchPosture": {},
+  "launchPosture": {
+    "permissionMode": "default",
+  },
   "pinnedLaunchDirectories": [],
 }
 `;
@@ -413,7 +419,9 @@ exports[`native-chat launch parity > claude worktree fresh worker 1`] = `
       "nodeEnv": {},
     },
   },
-  "launchPosture": {},
+  "launchPosture": {
+    "permissionMode": "default",
+  },
   "pinnedLaunchDirectories": [],
 }
 `;
@@ -497,7 +505,9 @@ exports[`native-chat launch parity > claude worktree resumed 1`] = `
       "nodeEnv": {},
     },
   },
-  "launchPosture": {},
+  "launchPosture": {
+    "permissionMode": "default",
+  },
   "pinnedLaunchDirectories": [],
 }
 `;
@@ -649,6 +659,7 @@ exports[`native-chat launch parity > codex floating fresh 1`] = `
   "launchPosture": {
     "permissionPolicy": {
       "approvalPolicy": "on-request",
+      "approvalsReviewer": "user",
       "sandbox": "workspace-write",
     },
   },
@@ -720,6 +731,7 @@ exports[`native-chat launch parity > codex floating resumed 1`] = `
   "launchPosture": {
     "permissionPolicy": {
       "approvalPolicy": "on-request",
+      "approvalsReviewer": "user",
       "sandbox": "workspace-write",
     },
   },
@@ -789,6 +801,7 @@ exports[`native-chat launch parity > codex worktree fresh 1`] = `
   "launchPosture": {
     "permissionPolicy": {
       "approvalPolicy": "on-request",
+      "approvalsReviewer": "user",
       "sandbox": "workspace-write",
     },
   },
@@ -857,6 +870,7 @@ exports[`native-chat launch parity > codex worktree fresh configured 1`] = `
   "launchPosture": {
     "permissionPolicy": {
       "approvalPolicy": "never",
+      "approvalsReviewer": "user",
       "sandbox": "danger-full-access",
     },
   },
@@ -927,6 +941,7 @@ exports[`native-chat launch parity > codex worktree fresh worker 1`] = `
   "launchPosture": {
     "permissionPolicy": {
       "approvalPolicy": "on-request",
+      "approvalsReviewer": "user",
       "sandbox": "workspace-write",
     },
   },
@@ -996,6 +1011,7 @@ exports[`native-chat launch parity > codex worktree resumed 1`] = `
   "launchPosture": {
     "permissionPolicy": {
       "approvalPolicy": "on-request",
+      "approvalsReviewer": "user",
       "sandbox": "workspace-write",
     },
   },
@@ -1064,6 +1080,7 @@ exports[`native-chat launch parity > codex worktree resumed configured 1`] = `
   "launchPosture": {
     "permissionPolicy": {
       "approvalPolicy": "never",
+      "approvalsReviewer": "user",
       "sandbox": "danger-full-access",
     },
   },
