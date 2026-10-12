@@ -12,6 +12,14 @@ import {
 import { encodeNdjson } from '../../shared/main-process-ndjson-framer'
 import { resolveJsonlRpcPeerOptions } from '../jsonl-rpc/peer-limits'
 import { sessionId, setup } from './rpc-session-adapter.test-support'
+import type * as ClaudeDispatchContent from '../claude/claude-structured-dispatch-content'
+import { readClaudeImage } from '../claude/claude-structured-dispatch-content'
+import { prepareStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-selection'
+
+vi.mock('../claude/claude-structured-dispatch-content', async (importOriginal) => {
+  const actual = await importOriginal<typeof ClaudeDispatchContent>()
+  return { ...actual, readClaudeImage: vi.fn(actual.readClaudeImage) }
+})
 
 function message(text: string): AgentJournalMessageItem {
   return { kind: 'message', role: 'user', blocks: [{ type: 'text', text }] }
@@ -151,5 +159,32 @@ describe('Pi stopped history', () => {
       body: (id) => stopped.find((entry) => entry.submission.clientMessageId === id)?.body ?? null
     })
     expect(owedAfter.map((entry) => entry.submission.clientMessageId)).toEqual(['a', 'b'])
+  })
+
+  it('a carried image that never reads leaves the send to go alone within the limit, history owed', async () => {
+    const h = await setup()
+    // A stalled drive: the read never settles, and Pi's own read has no deadline.
+    vi.mocked(readClaudeImage).mockImplementationOnce(() => new Promise(() => {}))
+    const stalled = owed('a', 'look')
+    stalled.body.blocks.unshift({ type: 'image-ref', path: '/stalled/drive/shot.png' })
+    const body = message('what did I send?')
+    const logger = { warn: vi.fn(), error: vi.fn() }
+    const startedAt = Date.now()
+    const prepared = await prepareStoppedHistory(
+      { sessionId, fence: 7, adapter: h.adapter, logger },
+      body,
+      [stalled],
+      50
+    )
+    expect(prepared).toBeNull()
+    expect(Date.now() - startedAt).toBeLessThan(5_000)
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+    expect(
+      await h.adapter.dispatch({ sessionId, fence: 7, clientMessageId: 'next', body })
+    ).toEqual({ state: 'admitted' })
+
+    expect(h.connection.sent).toEqual([
+      expect.objectContaining({ type: 'prompt', message: 'what did I send?', images: [] })
+    ])
   })
 })

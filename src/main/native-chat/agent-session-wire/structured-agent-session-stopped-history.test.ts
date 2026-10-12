@@ -3,13 +3,14 @@
 // send instead. Against the real host, store and journal, with an agent that stays starting until
 // the test proves its start.
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   agentSessionFailureFact,
   type SubmissionRejectionKind
 } from '../../../shared/agent-session-failure'
 import { agentSessionFailureWords } from '../../../shared/agent-session-failure-words'
 import type { AgentJournalMessageItem } from '../../../shared/agent-session-journal-types'
+import type { OwedStoppedMessage } from '../../../shared/agent-session-stopped-history'
 import { projectStructuredAgentSessionMessages } from '../../../shared/structured-agent-session-message-projection'
 import { isStructuredAgentSessionMainAgentWorking } from '../../../shared/structured-agent-session-main-agent-working'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
@@ -488,6 +489,33 @@ describe('an agent that cannot append carries them in the next send', () => {
     const alone = await nextSend('alone')
     await rig.settleAccepted(alone, 'alone')
     fails = false
+    await nextSend('next')
+
+    expect(dispatched()).toEqual(['alone', 'next <- [first]'])
+  })
+
+  it('a preparation that stalls sends the message alone after its limit, and holds Stop no longer', async () => {
+    let stalls = true
+    const prepareDispatch = vi.fn(async ({ owed }: { owed: readonly OwedStoppedMessage[] }) =>
+      stalls
+        ? new Promise<null>(() => {})
+        : new RigPreparedDispatch(
+            owed.map((entry) => entry.submission.clientMessageId),
+            owed.map((entry) => text(entry.body))
+          )
+    )
+    await carrying({ prepareDispatch })
+    await stopWhileStarting('first')
+    const { id: alone, result } = rig.send('alone')
+    expect(await result).toMatchObject({ ok: true })
+    await rig.proveStart()
+    await eventually(() => expect(prepareDispatch).toHaveBeenCalledTimes(1))
+    // Pressed while the stalled preparation holds the lane.
+    const pressedAt = Date.now()
+    expect(await rig.stop()).toMatchObject({ ok: true })
+    expect(Date.now() - pressedAt).toBeLessThan(5_000)
+    await rig.settleAccepted(alone, 'alone')
+    stalls = false
     await nextSend('next')
 
     expect(dispatched()).toEqual(['alone', 'next <- [first]'])

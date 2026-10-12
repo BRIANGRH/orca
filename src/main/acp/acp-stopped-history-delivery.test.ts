@@ -14,6 +14,14 @@ import {
 import { acpLaunchSpecFor } from './acp-launch-specs'
 import { resolveAcpPeerOptions } from './acp-peer-limits'
 import { openAcpAdapterRig, sendHello, waitFor } from './acp-structured-adapter.test-support'
+import type * as NodeBoundedFileReader from '../../shared/node-bounded-file-reader'
+import { readNodeFileWithinLimit } from '../../shared/node-bounded-file-reader'
+import { prepareStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-selection'
+
+vi.mock('../../shared/node-bounded-file-reader', async (importOriginal) => {
+  const actual = await importOriginal<typeof NodeBoundedFileReader>()
+  return { ...actual, readNodeFileWithinLimit: vi.fn(actual.readNodeFileWithinLimit) }
+})
 
 afterEach(async () => {
   await closeProviderTimelineRigs()
@@ -189,5 +197,44 @@ describe('ACP stopped history', () => {
     // The session is free for the next send.
     await sendHello(rig, 'after')
     await rig.frame('session/prompt')
+  })
+
+  it('a carried image that never reads leaves the send to go alone within the limit, history owed', async () => {
+    const rig = await openAcpAdapterRig({
+      spec: acpLaunchSpecFor('opencode')!,
+      initialize: { agentCapabilities: { loadSession: true, promptCapabilities: { image: true } } }
+    })
+    await rig.acquire()
+    // A stalled drive: the read never settles.
+    vi.mocked(readNodeFileWithinLimit).mockImplementationOnce(() => new Promise(() => {}))
+    const stalled: AgentJournalMessageItem = {
+      kind: 'message',
+      role: 'user',
+      blocks: [
+        { type: 'image-ref', path: '/stalled/drive/shot.png' },
+        { type: 'text', text: 'look' }
+      ]
+    }
+    const logger = { warn: vi.fn(), error: vi.fn() }
+    const startedAt = Date.now()
+    const prepared = await prepareStoppedHistory(
+      { sessionId: SESSION, fence: 1, adapter: rig.adapter, logger },
+      NEXT,
+      [owed('a', stalled)],
+      50
+    )
+    expect(prepared).toBeNull()
+    expect(Date.now() - startedAt).toBeLessThan(5_000)
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+    await rig.adapter.dispatch({
+      sessionId: SESSION,
+      clientMessageId: 'next',
+      body: NEXT,
+      fence: 1
+    })
+
+    expect(promptOf(await rig.frame('session/prompt'))).toEqual([
+      { type: 'text', text: 'what did I send?' }
+    ])
   })
 })

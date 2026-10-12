@@ -157,6 +157,16 @@ describe('choosing the stopped history a handover carries', () => {
     expect(ctx.logger.warn).toHaveBeenCalledTimes(1)
   })
 
+  it('a preparation that stalls sends the message alone within the limit, and its late result is dropped', async () => {
+    let finish: (prepared: { carries: string[] }) => void = () => {}
+    const ctx = preparing(() => new Promise((resolve) => (finish = resolve)))
+    expect(await prepareStoppedHistory(ctx, message('next'), OWED, 20)).toBeNull()
+    expect(ctx.logger.warn).toHaveBeenCalledTimes(1)
+    finish({ carries: ['old'] })
+    await Promise.resolve()
+    expect(ctx.logger.warn).toHaveBeenCalledTimes(1)
+  })
+
   it('owes nothing an append record names', () => {
     expect(
       owedIds(
