@@ -258,6 +258,34 @@ describe('appending stopped messages to Claude', () => {
     expect(turnRunning(bodies)).toBe(true)
   })
 
+  it("never opens the next send's turn on the timed-out append's late echo, even with the same words", async () => {
+    const { adapter, bodies, connection, frame, session } = await acquired()
+    expect(
+      await appendClaudeStoppedMessages(
+        session,
+        { fence: 7, messages: [stopped('a', 'ship it')], turnLive: () => false },
+        { prepare: 2_000, settle: 10 }
+      )
+    ).toEqual({ outcome: 'unknown', reason: 'Claude did not confirm the append' })
+    const appendedContent = connection.sent[0]!
+
+    // The next send says the same words, so only the uuid tells the two echoes apart.
+    await adapter.dispatch({
+      sessionId: 'session-1',
+      clientMessageId: 'next',
+      body: USER_MESSAGE,
+      fence: 7
+    })
+    const sent = connection.sent.at(-1)!
+    frame({ ...appendedContent, isReplay: true })
+    expect(turnRunning(bodies)).toBe(false)
+
+    frame(lifecycle(String(sent.uuid), 'started'))
+    frame(init)
+    frame({ ...sent, isReplay: true })
+    expect(turnRunning(bodies)).toBe(true)
+  })
+
   it('gives up on a stalled read in time, refused, and never writes it later', async () => {
     const { connection, session } = await acquired()
     let readLate: (content: unknown[]) => void = () => {}
