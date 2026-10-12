@@ -75,7 +75,7 @@ export function mergeRetainedHostLifecycleRows(
 /** The restated sends among `rows` in the order they were sent, the other rows where they sat:
  *  each restated row's new sequence is the order stopped history is owed in. */
 function inSendOrder(rows: readonly RetainedRow[], restated: RewindRestatedSends): RetainedRow[] {
-  const sentAt = (row: RetainedRow) => restated.get(row.itemId)?.submission.acceptedSequence
+  const sentAt = (row: RetainedRow) => restated.get(row.itemId)?.acceptedSequence
   const sends = rows
     .flatMap((row) => {
       const sequence = sentAt(row)

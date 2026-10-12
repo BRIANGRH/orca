@@ -38,7 +38,10 @@ import { isWriteFailureSubmission } from '../../../shared/structured-agent-sessi
 import { projectJournalStopNote } from './journal-stop-note-projection'
 import { retireRewoundJournalSubmission } from './journal-rewind-submission-retirement'
 import { latestAgentSessionContextClearSequence } from '../../../shared/agent-session-context-clear'
-import { foldJournalStoppedMessageAppend } from './journal-stopped-message-appends'
+import {
+  foldJournalStoppedMessageAppend,
+  type JournalStoppedMessageAppendRecord
+} from './journal-stopped-message-appends'
 import {
   createJournalQueuePauseMarks,
   foldJournalQueuePauseMark,
@@ -76,8 +79,8 @@ export type JournalReducerState = {
   queuePauseMarks: JournalQueuePauseMarks
   /** Host-only: each handed-over send's stopped-message history, from its latest `pending` row. */
   stoppedHistoryCarried: Map<string, readonly string[]>
-  /** Host-only: the stopped messages each append not proven refused named, by append id. */
-  stoppedMessageAppends: Map<string, readonly string[]>
+  /** Host-only: each stopped-message append not proven refused, by append id. */
+  stoppedMessageAppends: Map<string, JournalStoppedMessageAppendRecord>
 }
 
 export function createJournalReducerState(sessionId: string, epoch: string): JournalReducerState {
@@ -132,7 +135,7 @@ export function applyJournalRow(
     return
   }
   if (isJournalStoppedMessageAppendRow(row)) {
-    foldJournalStoppedMessageAppend(state.stoppedMessageAppends, row.stoppedMessageAppend)
+    foldJournalStoppedMessageAppend(state.stoppedMessageAppends, row.stoppedMessageAppend, row.seq)
     return
   }
   if (isJournalStopOrResumeRow(row)) {

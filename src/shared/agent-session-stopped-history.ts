@@ -17,8 +17,8 @@ export type StoppedHistoryJournal = {
   submissions: readonly AgentJournalSubmission[]
   /** Each handed-over send's carried history, by its client message id. */
   carried: ReadonlyMap<string, readonly string[]>
-  /** The stopped messages each append not proven refused named, by append id. */
-  appended: ReadonlyMap<string, readonly string[]>
+  /** Each append not proven refused, by append id. */
+  appended: ReadonlyMap<string, { readonly messageIds: readonly string[] }>
   /** The latest /clear's sequence; 0 when none. */
   clearSequence: number
   body: (clientMessageId: string) => AgentJournalItemBody | null
@@ -84,7 +84,7 @@ export function agentSessionStoppedHistoryOwed(
   journal: StoppedHistoryJournal
 ): OwedStoppedMessage[] {
   const byId = new Map(journal.submissions.map((entry) => [entry.clientMessageId, entry]))
-  const covered = new Set<string>([...journal.appended.values()].flat())
+  const covered = new Set([...journal.appended.values()].flatMap((append) => append.messageIds))
   for (const [carrierId, carried] of journal.carried) {
     const carrier = byId.get(carrierId)
     if (carrier && !refusedBeforeWrite(carrier)) {

@@ -17,6 +17,7 @@ import {
   journalRestatedSendRows
 } from './journal-rewind-restated-send-rows'
 import { journalQueuePauseRestatement } from './queued-message-pause'
+import { buildJournalStoppedMessageAppendRow } from './journal-stopped-message-appends'
 import type { JournalQueuedMessages } from './journal-queued-messages'
 import type { JournalRow } from './journal-row-schema'
 
@@ -66,6 +67,20 @@ export async function rewindJournalContext(input: {
           ...(retireSubmission ? { retireSubmission: true } : {})
         }))
       }
+      // Every append record after the floor goes; the ones the provider kept are restated below.
+      for (const [appendId, record] of state.stoppedMessageAppends) {
+        if (record.sequence > input.floor.sequence) {
+          plan.push((seq, ts) =>
+            buildJournalStoppedMessageAppendRow({
+              state,
+              seq,
+              ts,
+              fence: input.fence,
+              append: { appendId, refused: true }
+            })
+          )
+        }
+      }
       for (const item of input.items) {
         // A restated stopped send's rows come first; the item row below brings back its bubble,
         // which the tombstone above shadows.
@@ -102,8 +117,8 @@ export async function rewindJournalContext(input: {
           }),
           revision
         }))
+        plan.push(...journalRestatedAppendRows({ state, fence: input.fence, item }))
       }
-      plan.push(...journalRestatedAppendRows({ state, fence: input.fence, items: input.items }))
       plan.push((seq, ts) =>
         buildJournalQueueClearRow({ state, seq, ts, fence: input.fence, clear: pause })
       )

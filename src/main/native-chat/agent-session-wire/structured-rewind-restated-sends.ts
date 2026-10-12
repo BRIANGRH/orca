@@ -1,58 +1,95 @@
 // The stopped sends a rewind restates beside the provider's items: each one Orca proved never
 // reached the agent as a send, which the provider's items never hold. Derived from the epoch being
-// replaced, with the append record that covers each (`agent-session-stopped-history.ts`).
+// replaced, with the append records Codex keeps (`agent-session-stopped-history.ts`).
 
 import { readAgentSessionFailureFact } from '../../../shared/agent-session-failure'
 import {
   agentJournalItemKey,
-  agentJournalSubmissionKey
+  agentJournalSubmissionKey,
+  parseAgentJournalItemKey
 } from '../../../shared/agent-session-journal-item-key'
+import type { AgentJournalSubmission } from '../../../shared/agent-session-journal-types'
+import { readAgentJournalTurn } from '../../../shared/agent-session-turn-record'
 import type { JournalReplacementItem } from '../agent-session-journal/journal-epoch-replacement'
-import type { JournalRestatedSend } from '../agent-session-journal/journal-rewind-restated-send-rows'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { JournalStoppedHistory } from '../agent-session-journal/journal-stopped-message-appends'
 
-/** Keyed by the stopped send's own item id, which its retained row keeps. */
-export type RewindRestatedSends = ReadonlyMap<string, JournalRestatedSend>
+/** The stopped sends, keyed by each one's own item id, which its retained row keeps. */
+export type RewindRestatedSends = ReadonlyMap<string, AgentJournalSubmission>
+
+type RewindJournal = Pick<AgentSessionJournal, 'submissions' | 'visitItems'> & {
+  stoppedHistory: Pick<JournalStoppedHistory, 'appended'>
+  context: Pick<AgentSessionJournal['context'], 'floor'>
+}
 
 /** After a /clear only what the rewind retires is restated. */
-export function rewindRestatedSends(
-  journal: Pick<AgentSessionJournal, 'submissions'> & {
-    stoppedHistory: Pick<JournalStoppedHistory, 'appended'>
-    context: Pick<AgentSessionJournal['context'], 'floor'>
-  }
-): RewindRestatedSends {
+export function rewindRestatedSends(journal: RewindJournal): RewindRestatedSends {
   const floor = journal.context.floor()?.sequence ?? 0
-  const appendIds = new Map<string, string>()
-  for (const [appendId, messageIds] of journal.stoppedHistory.appended()) {
-    messageIds.forEach((id) => appendIds.set(id, appendId))
-  }
-  const sends = new Map<string, JournalRestatedSend>()
+  const sends = new Map<string, AgentJournalSubmission>()
   for (const submission of journal.submissions()) {
     if (
-      submission.dispatchState !== 'rejected' ||
-      readAgentSessionFailureFact(submission.rejection)?.neverReachedAgent !== true ||
-      (floor > 0 && (submission.acceptedSequence ?? 0) <= floor)
+      submission.dispatchState === 'rejected' &&
+      readAgentSessionFailureFact(submission.rejection)?.neverReachedAgent === true &&
+      (floor === 0 || (submission.acceptedSequence ?? 0) > floor)
     ) {
-      continue
+      sends.set(agentJournalSubmissionKey(submission.clientMessageId), submission)
     }
-    const appendId = appendIds.get(submission.clientMessageId)
-    sends.set(agentJournalSubmissionKey(submission.clientMessageId), {
-      submission,
-      ...(appendId !== undefined ? { appendId } : {})
-    })
   }
   return sends
 }
 
-/** The rebuilt rows, each restated send attached. */
+/** The rebuilt rows, each restated send attached, and each append record whose own row precedes
+ *  the rewound turn after the row it followed: Codex keeps a pair it injected before that turn and
+ *  drops one after, even when the stopped bubble sits before the turn. */
 export function withRewindRestatedSends(
   items: readonly JournalReplacementItem[],
-  sends: RewindRestatedSends
+  journal: RewindJournal,
+  beforeTurnId: string
 ): JournalReplacementItem[] {
-  return items.map((item) => {
+  const sends = rewindRestatedSends(journal)
+  const accepted = new Map(
+    journal
+      .submissions()
+      .flatMap((submission) =>
+        submission.dispatchState === 'accepted' && submission.providerItemId
+          ? [[agentJournalSubmissionKey(submission.clientMessageId), submission.providerItemId]]
+          : []
+      )
+  )
+  const floor = journal.context.floor()?.sequence ?? 0
+  // Keyed as the rebuilt rows are: a send the agent accepted by the provider's own item.
+  const sequences = new Map<string, number>()
+  let cut = Number.POSITIVE_INFINITY
+  journal.visitItems((itemId, sequence, body) => {
+    const key = accepted.get(itemId) ?? itemId
+    sequences.set(key, sequence)
+    const identity = parseAgentJournalItemKey(key)
+    if (
+      sequence > floor &&
+      ((identity?.provider === 'codex' && identity.turnId === beforeTurnId) ||
+        readAgentJournalTurn(body)?.turnId === beforeTurnId)
+    ) {
+      cut = Math.min(cut, sequence)
+    }
+  })
+  const rebuilt = items.map((item) => {
     const send =
       item.body.kind === 'message' ? sends.get(agentJournalItemKey(item.identity)) : undefined
-    return send ? { ...item, send } : item
+    return send ? { ...item, send } : { ...item }
   })
+  const restated = new Set(
+    rebuilt.flatMap((item) => (item.send ? [item.send.clientMessageId] : []))
+  )
+  for (const [appendId, record] of journal.stoppedHistory.appended()) {
+    const messageIds = record.messageIds.filter((id) => restated.has(id))
+    if (record.sequence >= cut || messageIds.length === 0) {
+      continue
+    }
+    const after = rebuilt.findLastIndex(
+      (item) => (sequences.get(agentJournalItemKey(item.identity)) ?? Infinity) < record.sequence
+    )
+    const anchor = rebuilt[after === -1 ? rebuilt.length - 1 : after]!
+    anchor.appendsAfter = [...(anchor.appendsAfter ?? []), { appendId, messageIds }]
+  }
+  return rebuilt
 }

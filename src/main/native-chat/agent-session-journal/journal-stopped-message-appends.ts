@@ -41,8 +41,9 @@ export class JournalStoppedHistory {
   /** What each handed-over send carries as stopped-message history, by its client message id. */
   carried = (): ReadonlyMap<string, readonly string[]> => this.deps.state().stoppedHistoryCarried
 
-  /** The stopped messages each append not proven refused named, by append id. */
-  appended = (): ReadonlyMap<string, readonly string[]> => this.deps.state().stoppedMessageAppends
+  /** Each append not proven refused, by append id. */
+  appended = (): ReadonlyMap<string, JournalStoppedMessageAppendRecord> =>
+    this.deps.state().stoppedMessageAppends
 
   /** An append's record, before its write, or its proven refusal. */
   recordAppend(append: JournalStoppedMessageAppend, fence: number): Promise<AgentJournalCursor> {
@@ -58,10 +59,18 @@ export class JournalStoppedHistory {
   }
 }
 
+/** A standing append record: the messages it names, and its row's place, which a rewind compares
+ *  with where it cuts. */
+export type JournalStoppedMessageAppendRecord = {
+  messageIds: readonly string[]
+  sequence: number
+}
+
 /** A record covers its messages; its refusal uncovers them. A malformed one changes nothing. */
 export function foldJournalStoppedMessageAppend(
-  appends: Map<string, readonly string[]>,
-  value: unknown
+  appends: Map<string, JournalStoppedMessageAppendRecord>,
+  value: unknown,
+  sequence: number
 ): void {
   if (
     typeof value !== 'object' ||
@@ -81,6 +90,6 @@ export function foldJournalStoppedMessageAppend(
       ? value.messageIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
       : []
   if (messageIds.length > 0) {
-    appends.set(value.appendId, messageIds)
+    appends.set(value.appendId, { messageIds, sequence })
   }
 }

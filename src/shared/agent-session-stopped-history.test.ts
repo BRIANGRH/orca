@@ -73,7 +73,9 @@ function owed(
   const journal: StoppedHistoryJournal = {
     submissions,
     carried: new Map(Object.entries(options.carried ?? {})),
-    appended: new Map(Object.entries(options.appended ?? {})),
+    appended: new Map(
+      Object.entries(options.appended ?? {}).map(([id, messageIds]) => [id, { messageIds }])
+    ),
     clearSequence: options.clearSequence ?? 0,
     body: (id) => options.bodies?.[id] ?? message(id)
   }

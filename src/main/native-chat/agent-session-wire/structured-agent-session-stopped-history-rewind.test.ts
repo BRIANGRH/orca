@@ -131,8 +131,9 @@ async function accepted(id: string, turn: string, received: string): Promise<voi
   thread.push({ identity, body: hostTestMessage(received) })
 }
 
-async function rewindTo(id: string): Promise<void> {
-  const fields = { itemId: agentJournalSubmissionKey(id), expectedEpoch: journal().cursor().epoch }
+/** To before the turn `id` opened, or the row `itemId` names. */
+async function rewindTo(id: string, itemId = agentJournalSubmissionKey(id)): Promise<void> {
+  const fields = { itemId, expectedEpoch: journal().cursor().epoch }
   expect(
     await rig.host.rewind(QUEUED_RIG_CALLER, {
       ...fields,
@@ -185,7 +186,7 @@ async function stoppedThenAppended(): Promise<{ stopped: string; next: string }>
 }
 
 function appendedIds(): string[] {
-  return [...journal().stoppedHistory.appended().values()].flat()
+  return [...journal().stoppedHistory.appended().values()].flatMap((append) => append.messageIds)
 }
 
 describe.each([
@@ -236,6 +237,41 @@ describe.each([
     expectRebuildPath(epoch)
     expect(await transcripts()).toEqual(shown('A (stopped)', 'Stopped manually', 'B'))
     await expectStillStopped(stopped)
+    expect(appendedIds()).toEqual([stopped])
+    await nextSend('D')
+    expect(dispatched()).toEqual(['[A] -> B', 'C', 'D'])
+  })
+
+  it('rewound to a turn between the Stop and the append: the record goes, as Codex drops the pair', async () => {
+    await begin()
+    const stopped = await stopWhileStarting('A')
+    // Another agent's mail opens a turn and appends nothing; the next send appends A after it.
+    const mail = await nextSend('M', true)
+    await accepted(mail, 'M', 'M')
+    const next = await nextSend('C')
+    await accepted(next, 'C', 'C')
+    expect(appendedIds()).toEqual([stopped])
+
+    await rewindTo(mail)
+
+    expect(await transcripts()).toEqual(shown('A (stopped)', 'Stopped manually'))
+    await expectStillStopped(stopped)
+    expect(appendedIds()).toEqual([])
+    await nextSend('D')
+    expect(dispatched()).toEqual(['M', '[A] -> C', '[A] -> D'])
+  })
+
+  it('a second rewind reads the kept record where it sat, not after the rows rebuilt with it', async () => {
+    await begin()
+    const { stopped, next } = await stoppedThenAppended()
+    const later = await nextSend('C')
+    await accepted(later, 'C', 'C')
+    const nextItem = (await rig.submission(next))?.providerItemId ?? undefined
+    await rewindTo(later)
+
+    // Codex still holds the pair, injected before B.
+    await rewindTo(next, nextItem)
+
     expect(appendedIds()).toEqual([stopped])
     await nextSend('D')
     expect(dispatched()).toEqual(['[A] -> B', 'C', 'D'])

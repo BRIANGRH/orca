@@ -155,7 +155,8 @@ export async function recoverStructuredRewind(
   // Re-derived, not stored: the rewind admitted no unsettled send, and a settled one never leaves the set.
   const replacement = withRewindRestatedSends(
     rewind.retained.map(retainedRowReplacement),
-    rewindRestatedSends(journal)
+    journal,
+    target?.provider === 'codex' ? target.turnId : ''
   )
   if (rewind.contextClearOperationId && rewind.contextClearSequence) {
     if (

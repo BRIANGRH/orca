@@ -164,17 +164,15 @@ describe('a rewind keeps a stopped send, which only the host holds', () => {
     blocks: [{ type: 'text', text }]
   })
   const restatedSend = (clientMessageId: string, acceptedSequence?: number) => ({
-    submission: {
-      clientMessageId,
-      ...(acceptedSequence === undefined ? {} : { acceptedSequence }),
-      fence: 1,
-      payloadFingerprint: clientMessageId,
-      dispatchState: 'rejected' as const,
-      providerItemId: null,
-      reason: null,
-      submittedAt: 1,
-      resolvedAt: 1
-    }
+    clientMessageId,
+    ...(acceptedSequence === undefined ? {} : { acceptedSequence }),
+    fence: 1,
+    payloadFingerprint: clientMessageId,
+    dispatchState: 'rejected' as const,
+    providerItemId: null,
+    reason: null,
+    submittedAt: 1,
+    resolvedAt: 1
   })
 
   it('where it sat, and only when the rewind restates it', () => {

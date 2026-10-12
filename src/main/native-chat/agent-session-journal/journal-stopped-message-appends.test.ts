@@ -46,8 +46,8 @@ describe('a stopped-message append record', () => {
       { appendId: 'second', messageIds: ['c'] }
     ])
     expect([...recorded.state.stoppedMessageAppends]).toEqual([
-      ['first', ['a', 'b']],
-      ['second', ['c']]
+      ['first', { messageIds: ['a', 'b'], sequence: 1 }],
+      ['second', { messageIds: ['c'], sequence: 2 }]
     ])
 
     const refused = fold([
@@ -55,7 +55,9 @@ describe('a stopped-message append record', () => {
       { appendId: 'second', messageIds: ['c'] },
       { appendId: 'first', refused: true }
     ])
-    expect([...refused.state.stoppedMessageAppends]).toEqual([['second', ['c']]])
+    expect([...refused.state.stoppedMessageAppends]).toEqual([
+      ['second', { messageIds: ['c'], sequence: 2 }]
+    ])
   })
 
   it('folds the same from its stored line, so it survives a restart', () => {
@@ -68,7 +70,9 @@ describe('a stopped-message append record', () => {
         applyJournalRow(replayed, parsed.row)
       }
     }
-    expect([...replayed.stoppedMessageAppends]).toEqual([['first', ['a']]])
+    expect([...replayed.stoppedMessageAppends]).toEqual([
+      ['first', { messageIds: ['a'], sequence: 1 }]
+    ])
   })
 
   it('is a tombstone of an id no item takes, which an older reader folds as nothing', () => {

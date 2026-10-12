@@ -191,7 +191,9 @@ describe("stopped messages go into the agent's own log ahead of the next send", 
     expect(rig.appendStoppedMessages.mock.invocationCallOrder[0]).toBeLessThan(
       rig.dispatch.mock.invocationCallOrder[0]!
     )
-    expect([...journal().stoppedHistory.appended().values()]).toEqual([[first, second]])
+    expect(
+      [...journal().stoppedHistory.appended().values()].map((append) => append.messageIds)
+    ).toEqual([[first, second]])
     // The work outcome is untouched: each stopped message still reads Stopped manually, once.
     for (const id of [first!, second!]) {
       expect(await rig.submission(id)).toMatchObject({

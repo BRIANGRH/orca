@@ -110,8 +110,8 @@ export type JournalTombstoneRow = JournalRowBase & {
 }
 
 /** Written before a handover appends stopped messages to the agent's own log, so they are never
- *  appended again; a later row with the same id and `refused` proves nothing reached the agent,
- *  which owes them again (`agent-session-stopped-history.ts`). */
+ *  appended again. A later row with the same id and `refused` takes it back, which owes them again
+ *  (`agent-session-stopped-history.ts`): nothing reached the agent, or a rewind dropped it. */
 export type JournalStoppedMessageAppend =
   | { appendId: string; messageIds: string[] }
   | { appendId: string; refused: true }
