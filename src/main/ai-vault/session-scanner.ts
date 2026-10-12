@@ -14,10 +14,7 @@ import {
   type AntigravityWorkspaceResolver
 } from './session-scanner-antigravity-history'
 import { sessionCandidatesFromDiscoveries } from './session-scanner-candidates'
-import {
-  ensureSessionParseCacheLoaded,
-  scheduleSessionParseCachePersist
-} from './session-parse-cache-persistence'
+import { ensureSessionParseCacheLoaded } from './session-parse-cache-persistence'
 import {
   createSessionParseStats,
   parseAgentSessionFileCached,
@@ -246,7 +243,6 @@ async function parseSessionCandidates(args: {
     const needed = Math.max(args.limit - sessions.size, 1)
     const batchSize = Math.min(SESSION_PARSE_CONCURRENCY, needed, remaining)
     const batch = args.candidates.slice(index, index + batchSize)
-    const previousParseStats = { ...args.parseStats }
     const results = await Promise.all(
       batch.map((candidate) =>
         parseSessionCandidate(
@@ -259,9 +255,6 @@ async function parseSessionCandidates(args: {
         )
       )
     )
-
-    // Cache-hit batches must not rearm saves for work completed earlier in the scan.
-    scheduleSessionParseCachePersist(args.parseStats, previousParseStats)
 
     for (const result of results) {
       if (result.issue) {

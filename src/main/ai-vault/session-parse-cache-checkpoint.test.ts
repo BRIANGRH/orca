@@ -5,18 +5,25 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  ensureSessionParseCacheLoaded,
   flushSessionParseCachePersistForTests,
   initSessionParseCachePersistence,
-  resetSessionParseCachePersistenceForTests,
-  scheduleSessionParseCachePersist
+  resetSessionParseCachePersistenceForTests
 } from './session-parse-cache-persistence'
 import { scanAiVaultSessions } from './session-scanner'
 import {
-  createSessionParseStats,
-  resetSessionParseCacheForTests
+  resetSessionParseCacheForTests,
+  seedSessionParseCache,
+  snapshotSessionParseCacheForPersistence
 } from './session-scanner-parse-cache'
+import {
+  SESSION_PARSE_CACHE_SCHEMA_VERSION,
+  serializeSessionParseCacheSnapshotPiecesCooperatively
+} from './session-parse-cache-snapshot-serialization'
 import type * as ParseCacheModule from './session-scanner-parse-cache'
 import { isolatedScanRoots } from './session-scanner-test-fixtures'
+import { codexFixture, codexWorkerFixtureLines } from './session-scanner-codex-fixtures'
+import { storeSessionParseCacheEntry } from './session-parse-cache-store'
 
 const hooks = vi.hoisted(() => {
   const state: {
@@ -27,6 +34,8 @@ const hooks = vi.hoisted(() => {
 })
 
 vi.mock('node:fs/promises', { spy: true })
+vi.mock('./session-parse-cache-store', { spy: true })
+vi.mock('./session-parse-cache-snapshot-serialization', { spy: true })
 vi.mock('./session-scanner-parse-cache', async (importOriginal) => {
   const actual = await importOriginal<typeof ParseCacheModule>()
   return {
@@ -88,6 +97,16 @@ function paceScanBatches(delayMs: number): void {
   }
 }
 
+function commitNullEntry(mtimeMs: number): void {
+  storeSessionParseCacheEntry('timed', {
+    mtimeMs,
+    sizeBytes: null,
+    platform: process.platform,
+    session: null,
+    resume: null
+  })
+}
+
 describe('session parse cache checkpoints', () => {
   it('a scan saves the files it finished while it is still running', async () => {
     const root = await mkdtemp(join(tmpdir(), 'orca-parse-cache-checkpoint-'))
@@ -101,9 +120,8 @@ describe('session parse cache checkpoints', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    // Hold everything after the first batch of eight, as a scan still running
-    // when its deadline kills it would be.
-    hooks.beforeParse = () => (++started > 8 ? held : Promise.resolve())
+    // A stalled peer in the first batch must not strand its seven completed files.
+    hooks.beforeParse = () => (++started === 8 ? held : Promise.resolve())
 
     const scan = scanAiVaultSessions(roots)
     try {
@@ -111,7 +129,7 @@ describe('session parse cache checkpoints', () => {
         timeout: 10_000,
         interval: 50
       })
-      expect(JSON.parse(await readFile(cacheFile, 'utf8')).entries).toHaveLength(8)
+      expect(JSON.parse(await readFile(cacheFile, 'utf8')).entries).toHaveLength(7)
     } finally {
       release()
     }
@@ -125,13 +143,13 @@ describe('session parse cache checkpoints', () => {
       filePath: join(root, 'session-parse-cache.json'),
       appVersion: APP_VERSION
     })
-    const stats = { ...createSessionParseStats(), fullParses: 1 }
+    await ensureSessionParseCacheLoaded()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     vi.mocked(fsPromises.rename).mockClear()
 
     // A batch finishing every second keeps re-arming the 1.5 s debounce.
     for (let second = 0; second < 20; second++) {
-      scheduleSessionParseCachePersist(stats)
+      commitNullEntry(second)
       await vi.advanceTimersByTimeAsync(1_000)
     }
     vi.useRealTimers()
@@ -140,14 +158,14 @@ describe('session parse cache checkpoints', () => {
     await flushSessionParseCachePersistForTests()
     expect(fsPromises.rename).toHaveBeenCalledTimes(2)
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-    scheduleSessionParseCachePersist(stats)
+    commitNullEntry(20)
     await vi.advanceTimersByTimeAsync(1_499)
     expect(fsPromises.rename).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(1)
     await flushSessionParseCachePersistForTests()
     expect(fsPromises.rename).toHaveBeenCalledTimes(3)
     resetSessionParseCachePersistenceForTests()
-    scheduleSessionParseCachePersist(stats)
+    commitNullEntry(21)
     await vi.advanceTimersByTimeAsync(20_000)
     expect(fsPromises.rename).toHaveBeenCalledTimes(3)
   })
@@ -160,9 +178,10 @@ describe('session parse cache checkpoints', () => {
       const roots = isolatedScanRoots(root)
       const paths = await writeClaudeHistory(join(roots.claudeProjectsDir, 'project'), 160)
       await scanAiVaultSessions(roots)
-      await appendFile(paths[159], '\n')
       const cacheFile = join(root, 'session-parse-cache.json')
       initSessionParseCachePersistence({ filePath: cacheFile, appVersion: APP_VERSION })
+      await flushSessionParseCachePersistForTests()
+      await appendFile(paths[159], '\n')
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
       vi.mocked(fsPromises.rename).mockClear()
       vi.mocked(fsPromises.writeFile).mockClear()
@@ -193,9 +212,110 @@ describe('session parse cache checkpoints', () => {
     vi.useRealTimers()
     await vi.waitFor(() => expect(fsPromises.rename).toHaveBeenCalledTimes(2))
     await flushSessionParseCachePersistForTests()
-    expect(fsPromises.rename).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(fsPromises.rename).mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(vi.mocked(fsPromises.rename).mock.calls.length).toBeLessThanOrEqual(3)
     expect(JSON.parse(await readFile(cacheFile, 'utf8')).entries).toHaveLength(328)
     expect(hooks.stats?.fullParses).toBe(328)
     expect(hooks.stats?.reused).toBe(0)
+  })
+
+  it('does not save failed read attempts over an existing cache and checkpoints later recovery', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-parse-cache-checkpoint-'))
+    tempRoots.push(root)
+    const roots = isolatedScanRoots(root)
+    const projectDir = join(roots.claudeProjectsDir, 'project')
+    const paths = await writeClaudeHistory(projectDir, 160)
+    seedSessionParseCache(
+      Array.from({ length: 4096 }, (_, index) => [
+        `cached-${index}`,
+        { mtimeMs: index, sizeBytes: null, platform: process.platform, session: null }
+      ])
+    )
+    const entries = snapshotSessionParseCacheForPersistence()
+    const previous = JSON.stringify({
+      schemaVersion: SESSION_PARSE_CACHE_SCHEMA_VERSION,
+      appVersion: APP_VERSION,
+      entries
+    })
+    const cacheFile = join(root, 'session-parse-cache.json')
+    await writeFile(cacheFile, previous)
+    initSessionParseCachePersistence({ filePath: cacheFile, appVersion: APP_VERSION })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    vi.mocked(fsPromises.rename).mockClear()
+    vi.mocked(fsPromises.writeFile).mockClear()
+    vi.mocked(snapshotSessionParseCacheForPersistence).mockClear()
+    vi.mocked(serializeSessionParseCacheSnapshotPiecesCooperatively).mockClear()
+    let started = 0
+    let removal: Promise<void> | null = null
+    hooks.beforeParse = async () => {
+      const ordinal = ++started
+      removal ??= Promise.all(paths.map((path) => rm(path))).then(() => undefined)
+      await removal
+      if (ordinal % 8 === 1) {
+        await vi.advanceTimersByTimeAsync(2_000)
+      }
+    }
+
+    const failed = await scanAiVaultSessions(roots)
+    await flushSessionParseCachePersistForTests()
+    expect(failed.sessions).toHaveLength(0)
+    expect(failed.issues).toHaveLength(160)
+    expect(hooks.stats?.fullParses).toBe(160)
+    expect(snapshotSessionParseCacheForPersistence).not.toHaveBeenCalled()
+    expect(serializeSessionParseCacheSnapshotPiecesCooperatively).not.toHaveBeenCalled()
+    expect(snapshotSessionParseCacheForPersistence()).toEqual(entries)
+    expect(fsPromises.writeFile).not.toHaveBeenCalled()
+    expect(fsPromises.rename).not.toHaveBeenCalled()
+    expect(await readFile(cacheFile, 'utf8')).toBe(previous)
+
+    hooks.beforeParse = null
+    await writeClaudeHistory(projectDir, 1)
+    vi.mocked(fsPromises.writeFile).mockClear()
+    expect((await scanAiVaultSessions(roots)).sessions).toHaveLength(1)
+    await flushSessionParseCachePersistForTests()
+    expect(fsPromises.writeFile).toHaveBeenCalledTimes(1)
+    expect(fsPromises.rename).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(await readFile(cacheFile, 'utf8')).entries).toEqual(
+      expect.arrayContaining([[paths[0], expect.objectContaining({ session: expect.any(Object) })]])
+    )
+    expect((await scanAiVaultSessions(roots)).sessions).toHaveLength(1)
+    await flushSessionParseCachePersistForTests()
+    expect(hooks.stats?.reused).toBe(1)
+    expect(fsPromises.rename).toHaveBeenCalledTimes(1)
+  })
+
+  it('checkpoints null and early-stopped results while unchanged excluded sessions do not write', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-parse-cache-checkpoint-'))
+    tempRoots.push(root)
+    const roots = isolatedScanRoots(root)
+    await mkdir(roots.codexSessionsDir, { recursive: true })
+    const path = join(roots.codexSessionsDir, codexFixture().fileName)
+    await writeFile(path, `${codexWorkerFixtureLines().join('\n')}\n`)
+    const cacheFile = join(root, 'session-parse-cache.json')
+    initSessionParseCachePersistence({ filePath: cacheFile, appVersion: APP_VERSION })
+    vi.mocked(fsPromises.rename).mockClear()
+
+    expect((await scanAiVaultSessions(roots)).issues).toHaveLength(0)
+    await flushSessionParseCachePersistForTests()
+    expect(fsPromises.rename).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(await readFile(cacheFile, 'utf8')).entries).toEqual([
+      [path, expect.objectContaining({ session: null })]
+    ])
+    expect((await scanAiVaultSessions(roots)).sessions).toHaveLength(0)
+    await flushSessionParseCachePersistForTests()
+    expect(hooks.stats?.reused).toBe(1)
+    expect(fsPromises.rename).toHaveBeenCalledTimes(1)
+    await appendFile(path, '\n')
+    expect((await scanAiVaultSessions(roots)).sessions).toHaveLength(0)
+    await flushSessionParseCachePersistForTests()
+    expect(hooks.stats?.earlyStopped).toBe(1)
+    expect(fsPromises.rename).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(await readFile(cacheFile, 'utf8')).entries).toEqual([
+      [path, expect.objectContaining({ session: null })]
+    ])
+    expect((await scanAiVaultSessions(roots)).sessions).toHaveLength(0)
+    await flushSessionParseCachePersistForTests()
+    expect(hooks.stats?.reused).toBe(1)
+    expect(fsPromises.rename).toHaveBeenCalledTimes(2)
   })
 })

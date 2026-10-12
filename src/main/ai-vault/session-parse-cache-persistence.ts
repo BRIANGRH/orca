@@ -7,7 +7,7 @@ import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { readNodeFileWithinLimit } from '../../shared/node-bounded-file-reader'
 import { readStreamedSessionDocument } from './session-document-stream'
-import { MAX_CACHE_ENTRIES } from './session-parse-cache-store'
+import { SessionParseCacheSaveLane } from './session-parse-cache-save-lane'
 import {
   assertSessionParseCacheJsonWithinLimitsCooperatively,
   serializeSessionParseCacheSnapshotPiecesCooperatively,
@@ -16,20 +16,15 @@ import {
 } from './session-parse-cache-snapshot-serialization'
 import {
   seedSessionParseCache,
-  snapshotSessionParseCacheForPersistence,
-  type PersistedSessionParseCacheEntry,
-  type SessionParseStats
-} from './session-scanner-parse-cache'
+  observeSessionParseCacheChanges,
+  MAX_CACHE_ENTRIES,
+  type PersistedSessionParseCacheEntry
+} from './session-parse-cache-store'
 import type { SessionSidecarObservation } from './session-sidecar-stat'
 
 // Bump when the persisted entry layout or cached session semantics change; a
 // mismatched file is discarded whole.
 const SCHEMA_VERSION = SESSION_PARSE_CACHE_SCHEMA_VERSION
-// Debounce so back-to-back scans (desktop IPC + runtime RPC) collapse into one write.
-const SAVE_DEBOUNCE_MS = 1_500
-// A scan re-arms the debounce after every parsed batch; the cap turns a long scan's
-// work into a checkpoint every ~15 s, so a scan killed at its deadline keeps it.
-const SAVE_MAX_WAIT_MS = 15_000
 // The payload contains transcript-derived preview text; keep it user-only
 // (mode bits are inert on Windows — the userData ACL grant is the boundary there).
 const PRIVATE_DIRECTORY_MODE = 0o700
@@ -42,13 +37,17 @@ export type SessionParseCachePersistenceOptions = {
 
 let options: SessionParseCachePersistenceOptions | null = null
 let loadPromise: Promise<void> | null = null
-let saveTimer: NodeJS.Timeout | null = null
-let savePendingSince: number | null = null
-let lastSave: Promise<void> = Promise.resolve()
+let saveLane: SessionParseCacheSaveLane | null = null
 
 /** Enable persistence. Called only from the composition root; every export is a no-op until then. */
 export function initSessionParseCachePersistence(next: SessionParseCachePersistenceOptions): void {
-  options = next
+  options = { ...next }
+  saveLane ??= new SessionParseCacheSaveLane(ensureSessionParseCacheLoaded, (entries) => {
+    const current = options
+    return current ? persistSnapshot(current, entries) : Promise.resolve(false)
+  })
+  observeSessionParseCacheChanges(scheduleSessionParseCachePersist)
+  scheduleSessionParseCachePersist()
 }
 
 export function getSessionParseCachePersistenceOptions(): SessionParseCachePersistenceOptions | null {
@@ -58,12 +57,9 @@ export function getSessionParseCachePersistenceOptions(): SessionParseCachePersi
 export function resetSessionParseCachePersistenceForTests(): void {
   options = null
   loadPromise = null
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-    saveTimer = null
-  }
-  savePendingSince = null
-  lastSave = Promise.resolve()
+  observeSessionParseCacheChanges(null)
+  saveLane?.dispose()
+  saveLane = null
 }
 
 /**
@@ -78,55 +74,14 @@ export function ensureSessionParseCacheLoaded(): Promise<void> {
   return loadPromise
 }
 
-/**
- * Schedule a debounced snapshot write after a scan that parsed something. An
- * early-stopped transcript counts: its stat key moved, so the entry must be
- * re-persisted or the next launch re-reads it. Reused-only scans schedule no
- * write. Prior counters restrict admission to the current batch's new work.
- */
-export function scheduleSessionParseCachePersist(
-  stats: SessionParseStats,
-  previousStats?: SessionParseStats
-): void {
-  const completed = stats.incremental + stats.fullParses + stats.earlyStopped
-  const previousCompleted = previousStats
-    ? previousStats.incremental + previousStats.fullParses + previousStats.earlyStopped
-    : 0
-  if (options === null || completed <= previousCompleted) {
-    return
-  }
-  const current = options
-  const now = Date.now()
-  savePendingSince ??= now
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-  }
-  const delayMs = Math.max(0, Math.min(SAVE_DEBOUNCE_MS, savePendingSince + SAVE_MAX_WAIT_MS - now))
-  saveTimer = setTimeout(() => {
-    saveTimer = null
-    savePendingSince = null
-    // Chained so a slow write and a rescheduled save can't rename out of order
-    // (an older snapshot landing last); persistSnapshot never rejects.
-    lastSave = lastSave.then(() => persistSnapshot(current))
-  }, delayMs)
-  // Why: a pending cache save must not keep a quitting process alive.
-  if (typeof saveTimer.unref === 'function') {
-    saveTimer.unref()
-  }
+/** Reconcile actual reusable changes; a read attempt or a recency touch owes no save. */
+export function scheduleSessionParseCachePersist(): void {
+  saveLane?.request()
 }
 
 /** Run any pending debounced save immediately and wait for it before process exit. */
 export async function flushSessionParseCachePersist(): Promise<void> {
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-    saveTimer = null
-    savePendingSince = null
-    if (options !== null) {
-      const current = options
-      lastSave = lastSave.then(() => persistSnapshot(current))
-    }
-  }
-  await lastSave
+  await saveLane?.flush()
 }
 
 export const flushSessionParseCachePersistForTests = flushSessionParseCachePersist
@@ -258,26 +213,31 @@ function parsePersistedSidecar(value: unknown): SessionSidecarObservation | unde
     : undefined
 }
 
-async function persistSnapshot(current: SessionParseCachePersistenceOptions): Promise<void> {
+async function persistSnapshot(
+  current: SessionParseCachePersistenceOptions,
+  entries: [string, PersistedSessionParseCacheEntry][]
+): Promise<boolean> {
   const directory = dirname(current.filePath)
   const tempPath = join(directory, `session-parse-cache-${process.pid}-${Date.now()}.tmp`)
   try {
     const payload = await serializeSessionParseCacheSnapshotPiecesCooperatively(
-      snapshotSessionParseCacheForPersistence(),
+      entries,
       current.appVersion
     )
     if (payload === null) {
-      return
+      return false
     }
     await mkdir(directory, { recursive: true, mode: PRIVATE_DIRECTORY_MODE })
     await writeFile(tempPath, payload.pieces, { mode: PRIVATE_FILE_MODE })
     // Atomic on POSIX; on Windows a rename racing an open handle fails and is
     // caught below (save lost, never a torn file).
     await rename(tempPath, current.filePath)
+    return true
   } catch (err) {
     // Why: the save runs from a timer — every error must be swallowed here or
     // it becomes an unhandled rejection. Worst case is the no-file case.
     await rm(tempPath, { force: true }).catch(() => {})
     console.debug('[ai-vault] session parse cache save failed', err)
+    return false
   }
 }

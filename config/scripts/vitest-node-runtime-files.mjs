@@ -14,6 +14,8 @@ export const NODE_RUNTIME_INCLUDE = [
   'src/main/ai-vault/session-scanner-unlimited-dedup.test.ts',
   // Disk checkpoints require Node's iterable writeFile semantics.
   'src/main/ai-vault/session-parse-cache-checkpoint.test.ts',
+  'src/main/ai-vault/session-parse-cache-save-lane.test.ts',
+  'src/main/ai-vault/session-parse-cache-metadata-checkpoint.test.ts',
   // Electron main bridges streams with Node's implementation.
   'src/main/host/electron-http-client.test.ts',
   'src/renderer/src/components/terminal-pane/pty-input-write-queue.test.ts',
