@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   noteRendererHeapHighwater,
+  noteRendererMemorySample,
   profileRendererHeapHighwaterBreadcrumb,
   resetRendererHeapAllocationProfilesForTests,
   summarizeSamplingProfile,
@@ -84,7 +85,8 @@ describe('summarizeSamplingProfile', () => {
 })
 
 describe('noteRendererHeapHighwater', () => {
-  it('starts sampling at the first heap mark and records the profile at the next', async () => {
+  it('starts sampling at the first heap mark and refreshes the profile on later samples', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
     const { renderer, sendCommand } = fakeRenderer()
     const record = vi.fn()
 
@@ -94,20 +96,24 @@ describe('noteRendererHeapHighwater', () => {
         samplingInterval: 512 * 1024
       })
     )
-    noteRendererHeapHighwater(renderer, 80, 'main', record)
+    noteRendererMemorySample(renderer, record)
+    expect(record).not.toHaveBeenCalled()
 
+    vi.setSystemTime(Date.now() + 60_000)
+    noteRendererMemorySample(renderer, record)
     await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1))
     expect(record.mock.calls[0][0]).toMatchObject({
       rendererSurface: 'main',
       startedAtPct: 60,
-      thresholdPct: 80,
+      sampledMinutes: 1,
       sampledLiveMB: 5
     })
-    expect(renderer.debugger.detach).toHaveBeenCalled()
-    expect(sendCommand).toHaveBeenCalledWith('HeapProfiler.stopSampling')
 
-    noteRendererHeapHighwater(renderer, 90, 'main', record)
+    noteRendererHeapHighwater(renderer, 80, 'main', record)
+    await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(2))
     expect(renderer.debugger.attach).toHaveBeenCalledTimes(1)
+    expect(renderer.debugger.detach).not.toHaveBeenCalled()
+    vi.useRealTimers()
   })
 
   it('never takes over a debugger that is already attached', () => {
@@ -126,6 +132,7 @@ describe('noteRendererHeapHighwater', () => {
     destroy()
 
     expect(renderer.debugger.detach).toHaveBeenCalled()
+    expect(renderer.debugger.sendCommand).toHaveBeenCalledWith('HeapProfiler.stopSampling')
   })
 })
 

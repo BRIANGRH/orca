@@ -40,16 +40,21 @@ type SamplingSession = {
   rendererSurface: string
   startedAtPct: number
   startedAtMs: number
+  lastReadAtMs: number
+  reading: boolean
   release: () => void
 }
 
+// Why: a fast leak can go from the first mark to OOM between two marks, so the profile is
+// refreshed on each periodic memory sample and the crash report keeps the newest one.
+const PROFILE_REFRESH_MS = 55_000
+
 const sessions = new Map<number, SamplingSession>()
-const finishedRenderers = new Set<number>()
 
 /**
- * Called for every renderer heap high-water crumb. The first heap mark starts V8's
- * sampling heap profiler; the next one reads which code allocated the memory still
- * alive since then and records it, so the report names the retainer's allocation site.
+ * The first heap-ratio high-water mark starts V8's sampling heap profiler on that renderer.
+ * From then on every memory sample re-reads which code allocated the memory still alive and
+ * overwrites one retained crumb, so a crash report names the allocation sites behind the growth.
  */
 export function noteRendererHeapHighwater(
   renderer: ProfiledRenderer,
@@ -57,42 +62,69 @@ export function noteRendererHeapHighwater(
   rendererSurface: string,
   record: (data: CrashReportBreadcrumbData) => void
 ): void {
-  if (renderer.isDestroyed() || finishedRenderers.has(renderer.id)) {
+  if (renderer.isDestroyed()) {
     return
   }
   const session = sessions.get(renderer.id)
-  if (!session) {
+  if (session) {
+    refreshProfile(renderer, session, record)
+  } else {
     startSampling(renderer, thresholdPct, rendererSurface)
+  }
+}
+
+export function noteRendererMemorySample(
+  renderer: ProfiledRenderer,
+  record: (data: CrashReportBreadcrumbData) => void
+): void {
+  const session = sessions.get(renderer.id)
+  if (session && !renderer.isDestroyed() && Date.now() - session.lastReadAtMs >= PROFILE_REFRESH_MS) {
+    refreshProfile(renderer, session, record)
+  }
+}
+
+function refreshProfile(
+  renderer: ProfiledRenderer,
+  session: SamplingSession,
+  record: (data: CrashReportBreadcrumbData) => void
+): void {
+  if (session.reading) {
     return
   }
-  if (thresholdPct <= session.startedAtPct) {
-    return
-  }
-  finishedRenderers.add(renderer.id)
+  session.reading = true
+  session.lastReadAtMs = Date.now()
   void renderer.debugger
     .sendCommand('HeapProfiler.getSamplingProfile')
     .then((result) => {
       const profile = readSamplingProfile(result)
-      if (profile) {
+      if (profile && sessions.get(renderer.id) === session) {
         record({
           rendererSurface: session.rendererSurface,
           startedAtPct: session.startedAtPct,
-          thresholdPct,
           sampledMinutes: Math.round((Date.now() - session.startedAtMs) / 60_000),
           ...summarizeSamplingProfile(profile)
         })
       }
     })
     .catch(() => undefined)
-    .finally(() => session.release())
+    .finally(() => {
+      session.reading = false
+    })
 }
 
-/** Feeds a renderer-sent breadcrumb to the profiler; only heap-ratio high-water marks count. */
+/** Feeds a renderer-sent breadcrumb to the profiler: heap-ratio marks start it, samples refresh it. */
 export function profileRendererHeapHighwaterBreadcrumb(
   renderer: ProfiledRenderer,
   args: { name?: unknown; data?: unknown } | undefined,
   origin: string
 ): void {
+  const record = (data: CrashReportBreadcrumbData): void => {
+    recordCrashBreadcrumb(RENDERER_HEAP_ALLOCATION_PROFILE_BREADCRUMB, data, origin)
+  }
+  if (args?.name === 'renderer_memory') {
+    noteRendererMemorySample(renderer, record)
+    return
+  }
   const data = args?.data
   if (args?.name !== 'renderer_memory_highwater' || !data || typeof data !== 'object') {
     return
@@ -106,7 +138,7 @@ export function profileRendererHeapHighwaterBreadcrumb(
     renderer,
     thresholdPct,
     typeof rendererSurface === 'string' ? rendererSurface : 'unknown',
-    (data) => recordCrashBreadcrumb(RENDERER_HEAP_ALLOCATION_PROFILE_BREADCRUMB, data, origin)
+    record
   )
 }
 
@@ -144,14 +176,13 @@ function startSampling(renderer: ProfiledRenderer, thresholdPct: number, surface
     debug.removeListener('detach', onDetach)
   }
   debug.on('detach', onDetach)
-  renderer.once('destroyed', () => {
-    finishedRenderers.delete(renderer.id)
-    release()
-  })
+  renderer.once('destroyed', release)
   sessions.set(renderer.id, {
     rendererSurface: surface,
     startedAtPct: thresholdPct,
     startedAtMs: Date.now(),
+    lastReadAtMs: Date.now(),
+    reading: false,
     release
   })
   void debug
@@ -242,5 +273,4 @@ export function resetRendererHeapAllocationProfilesForTests(): void {
     session.release()
   }
   sessions.clear()
-  finishedRenderers.clear()
 }
