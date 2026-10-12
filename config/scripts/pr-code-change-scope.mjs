@@ -183,6 +183,8 @@ function changesMobileWebApp(changedFiles) {
 
 const CROSS_VERSION_WIRE_PREFIXES = [
   'tests/e2e/cross-version-wire/',
+  // COMPAT(legacy-relay-bridge): the bridge is proven against a real 1.4.224 relay here.
+  'src/main/ssh/legacy-relay-bridge/',
   'config/scripts/stable-release-tags',
   // The R1 daemon protocol crossing gate runs in this job.
   'config/scripts/daemon-protocol-facts',
@@ -255,7 +257,7 @@ const MANAGED_HOOK_PREFIXES = [
   'config/scripts/smoke-process-host-node18',
   'config/scripts/packaged-process-host-fixture',
   'src/packages/process-host/',
-  'config/scripts/build-relay',
+  'config/scripts/build-wsl-guest',
   'src/wsl-guest/',
   'src/shared/agent-hook',
   'src/main/agent-hooks/'
