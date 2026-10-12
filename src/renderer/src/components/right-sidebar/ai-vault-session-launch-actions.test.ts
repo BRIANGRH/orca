@@ -25,7 +25,9 @@ vi.mock('@/lib/ai-vault-resume-command', () => ({
 vi.mock('@/lib/ai-vault-session-resume-preparation', () => ({
   prepareAiVaultSessionForFork: mocks.prepareAiVaultSessionForFork,
   prepareAiVaultSessionForResume: mocks.prepareAiVaultSessionForResume,
-  dropDeletedSshResumeCwd: async (session: unknown) => session
+  dropDeletedSshResumeCwd: async (session: unknown) => session,
+  aiVaultCliForkHostTooOldMessage: () =>
+    'Update Orca on the host that runs this chat to resume it in a new CLI.'
 }))
 vi.mock('@/lib/launch-ai-vault-session', () => ({
   launchAiVaultSessionInNewTab: mocks.launchAiVaultSessionInNewTab
@@ -89,7 +91,10 @@ function renderActions() {
 describe('Resume in New CLI launch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.prepareAiVaultSessionForFork.mockImplementation(async (session) => session)
+    mocks.prepareAiVaultSessionForFork.mockImplementation(async (session) => ({
+      session,
+      copied: false
+    }))
     mocks.buildAiVaultForkStartupForWorktree.mockReturnValue(FORK_STARTUP)
     mocks.launchAiVaultSessionInNewTab.mockReturnValue({ tabId: 'tab-1' })
   })
@@ -110,6 +115,28 @@ describe('Resume in New CLI launch', () => {
     expect(mocks.activateAiVaultResumeWorkspace).toHaveBeenCalledWith('worktree-2')
     expect(mocks.prepareAiVaultSessionForResume).not.toHaveBeenCalled()
     expect(mocks.buildAiVaultResumeStartupForWorktree).not.toHaveBeenCalled()
+    expect(mocks.toastError).not.toHaveBeenCalled()
+  })
+
+  it("opens the copy an OpenCode or OMP chat's host made with a plain resume", async () => {
+    const chat = { ...owned, agent: 'omp' as const, resumeCommand: 'omp --resume provider-1' }
+    const copy = { ...chat, sessionId: 'copy-1', filePath: '', resumeCommand: '' }
+    const RESUME_STARTUP = { command: "omp --resume 'copy-1'", cwd: '/repo' }
+    mocks.prepareAiVaultSessionForFork.mockResolvedValue({ session: copy, copied: true })
+    mocks.buildAiVaultResumeStartupForWorktree.mockReturnValue(RESUME_STARTUP)
+
+    renderActions().handleResumeInNewCli(chat, 'worktree-2')
+
+    await waitFor(() => expect(mocks.launchAiVaultSessionInNewTab).toHaveBeenCalledTimes(1))
+    expect(mocks.buildAiVaultResumeStartupForWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({ worktreeId: 'worktree-2', session: copy })
+    )
+    expect(mocks.buildAiVaultForkStartupForWorktree).not.toHaveBeenCalled()
+    expect(mocks.launchAiVaultSessionInNewTab).toHaveBeenCalledWith({
+      agent: 'omp',
+      worktreeId: 'worktree-2',
+      ...RESUME_STARTUP
+    })
     expect(mocks.toastError).not.toHaveBeenCalled()
   })
 

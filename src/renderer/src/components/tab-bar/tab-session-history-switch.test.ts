@@ -181,26 +181,26 @@ describe('resolveTabSessionHistorySubject', () => {
     ).toEqual({ ...chatSubject })
   })
 
-  it('finds a chat of any agent whose CLI can open a copy', () => {
-    expect(
-      resolveTabSessionHistorySubject(makeState(), {
-        tab: { id: 'unified-1', worktreeId: WORKTREE_ID, launchAgent: 'grok' },
-        structuredSessionId: 'orca-chat-1'
-      })
-    ).toEqual({ ...chatSubject })
-  })
-
-  it.each(['opencode', 'omp'] as const)(
-    'skips a %s chat, whose CLI cannot open a copy',
+  it.each(['grok', 'opencode', 'omp'] as const)(
+    'finds a %s chat, whose conversation can be copied to its CLI',
     (launchAgent) => {
       expect(
         resolveTabSessionHistorySubject(makeState(), {
           tab: { id: 'unified-1', worktreeId: WORKTREE_ID, launchAgent },
           structuredSessionId: 'orca-chat-1'
         })
-      ).toBeNull()
+      ).toEqual({ ...chatSubject })
     }
   )
+
+  it('skips a chat of an agent that cannot copy its conversation', () => {
+    expect(
+      resolveTabSessionHistorySubject(makeState(), {
+        tab: { id: 'unified-1', worktreeId: WORKTREE_ID, launchAgent: 'gemini' },
+        structuredSessionId: 'orca-chat-1'
+      })
+    ).toBeNull()
+  })
 
   it('finds a terminal tab by the conversation its agent reported', () => {
     expect(

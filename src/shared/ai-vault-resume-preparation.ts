@@ -16,6 +16,9 @@ export type AiVaultPrepareSessionResumeResult = {
   // homes, so the owning host repins resume to the selected account's home.
   // Absent (older hosts included) means resume keeps the session's own home.
   substituteCodexHome?: string
+  /** The copy a fork made of a chat's conversation, for an agent whose chat makes it
+   *  (`agentForksThroughChat`). Absent from older hosts, which make none. */
+  forkedSessionId?: string
 }
 
 export type AiVaultSessionResumePreparation = (

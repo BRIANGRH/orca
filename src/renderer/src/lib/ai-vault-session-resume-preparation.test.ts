@@ -114,7 +114,8 @@ describe('prepareAiVaultSessionForFork', () => {
 
     const prepared = await prepareAiVaultSessionForFork(owned)
 
-    expect(prepared.codexHome).toBe('/tmp/orca/codex-accounts/account-2/home')
+    expect(prepared.copied).toBe(false)
+    expect(prepared.session.codexHome).toBe('/tmp/orca/codex-accounts/account-2/home')
     expect(prepareSessionResume).toHaveBeenCalledWith({
       agent: 'codex',
       sessionId: owned.sessionId,
@@ -134,8 +135,63 @@ describe('prepareAiVaultSessionForFork', () => {
       structuredSession: { sessionId: 'session-1', workspaceId: 'worktree-1' }
     })
 
-    await expect(prepareAiVaultSessionForFork(owned)).resolves.toBe(owned)
+    await expect(prepareAiVaultSessionForFork(owned)).resolves.toEqual({
+      session: owned,
+      copied: false
+    })
     expect(prepareSessionResume).not.toHaveBeenCalled()
+  })
+
+  it.each(['opencode', 'opencode2', 'omp'] as const)(
+    "has the %s chat's host make the copy, and opens that copy, which no chat owns",
+    async (agent) => {
+      const prepareSessionResume = vi.fn().mockResolvedValue({
+        useRealCodexHome: false,
+        forkedSessionId: 'copy-1'
+      })
+      stubPreparation(prepareSessionResume)
+      const owned = session({
+        agent,
+        sessionId: 'chat-conversation',
+        filePath: '/tmp/chat-conversation.jsonl',
+        resumeCommand: `${agent} --resume chat-conversation`,
+        executionHostId: 'runtime:env-1',
+        structuredSession: { sessionId: 'session-1', workspaceId: 'worktree-1' }
+      })
+
+      const prepared = await prepareAiVaultSessionForFork(owned)
+
+      expect(prepareSessionResume).toHaveBeenCalledWith({
+        agent,
+        sessionId: 'chat-conversation',
+        filePath: '/tmp/chat-conversation.jsonl',
+        codexHome: null,
+        executionHostId: 'runtime:env-1',
+        fork: true
+      })
+      expect(prepared.copied).toBe(true)
+      expect(prepared.session).toMatchObject({
+        agent,
+        sessionId: 'copy-1',
+        filePath: '',
+        resumeCommand: '',
+        cwd: '/repo',
+        executionHostId: 'runtime:env-1'
+      })
+      expect(prepared.session).not.toHaveProperty('structuredSession')
+    }
+  )
+
+  it("refuses a host that made no copy rather than resuming the chat's own conversation", async () => {
+    stubPreparation(vi.fn().mockResolvedValue({ useRealCodexHome: false }))
+    const owned = session({
+      agent: 'omp',
+      structuredSession: { sessionId: 'session-1', workspaceId: 'worktree-1' }
+    })
+
+    await expect(prepareAiVaultSessionForFork(owned)).rejects.toThrow(
+      'Update Orca on the host that runs this chat to resume it in a new CLI.'
+    )
   })
 })
 

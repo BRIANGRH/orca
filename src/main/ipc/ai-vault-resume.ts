@@ -6,6 +6,7 @@ import type {
 } from '../../shared/ai-vault-resume-preparation'
 import { isUnresolvedOwnerHostId, parseExecutionHostId } from '../../shared/execution-host'
 import { assertLegacyAiVaultResumeAllowed } from '../ai-vault/structured-session-ownership'
+import { copyStructuredChatConversation } from '../ai-vault/structured-chat-conversation-copy'
 
 export type AiVaultResumeHandlerOptions = {
   ensureStructuredSessionOwnership?: () => Promise<void>
@@ -39,5 +40,8 @@ export async function prepareAiVaultSessionResume(
   if (executionHost?.kind === 'ssh') {
     return { useRealCodexHome: false }
   }
-  return options.prepareSessionResume?.(args) ?? { useRealCodexHome: false }
+  return (
+    (await copyStructuredChatConversation(args)) ??
+    options.prepareSessionResume?.(args) ?? { useRealCodexHome: false }
+  )
 }

@@ -174,12 +174,17 @@ export function useAiVaultSessionLaunchActions({
   const handleResumeInNewCli = useCallback(
     (session: AiVaultSession, targetWorktreeId: string): void => {
       const prepareStartup = async (worktreeId: string): Promise<AiVaultResumeStartup> => {
-        const startup = buildAiVaultForkStartupForWorktree({
-          state: useAppStore.getState(),
-          worktreeId,
-          session: await prepareAiVaultSessionForFork(session).then(dropDeletedSshResumeCwd),
-          commandOverride: agentCmdOverrides?.[session.agent]
-        })
+        const prepared = await prepareAiVaultSessionForFork(session)
+        const target = await dropDeletedSshResumeCwd(prepared.session)
+        // A copy the chat's host already made is the terminal's own conversation: a plain resume.
+        const startup = prepared.copied
+          ? buildResumeStartup(target, worktreeId)
+          : buildAiVaultForkStartupForWorktree({
+              state: useAppStore.getState(),
+              worktreeId,
+              session: target,
+              commandOverride: agentCmdOverrides?.[session.agent]
+            })
         if (!startup) {
           throw new Error(
             translate(
@@ -192,7 +197,7 @@ export function useAiVaultSessionLaunchActions({
       }
       launchInTerminal(session, targetWorktreeId, prepareStartup, describeAiVaultCliForkFailure)
     },
-    [agentCmdOverrides, launchInTerminal]
+    [agentCmdOverrides, buildResumeStartup, launchInTerminal]
   )
 
   const handleResumeInNewChat = useCallback(

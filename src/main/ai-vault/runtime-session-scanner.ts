@@ -32,7 +32,8 @@ export type RuntimeAiVaultScanOptions = {
 // parent would silently drop it and resume under the wrong account's home.
 const aiVaultPrepareSessionResumeResultSchema = z.object({
   useRealCodexHome: z.boolean(),
-  substituteCodexHome: z.string().optional()
+  substituteCodexHome: z.string().optional(),
+  forkedSessionId: z.string().optional()
 })
 
 export function getSavedRuntimeAiVaultHostInfos(

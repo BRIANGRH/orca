@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { agentForksConversations, getAgentForkArgv } from './agent-resume-argv'
+import {
+  agentForksConversations,
+  agentForksThroughChat,
+  getAgentForkArgv
+} from './agent-resume-argv'
 import { buildAgentResumeStartupPlan } from './tui-agent-startup'
 
 const SESSION = { key: 'session_id', id: 's1' } as const
@@ -13,9 +17,26 @@ describe('agent fork startup', () => {
       '/s/a.jsonl'
     ])
     expect(getAgentForkArgv('pi', SESSION)).toBeNull()
-    expect(getAgentForkArgv('opencode', SESSION)).toBeNull()
-    expect(getAgentForkArgv('omp', SESSION)).toBeNull()
     expect(agentForksConversations('constructor')).toBe(false)
+  })
+
+  it('forks OpenCode and OMP through their chat, never a resume of the original', () => {
+    for (const agent of ['opencode', 'opencode2', 'omp'] as const) {
+      expect(agentForksConversations(agent)).toBe(true)
+      expect(agentForksThroughChat(agent)).toBe(true)
+      expect(getAgentForkArgv(agent, SESSION)).toBeNull()
+      expect(
+        buildAgentResumeStartupPlan({
+          agent,
+          providerSession: SESSION,
+          cmdOverrides: {},
+          platform: 'darwin',
+          fork: true
+        })
+      ).toBeNull()
+    }
+    expect(agentForksThroughChat('claude')).toBe(false)
+    expect(agentForksConversations('gemini')).toBe(false)
   })
 
   it('forks Claude and Codex', () => {

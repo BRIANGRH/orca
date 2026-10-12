@@ -10,6 +10,7 @@ import {
 import { defineMethod } from '../core'
 import { conditionalAiVaultListResult } from '../../../ai-vault/session-list-fingerprint'
 import { restampAiVaultListResult } from '../../../ai-vault/session-list-results'
+import { copyStructuredChatConversation } from '../../../ai-vault/structured-chat-conversation-copy'
 import type { AiVaultPrepareSessionResumeArgs } from '../../../../shared/ai-vault-resume-preparation'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 import { describeAiVaultScanError } from '../../../../shared/ai-vault-scan-error-message'
@@ -137,7 +138,9 @@ export const AI_VAULT_METHODS = [
         runtime.ensureStructuredAgentSessionHost()
       )
       assertLegacyAiVaultResumeAllowed(args)
-      return runtime.prepareAiVaultSessionResume(args)
+      return (
+        (await copyStructuredChatConversation(args)) ?? runtime.prepareAiVaultSessionResume(args)
+      )
     }
   })
 ]
