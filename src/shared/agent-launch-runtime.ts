@@ -49,3 +49,6 @@ export function executionRuntimePlatform(
 export function remoteExecutionPlatform(workspacePath: string): NodeJS.Platform {
   return isWindowsAbsolutePathLike(workspacePath) ? 'win32' : 'linux'
 }
+
+/** A launch refused while planning, before anything spawned: a definite refusal, not an unknown. */
+export const PROJECT_RUNTIME_REPAIR_REQUIRED_CODE = 'project_runtime_repair_required'

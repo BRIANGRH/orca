@@ -7,7 +7,11 @@ import {
   resolveAgentLaunchRuntime
 } from './agent-launch-scope-runtime'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
-import { agentLaunchQuotingShell } from '../../shared/agent-launch-runtime'
+import {
+  agentLaunchQuotingShell,
+  PROJECT_RUNTIME_REPAIR_REQUIRED_CODE
+} from '../../shared/agent-launch-runtime'
+import { mapRuntimeError } from './rpc/errors'
 
 const WIN = 'C:\\repo'
 const SHARE = '\\\\wsl$\\Ubuntu\\home\\a\\repo'
@@ -126,4 +130,26 @@ it("keeps a folder's WSL Terminal shell where its repo's project is set to Windo
     'wsl.exe',
     'posix'
   ])
+})
+
+// W5d: refused while planning, before any spawn, so `orca agent launch` shows the refusal (it reads
+// any code but `runtime_error` as one) instead of "could not confirm the launch outcome".
+it('refuses a runtime that needs repair under its own code on the wire', () => {
+  _setWslCachesForTests({ available: true, distros: ['Ubuntu'] })
+  const work = folder('C:\\work')
+  const s = store({
+    project: { kind: 'wsl', distro: 'NoSuchDistro' },
+    repos: [repo(WIN)],
+    folder: work
+  })
+  let thrown: unknown
+  try {
+    resolveAgentLaunchRuntime(s, scope('C:\\work', { folder: work }), undefined, 'codex')
+  } catch (error) {
+    thrown = error
+  }
+  expect(mapRuntimeError('req-1', { runtimeId: 'runtime-1' }, thrown).error).toMatchObject({
+    code: PROJECT_RUNTIME_REPAIR_REQUIRED_CODE,
+    message: 'Project runtime requires repair before terminal spawn: wsl-distro-missing'
+  })
 })

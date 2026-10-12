@@ -2,6 +2,7 @@ import {
   agentLaunchQuotingShell,
   executionRuntimePlatform,
   remoteExecutionPlatform,
+  PROJECT_RUNTIME_REPAIR_REQUIRED_CODE,
   type AgentLaunchRuntime
 } from '../../shared/agent-launch-runtime'
 import type { AgentStartupShell } from '../../shared/tui-agent-startup-shell'
@@ -20,6 +21,7 @@ import {
   type LaunchScopeRuntimeStore
 } from '../local-project-runtime-resolution'
 import type { RuntimeStore } from './runtime-store-contract'
+import { OrchestrationError } from './orchestration/orchestration-error'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
 
 type AgentLaunchRuntimeStore = Omit<LaunchScopeRuntimeStore, 'getSettings'> &
@@ -64,8 +66,8 @@ export function agentLaunchProjectRuntime(
   return pathDecides ? undefined : runtime
 }
 
-/** The one runtime fact for an agent launched into this workspace. Throws, as the spawn would,
- *  when the workspace's runtime needs repair. */
+/** The one runtime fact for an agent launched into this workspace. Throws the spawn's refusal,
+ *  under `PROJECT_RUNTIME_REPAIR_REQUIRED_CODE`, when the workspace's runtime needs repair. */
 export function resolveAgentLaunchRuntime(
   store: AgentLaunchRuntimeStore,
   scope: TerminalWorkspaceLaunchScope,
@@ -79,9 +81,15 @@ export function resolveAgentLaunchRuntime(
     }
   }
   const projectRuntime = agentLaunchProjectRuntime(store, scope, agent)
-  return {
-    platform: executionRuntimePlatform(projectRuntime, scope.path, process.platform),
-    pty: resolveLocalPtyOptions(store.getSettings(), projectRuntime, requestedShellOverride)
+  try {
+    return {
+      platform: executionRuntimePlatform(projectRuntime, scope.path, process.platform),
+      pty: resolveLocalPtyOptions(store.getSettings(), projectRuntime, requestedShellOverride)
+    }
+  } catch (error) {
+    throw projectRuntime?.status === 'repair-required' && error instanceof Error
+      ? new OrchestrationError(PROJECT_RUNTIME_REPAIR_REQUIRED_CODE, error.message)
+      : error
   }
 }
 
