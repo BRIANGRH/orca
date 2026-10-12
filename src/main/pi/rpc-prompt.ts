@@ -1,5 +1,6 @@
 import { extname } from 'node:path'
 import { resolveJsonlRpcPeerOptions } from '../jsonl-rpc/peer-limits'
+import type { JsonlRpcRecord } from '../jsonl-rpc/peer'
 import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { NativeChatImageRefBlock } from '../../shared/native-chat-types'
 import {
@@ -39,6 +40,22 @@ export type PiRpcPrompt = Record<string, unknown> & {
 
 type ImageReads = {
   readLocal(path: string): Promise<Buffer>
+}
+
+/** The line Pi is written: the prompt, steering the running turn or following it. */
+export function piRpcPromptFrame<T extends JsonlRpcRecord>(
+  prompt: T,
+  working: boolean
+): T & { streamingBehavior: NonNullable<PiRpcPrompt['streamingBehavior']> } {
+  return { ...prompt, streamingBehavior: working ? 'steer' : 'followUp' }
+}
+
+/** A prompt's bytes in whichever frame it is written. */
+function piRpcPromptFrameBytes(prompt: PiRpcPrompt): number {
+  return Math.max(
+    jsonBytes(piRpcPromptFrame(prompt, true)),
+    jsonBytes(piRpcPromptFrame(prompt, false))
+  )
 }
 
 export class PiRpcPromptError extends Error {
@@ -170,7 +187,7 @@ export async function preparePiRpcPrompt(
     images,
     ...(streamingBehavior ? { streamingBehavior } : {})
   }
-  if (Buffer.byteLength(JSON.stringify(prompt), 'utf8') > MAX_PROMPT_WIRE_BYTES) {
+  if (piRpcPromptFrameBytes(prompt) > MAX_PROMPT_WIRE_BYTES) {
     throw new PiRpcPromptError(
       'Pi prompt exceeds the RPC write limit',
       agentSessionFailureFact('historyTooLarge')
@@ -222,7 +239,7 @@ export async function preparePiRpcDispatch(
   const fit = await fitStoppedHistory({
     owed,
     room: {
-      line: Math.min(MAX_PROMPT_WIRE_BYTES, heldBytesFree) - jsonBytes(own) - join,
+      line: Math.min(MAX_PROMPT_WIRE_BYTES, heldBytesFree) - piRpcPromptFrameBytes(own) - join,
       images: MAX_IMAGE_COUNT - own.images.length,
       bytes: MAX_TOTAL_IMAGE_BYTES - ownBytes
     },
