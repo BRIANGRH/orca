@@ -48,12 +48,12 @@ describe('WorktreeAgentRow visual lines', () => {
   }
 
   it('shows the words around a visual line, never the line itself', () => {
-    expect(label(agent('Here it is.\n::orca-visual{file="usage.html"}\nSunday dips.'))).toBe(
+    expect(label(agent('Here it is.\n::orca-visual{path="usage.html"}\nSunday dips.'))).toBe(
       'Here it is.\nSunday dips.'
     )
   })
 
   it('falls back to the prompt when the reply is only a visual', () => {
-    expect(label(agent('::orca-visual{file="usage.html" title="Usage"}'))).toBe('Show usage by day')
+    expect(label(agent('::orca-visual{path="usage.html" title="Usage"}'))).toBe('Show usage by day')
   })
 })

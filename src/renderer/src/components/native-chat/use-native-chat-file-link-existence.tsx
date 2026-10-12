@@ -122,6 +122,17 @@ export function NativeChatFileLinkExistenceProvider({
 
 const subscribeToNothing = (): (() => void) => () => {}
 const getNoSnapshot = (): null => null
+const getNoGeneration = (): number => 0
+
+/** Changes at each recheck of this chat's files (turn end, host return); 0 outside a chat. */
+export function useNativeChatFileLinkRecheckGeneration(): number {
+  const existence = useContext(NativeChatFileLinkExistenceContext)
+  return useSyncExternalStore(
+    existence?.subscribeRecheck ?? subscribeToNothing,
+    existence?.recheckGeneration ?? getNoGeneration,
+    existence?.recheckGeneration ?? getNoGeneration
+  )
+}
 
 /** Undefined when this chat cannot open files, so nothing is underlined. */
 export function useNativeChatFileLinkExists(

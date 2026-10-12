@@ -9,15 +9,12 @@
 //   contain `"`, `\`, or control characters. Keys are lowercase ASCII letters.
 // - `path` (relative to the chat's folder) is required. `title` is optional. A repeated key refuses
 //   the line. Other keys are ignored, so a newer agent's extra attribute still renders on this viewer.
-// - Older hosts' agents wrote `file`, a bare name in that host's per-chat visuals folder; a line with
-//   `file` and no `path` still parses, as a legacy visual only an older host can serve.
 // - The name is case-sensitive.
 
 export const NATIVE_CHAT_VISUAL_DIRECTIVE_MARKER = '::orca-visual{'
 
 /** Longest line the grammar considers. Bounds parsing and the streaming-tail check. */
 export const NATIVE_CHAT_VISUAL_DIRECTIVE_MAX_LINE_LENGTH = 512
-export const NATIVE_CHAT_VISUAL_FILE_MAX_LENGTH = 128
 export const NATIVE_CHAT_VISUAL_PATH_MAX_LENGTH = 256
 export const NATIVE_CHAT_VISUAL_TITLE_MAX_LENGTH = 120
 
@@ -28,18 +25,15 @@ export const NATIVE_CHAT_VISUAL_TITLE_MAX_LENGTH = 120
  */
 export const NATIVE_CHAT_VISUAL_MAX_PER_MESSAGE = 8
 
-/** Largest visual file, in UTF-8 bytes. The execution host enforces it in a bounded read. */
+/** Largest visual file, in UTF-8 bytes; a larger page shows as unavailable. */
 export const NATIVE_CHAT_VISUAL_MAX_BYTES = 512 * 1024
 
 export type NativeChatVisualDirective = {
-  /** The page, relative to the chat's folder; a bare name when `legacy`. */
+  /** The page, relative to the chat's folder. */
   path: string
-  /** A `file` line from an older host, naming its per-chat visuals folder instead of the workspace. */
-  legacy: boolean
   title: string | null
 }
 
-const FILE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*\.html$/
 // Why: Windows maps these base names to devices whatever the extension.
 const WINDOWS_DEVICE_BASE_NAME = /^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$)$/i
 const ATTRIBUTE_PATTERN = /^([a-z]+)="([^"]*)"/
@@ -69,23 +63,6 @@ export function isNativeChatVisualPath(path: string): boolean {
     const dot = segment.indexOf('.')
     return !WINDOWS_DEVICE_BASE_NAME.test(dot === -1 ? segment : segment.slice(0, dot))
   })
-}
-
-/**
- * A single file name inside an older host's per-chat visuals folder: no directories, separators,
- * `..`, drive, UNC, device or stream forms, ending in `.html`.
- */
-export function isNativeChatVisualFileName(name: string): boolean {
-  if (
-    name.length === 0 ||
-    name.length > NATIVE_CHAT_VISUAL_FILE_MAX_LENGTH ||
-    !FILE_NAME_PATTERN.test(name) ||
-    name.includes('..')
-  ) {
-    return false
-  }
-  const baseName = name.slice(0, name.indexOf('.'))
-  return !WINDOWS_DEVICE_BASE_NAME.test(baseName)
 }
 
 function isPlainAttributeValue(value: string): boolean {
@@ -158,20 +135,14 @@ export function parseNativeChatVisualDirectiveLine(
     return null
   }
   const path = attributes.get('path')
-  const file = attributes.get('file')
-  const legacy = path === undefined
-  const named = path ?? file
-  if (
-    named === undefined ||
-    !(legacy ? isNativeChatVisualFileName(named) : isNativeChatVisualPath(named))
-  ) {
+  if (path === undefined || !isNativeChatVisualPath(path)) {
     return null
   }
   const title = attributes.get('title')?.trim() ?? ''
   if (title.length > NATIVE_CHAT_VISUAL_TITLE_MAX_LENGTH) {
     return null
   }
-  return { path: named, legacy, title: title.length > 0 ? title : null }
+  return { path, title: title.length > 0 ? title : null }
 }
 
 /**

@@ -10,7 +10,7 @@ import {
   readNativeChatVisualFrameMessage,
   readNativeChatVisualPong
 } from '../../../../shared/native-chat-visual-shell'
-import type { NativeChatVisualDocument } from './native-chat-visual-read-client'
+import type { NativeChatVisualDocument } from './native-chat-visual-file'
 import { createNativeChatVisualHeightGovernor } from '../../../../shared/native-chat-visual-height-governor'
 import { useNativeChatVisualTheme } from './use-native-chat-visual-theme'
 import { useWebviewDragPassthroughActive } from '../browser-pane/host-guest/use-webview-drag-passthrough-active'

@@ -3,7 +3,6 @@ import type { ExtraProps } from 'react-markdown'
 import type { CommentMarkdownExtension } from '@/components/sidebar/CommentMarkdown'
 import {
   NATIVE_CHAT_VISUAL_TITLE_MAX_LENGTH,
-  isNativeChatVisualFileName,
   isNativeChatVisualPath
 } from '../../../../shared/native-chat-visual-directive'
 import { NativeChatInlineVisual } from './NativeChatInlineVisual'
@@ -20,13 +19,11 @@ type DivProps = ComponentPropsWithoutRef<'div'> & ExtraProps
 function placeholderAttributes(props: DivProps): {
   nonce: unknown
   path: unknown
-  legacy: boolean
   title: unknown
 } {
   return {
     nonce: 'data-orca-visual' in props ? props['data-orca-visual'] : undefined,
     path: 'data-orca-visual-path' in props ? props['data-orca-visual-path'] : undefined,
-    legacy: 'data-orca-visual-legacy' in props && props['data-orca-visual-legacy'] === 'true',
     title: 'data-orca-visual-title' in props ? props['data-orca-visual-title'] : undefined
   }
 }
@@ -42,12 +39,12 @@ function createVisualExtension(
   nonce: string
 ): CommentMarkdownExtension {
   function VisualPlaceholder({ node: _node, ...props }: DivProps): React.JSX.Element {
-    const { nonce: placeholderNonce, path, legacy, title } = placeholderAttributes(props)
+    const { nonce: placeholderNonce, path, title } = placeholderAttributes(props)
     // Only the parser's own placeholders carry this message's nonce; the fields are re-checked anyway.
     if (
       placeholderNonce !== nonce ||
       typeof path !== 'string' ||
-      !(legacy ? isNativeChatVisualFileName(path) : isNativeChatVisualPath(path)) ||
+      !isNativeChatVisualPath(path) ||
       (title !== undefined &&
         (typeof title !== 'string' || title.length > NATIVE_CHAT_VISUAL_TITLE_MAX_LENGTH))
     ) {
@@ -57,7 +54,6 @@ function createVisualExtension(
       <NativeChatInlineVisual
         owner={owner}
         path={path}
-        legacy={legacy}
         title={typeof title === 'string' && title.length > 0 ? title : null}
       />
     )

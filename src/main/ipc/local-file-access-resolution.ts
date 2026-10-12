@@ -22,6 +22,7 @@ const USER_FILE_NEEDS_ABSOLUTE_PATH_MESSAGE =
 const USER_FILE_ACCESS: LocalFileAccess = { kind: 'user-file' }
 
 const CHAT_IMAGE_TYPE_MESSAGE = 'Access denied: a chat can only show local image files.'
+const CHAT_HTML_TYPE_MESSAGE = 'Access denied: a chat can only show local HTML files.'
 
 /** Desktop IPC's root check: the project roots plus the app-owned floating-workspace folder. */
 export async function resolveDesktopAuthorizedPath(
@@ -63,6 +64,10 @@ export async function resolveUserNamedRegularFile(
 function isChatImage(filePath: string): boolean {
   const extension = extname(filePath).toLowerCase()
   return Boolean(PREVIEWABLE_BINARY_MIME_TYPES[extension]) && extension !== '.pdf'
+}
+
+function isChatHtml(filePath: string): boolean {
+  return /\.html?$/i.test(filePath)
 }
 
 // Why the resolved path: `NUL.png\.` and `COM1.png\x\..` resolve to a device name.
@@ -107,12 +112,17 @@ async function resolveDocumentResourcePath(
 }
 
 /**
- * An image shown in a chat transcript, whoever's turn named it: any absolute local image file,
- * typed by its real target. Transcripts load as they scroll into view, so a network share is read
- * only inside a project the user added from it (the default check); anywhere else its path text,
- * like a device path, is refused before any filesystem call.
+ * A file shown in a chat transcript (an image, an HTML visual), whoever's turn named it: any
+ * absolute local file of that kind, typed by its real target. Transcripts load as they scroll into
+ * view, so a network share is read only inside a project the user added from it (the default
+ * check); anywhere else its path text, like a device path, is refused before any filesystem call.
  */
-async function resolveChatImagePath(targetPath: string, store: Store): Promise<string> {
+async function resolveChatFilePath(
+  targetPath: string,
+  store: Store,
+  isShownType: (realTarget: string) => boolean,
+  typeMessage: string
+): Promise<string> {
   if (typeof targetPath !== 'string' || !isAbsolute(targetPath)) {
     throw new Error(PATH_ACCESS_DENIED_MESSAGE)
   }
@@ -132,8 +142,8 @@ async function resolveChatImagePath(targetPath: string, store: Store): Promise<s
     await resolveDesktopAuthorizedPath(realTarget, store)
   }
   // Why the real target's type: `shot.png -> ~/.ssh/id_rsa` must not be read as an image.
-  if (!isChatImage(realTarget)) {
-    throw new Error(CHAT_IMAGE_TYPE_MESSAGE)
+  if (!isShownType(realTarget)) {
+    throw new Error(typeMessage)
   }
   return realTarget
 }
@@ -190,6 +200,9 @@ function parseLocalFileAccess(access: unknown): LocalFileAccess | undefined {
   if (access.kind === 'chat-image') {
     return { kind: 'chat-image' }
   }
+  if (access.kind === 'chat-html') {
+    return { kind: 'chat-html' }
+  }
   if (
     access.kind === 'document-folder' &&
     'documentPath' in access &&
@@ -229,7 +242,12 @@ function declaredKindRule(
         : undefined
     case 'chat-image':
       return operation === 'read'
-        ? (targetPath) => resolveChatImagePath(targetPath, store)
+        ? (targetPath) =>
+            resolveChatFilePath(targetPath, store, isChatImage, CHAT_IMAGE_TYPE_MESSAGE)
+        : undefined
+    case 'chat-html':
+      return operation === 'read'
+        ? (targetPath) => resolveChatFilePath(targetPath, store, isChatHtml, CHAT_HTML_TYPE_MESSAGE)
         : undefined
     case 'document-folder':
       return operation === 'import-into'
@@ -259,7 +277,10 @@ export async function resolveLocalRequestPath(
     throw new Error(PATH_ACCESS_DENIED_MESSAGE)
   }
   // Why device text first: a device is never a file to load, even inside a project.
-  const automaticLoad = fileAccess.kind === 'document-resource' || fileAccess.kind === 'chat-image'
+  const automaticLoad =
+    fileAccess.kind === 'document-resource' ||
+    fileAccess.kind === 'chat-image' ||
+    fileAccess.kind === 'chat-html'
   if (automaticLoad && isRefusedAutomaticLoadPath(resolve(targetPath))) {
     throw new Error(PATH_ACCESS_DENIED_MESSAGE)
   }

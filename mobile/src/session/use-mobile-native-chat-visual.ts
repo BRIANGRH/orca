@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { RpcClient } from '../transport/rpc-client'
 import {
   cachedMobileNativeChatVisual,
   readMobileNativeChatVisual,
@@ -7,48 +8,58 @@ import {
 
 export type MobileNativeChatVisualState =
   | { kind: 'loading' }
-  | { kind: 'ready'; html: string; revision: string }
+  | { kind: 'ready'; html: string }
   | { kind: 'unavailable' }
+
+/** A chat's visuals are files in its workspace, read on the host it runs on; null without a client. */
+export function useMobileNativeChatVisualSource(
+  client: RpcClient | null,
+  hostId: string,
+  worktreeId: string
+): MobileNativeChatVisualSource | null {
+  return useMemo(
+    () => (client ? { client, hostId, worktreeId } : null),
+    [client, hostId, worktreeId]
+  )
+}
 
 /** Automatic re-asks after a read that got no answer; the reader's tap starts a fresh round. */
 const AUTO_RETRY_DELAYS_MS = [1_500, 5_000] as const
 
 function initialState(
   source: MobileNativeChatVisualSource,
-  path: string,
-  legacy: boolean
+  path: string
 ): MobileNativeChatVisualState {
-  const cached = cachedMobileNativeChatVisual(source, { path, legacy })
-  return cached ? { kind: 'ready', ...cached } : { kind: 'loading' }
+  const html = cachedMobileNativeChatVisual(source, path)
+  return html === null ? { kind: 'loading' } : { kind: 'ready', html }
 }
 
 /**
- * One visual's content: painted from the phone's cache when it has one, revalidated against the
- * owning host on every mount, and retried a bounded number of times when the host does not answer.
+ * One visual's content: painted from the phone's cache when it has one, read from the workspace's
+ * host on every mount, and retried a bounded number of times when the host does not answer.
  * Nothing latches: `retry` (or a new client after a reconnect) asks again.
  */
 export function useMobileNativeChatVisual(
   source: MobileNativeChatVisualSource,
-  path: string,
-  legacy: boolean
+  path: string
 ): { state: MobileNativeChatVisualState; retry: () => void } {
-  const [state, setState] = useState(() => initialState(source, path, legacy))
+  const [state, setState] = useState(() => initialState(source, path))
   // `round` is a reader's retry; `retriesUsed` counts automatic re-asks within it.
   const [request, setRequest] = useState({ round: 0, retriesUsed: 0 })
   const [retryInMs, setRetryInMs] = useState<number | null>(null)
 
   useEffect(() => {
     let disposed = false
-    void readMobileNativeChatVisual(source, { path, legacy }).then((read) => {
+    void readMobileNativeChatVisual(source, path).then((read) => {
       if (disposed) {
         return
       }
       if (read.kind === 'ready') {
-        // Same revision keeps the same state object, so the frame does not reload its document.
+        // The same page keeps the same state object, so the frame does not reload its document.
         setState((current) =>
-          current.kind === 'ready' && current.revision === read.revision
+          current.kind === 'ready' && current.html === read.html
             ? current
-            : { kind: 'ready', html: read.html, revision: read.revision }
+            : { kind: 'ready', html: read.html }
         )
         return
       }
@@ -66,7 +77,7 @@ export function useMobileNativeChatVisual(
     return () => {
       disposed = true
     }
-  }, [source, path, legacy, request])
+  }, [source, path, request])
 
   useEffect(() => {
     if (retryInMs === null) {

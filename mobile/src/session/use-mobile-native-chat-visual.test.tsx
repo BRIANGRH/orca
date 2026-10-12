@@ -23,11 +23,11 @@ import {
 } from './use-mobile-native-chat-visual'
 
 // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the read module is mocked; the client is only an identity here.
-const source = { client: {} as RpcClient, sessionId: 'session-1' }
+const source = { client: {} as RpcClient, hostId: 'host-1', worktreeId: 'repo::/srv/app' }
 
 let latest: { state: MobileNativeChatVisualState; retry: () => void } | null = null
 function Probe() {
-  latest = useMobileNativeChatVisual(source, 'chart.html', false)
+  latest = useMobileNativeChatVisual(source, 'chart.html')
   return null
 }
 
@@ -70,14 +70,14 @@ describe('useMobileNativeChatVisual', () => {
   })
 
   it('does not latch a failure: a retry asks again and can succeed', async () => {
-    reads.next = [{ kind: 'refused' }, { kind: 'ready', html: '<p>', revision: 'a'.repeat(32) }]
+    reads.next = [{ kind: 'refused' }, { kind: 'ready', html: '<p>' }]
     await mount()
     expect(latest?.state).toEqual({ kind: 'unavailable' })
     await act(async () => {
       latest?.retry()
     })
     expect(reads.calls).toBe(2)
-    expect(latest?.state).toEqual({ kind: 'ready', html: '<p>', revision: 'a'.repeat(32) })
+    expect(latest?.state).toEqual({ kind: 'ready', html: '<p>' })
   })
 
   it('stops re-asking after unmount', async () => {

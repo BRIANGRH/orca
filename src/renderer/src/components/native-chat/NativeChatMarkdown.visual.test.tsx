@@ -2,13 +2,13 @@
 
 import '@testing-library/jest-dom/vitest'
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const callRuntimeRpc = vi.fn()
-vi.mock('@/runtime/runtime-rpc-client', () => ({
-  callRuntimeRpc: (...args: unknown[]) => callRuntimeRpc(...args)
+const readRuntimeFilePreview = vi.fn()
+vi.mock('@/runtime/runtime-file-read-client', () => ({
+  readRuntimeFilePreview: (...args: unknown[]) => readRuntimeFilePreview(...args)
 }))
 const openNativeChatVisualFile = vi.fn()
 vi.mock('./native-chat-visual-open', () => ({
@@ -19,8 +19,20 @@ const FILE_LINK_CONTEXT = {
   worktreePath: '/repo',
   runtimeEnvironmentId: null
 }
+const fileLink = vi.hoisted(() => {
+  const state: { context: unknown; hostResolved: boolean } = { context: null, hostResolved: true }
+  return state
+})
+vi.mock('@/components/terminal-pane/terminal-file-path-mapping', () => ({
+  getTerminalFileContext: (worktreeId: string, worktreePath: string) => ({
+    target: { kind: 'local' },
+    worktreeId,
+    worktreePath,
+    sourceHostResolved: fileLink.hostResolved
+  })
+}))
 vi.mock('./use-native-chat-file-link-context', () => ({
-  useNativeChatFileLinkContext: () => FILE_LINK_CONTEXT
+  useNativeChatFileLinkContext: () => fileLink.context
 }))
 
 import { NativeChatMarkdown } from './NativeChatMarkdown'
@@ -29,27 +41,81 @@ import {
   NativeChatVisualOwnerContext,
   type NativeChatVisualOwner
 } from './native-chat-visual-owner'
-import { clearNativeChatVisualCacheForTests } from './native-chat-visual-read-client'
+import { clearNativeChatVisualFileCacheForTests } from './native-chat-visual-file'
+import {
+  NativeChatFileLinkExistenceContext,
+  type NativeChatFileLinkExistence
+} from './native-chat-file-link-existence'
+import { ORCA_WORKTREE_FILE_CHANGE_EVENT } from '@/hooks/worktree-file-change-event'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store'
 import { getDefaultSettings } from '../../../../shared/constants'
 
 const owner: NativeChatVisualOwner = {
   target: { kind: 'local' },
-  sessionId: 'session-alpha',
   worktreeId: 'wt-1',
   tabId: 'tab-1'
 }
 const LINE = '::orca-visual{path="reports/usage.html" title="Usage"}'
 const LEGACY_LINE = '::orca-visual{file="usage.html"}'
+const PAGE_PATH = '/repo/reports/usage.html'
 
-function withOwner(children: ReactNode, value: NativeChatVisualOwner | null = owner): ReactNode {
+/** A chat's file-link checker, reduced to the recheck count a visual re-reads on. */
+function fakeExistence(): NativeChatFileLinkExistence & { fire: () => void } {
+  let generation = 0
+  const listeners = new Set<() => void>()
+  const fire = (): void => {
+    generation += 1
+    for (const listener of listeners) {
+      listener()
+    }
+  }
+  return {
+    watch: () => {
+      throw new Error('not used')
+    },
+    recheck: fire,
+    fire,
+    recheckGeneration: () => generation,
+    subscribeRecheck: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    }
+  }
+}
+
+function withOwner(
+  children: ReactNode,
+  value: NativeChatVisualOwner | null = owner,
+  existence: NativeChatFileLinkExistence | null = null
+): ReactNode {
   return (
     <TooltipProvider>
       <NativeChatVisualOwnerContext.Provider value={value}>
-        {children}
+        <NativeChatFileLinkExistenceContext.Provider value={existence}>
+          {children}
+        </NativeChatFileLinkExistenceContext.Provider>
       </NativeChatVisualOwnerContext.Provider>
     </TooltipProvider>
+  )
+}
+
+function frameDocument(container: HTMLElement): string {
+  return container.querySelector('iframe')?.getAttribute('srcdoc') ?? ''
+}
+
+function fileChange(
+  kind: 'update' | 'overflow',
+  absolutePath: string,
+  runtimeEnvironmentId: string | null = null
+): void {
+  window.dispatchEvent(
+    new CustomEvent(ORCA_WORKTREE_FILE_CHANGE_EVENT, {
+      detail: {
+        payload: { worktreePath: '/repo', events: [{ kind, absolutePath }] },
+        runtimeEnvironmentId
+      }
+    })
   )
 }
 
@@ -65,10 +131,12 @@ class InViewObserver {
 
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', InViewObserver)
-  clearNativeChatVisualCacheForTests()
-  callRuntimeRpc.mockReset()
+  clearNativeChatVisualFileCacheForTests()
+  fileLink.context = FILE_LINK_CONTEXT
+  fileLink.hostResolved = true
+  readRuntimeFilePreview.mockReset()
   openNativeChatVisualFile.mockReset()
-  callRuntimeRpc.mockResolvedValue({ ok: true, revision: 'r1', sizeBytes: 9, html: '<p>v</p>' })
+  readRuntimeFilePreview.mockResolvedValue({ content: '<p>v</p>', isBinary: false })
 })
 
 afterEach(() => {
@@ -98,28 +166,153 @@ describe('NativeChatMarkdown visuals', () => {
       withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
     )
     await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
-    expect(callRuntimeRpc).toHaveBeenCalledWith(
-      { kind: 'local' },
-      'agentSession.readVisual',
-      { sessionId: 'session-alpha', path: 'reports/usage.html' },
-      expect.anything()
+    expect(readRuntimeFilePreview).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { kind: 'local' }, worktreeId: 'wt-1' }),
+      PAGE_PATH,
+      { kind: 'chat-html' }
     )
     fireEvent.click(screen.getByRole('button', { name: 'Open in new tab' }))
     expect(openNativeChatVisualFile).toHaveBeenCalledWith('reports/usage.html', FILE_LINK_CONTEXT)
   })
 
-  it("shows an older host's per-chat folder page inline, with nothing to open", async () => {
+  it("shows an older host's per-chat folder line as text and reads nothing", () => {
     const { container } = render(
       withOwner(<NativeChatMarkdown content={LEGACY_LINE} visualMessageId="m1" />)
     )
-    await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
-    expect(callRuntimeRpc).toHaveBeenCalledWith(
-      { kind: 'local' },
-      'agentSession.readVisual',
-      { sessionId: 'session-alpha', file: 'usage.html' },
-      expect.anything()
+    expect(container).toHaveTextContent('::orca-visual{file="usage.html"}')
+    expect(readRuntimeFilePreview).not.toHaveBeenCalled()
+  })
+
+  it("keeps the placeholder and reads nothing until a floating chat's folder is pinned", () => {
+    fileLink.context = null
+    render(withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />))
+    expect(screen.getByRole('status', { name: 'Loading visualization' })).toBeInTheDocument()
+    expect(readRuntimeFilePreview).not.toHaveBeenCalled()
+  })
+
+  it("shows unavailable and reads nothing when no single owner names the workspace's host", async () => {
+    fileLink.hostResolved = false
+    const { container } = render(
+      withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
     )
-    expect(screen.queryByRole('button', { name: 'Open in new tab' })).toBeNull()
+    await waitFor(() => expect(container).toHaveTextContent('Visualization unavailable'))
+    expect(readRuntimeFilePreview).not.toHaveBeenCalled()
+  })
+
+  it('reads a floating chat page in the home folder by its pinned path', async () => {
+    fileLink.context = {
+      worktreeId: 'global-floating-terminal',
+      worktreePath: '/Users/me',
+      runtimeEnvironmentId: null
+    }
+    const { container } = render(
+      withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
+    )
+    await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+    expect(readRuntimeFilePreview).toHaveBeenCalledWith(
+      expect.anything(),
+      '/Users/me/reports/usage.html',
+      { kind: 'chat-html' }
+    )
+  })
+
+  it('re-reads at a recheck (turn end) and rebuilds the frame only when the page changed', async () => {
+    const existence = fakeExistence()
+    const { container } = render(
+      withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />, owner, existence)
+    )
+    await waitFor(() => expect(frameDocument(container)).toContain('<p>v</p>'))
+    const frame = container.querySelector('iframe')
+    const shown = frameDocument(container)
+
+    act(() => existence.fire())
+    await waitFor(() => expect(readRuntimeFilePreview).toHaveBeenCalledTimes(2))
+    expect(container.querySelector('iframe')).toBe(frame)
+    expect(frameDocument(container)).toBe(shown)
+
+    readRuntimeFilePreview.mockResolvedValue({ content: '<p>v2</p>', isBinary: false })
+    act(() => existence.fire())
+    await waitFor(() => expect(frameDocument(container)).toContain('<p>v2</p>'))
+  })
+
+  it('an earlier reply naming the same path shows the rewritten page at the recheck', async () => {
+    const existence = fakeExistence()
+    const { container } = render(
+      withOwner(
+        <>
+          <NativeChatMarkdown content={LINE} visualMessageId="m1" />
+          <NativeChatMarkdown content={LINE} visualMessageId="m2" />
+        </>,
+        owner,
+        existence
+      )
+    )
+    await waitFor(() => expect(container.querySelectorAll('iframe')).toHaveLength(2))
+    readRuntimeFilePreview.mockResolvedValue({ content: '<p>rewritten</p>', isBinary: false })
+    act(() => existence.fire())
+    await waitFor(() =>
+      container
+        .querySelectorAll('iframe')
+        .forEach((frame) => expect(frame.getAttribute('srcdoc')).toContain('<p>rewritten</p>'))
+    )
+  })
+
+  it('keeps the shown page when the host cannot be reached, and drops it when the file is gone', async () => {
+    const existence = fakeExistence()
+    const { container } = render(
+      withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />, owner, existence)
+    )
+    await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+
+    readRuntimeFilePreview.mockRejectedValue(new Error('Runtime environment is unreachable'))
+    act(() => existence.fire())
+    await waitFor(() => expect(readRuntimeFilePreview).toHaveBeenCalledTimes(2))
+    expect(container.querySelector('iframe')).not.toBeNull()
+
+    readRuntimeFilePreview.mockRejectedValue(new Error('ENOENT: no such file or directory'))
+    act(() => existence.fire())
+    await waitFor(() => expect(container).toHaveTextContent('Visualization unavailable'))
+    expect(container.querySelector('iframe')).toBeNull()
+  })
+
+  it("re-reads when another view's watch reports this file, and ignores other paths and hosts", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const { container } = render(
+        withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
+      )
+      await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+      expect(readRuntimeFilePreview).toHaveBeenCalledTimes(1)
+
+      fileChange('update', '/repo/reports/other.html')
+      fileChange('update', PAGE_PATH, 'env-other')
+      await act(() => vi.advanceTimersByTimeAsync(500))
+      expect(readRuntimeFilePreview).toHaveBeenCalledTimes(1)
+
+      readRuntimeFilePreview.mockResolvedValue({ content: '<p>saved</p>', isBinary: false })
+      fileChange('update', PAGE_PATH)
+      fileChange('update', PAGE_PATH)
+      await act(() => vi.advanceTimersByTimeAsync(500))
+      await waitFor(() => expect(frameDocument(container)).toContain('<p>saved</p>'))
+      expect(readRuntimeFilePreview).toHaveBeenCalledTimes(2)
+
+      fileChange('overflow', '/repo')
+      await act(() => vi.advanceTimersByTimeAsync(500))
+      expect(readRuntimeFilePreview).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    ['binary', { content: '', isBinary: true }],
+    ['over 512 KiB', { content: 'a'.repeat(512 * 1024 + 1), isBinary: false }]
+  ])('shows a %s file as unavailable', async (_name, result) => {
+    readRuntimeFilePreview.mockResolvedValue(result)
+    const { container } = render(
+      withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
+    )
+    await waitFor(() => expect(container).toHaveTextContent('Visualization unavailable'))
   })
 
   it('holds back an unfinished directive at the end of a streaming reply', () => {
@@ -164,11 +357,11 @@ describe('NativeChatMarkdown visuals', () => {
     )
     expect(container.querySelector('iframe')).toBe(frame)
     expect(container).toHaveTextContent('More text arriving now')
-    expect(callRuntimeRpc).toHaveBeenCalledTimes(1)
+    expect(readRuntimeFilePreview).toHaveBeenCalledTimes(1)
   })
 
-  it('shows one muted line when the host refuses the file', async () => {
-    callRuntimeRpc.mockResolvedValue({ ok: false, error: 'outside_folder' })
+  it('shows one muted line when the file is missing', async () => {
+    readRuntimeFilePreview.mockRejectedValue(new Error('ENOENT: no such file or directory'))
     const { container } = render(
       withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
     )
@@ -184,7 +377,7 @@ describe('NativeChatMarkdown visuals', () => {
       withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />, null)
     )
     expect(noOwner.container).toHaveTextContent('::orca-visual')
-    expect(callRuntimeRpc).not.toHaveBeenCalled()
+    expect(readRuntimeFilePreview).not.toHaveBeenCalled()
   })
 
   it('holds the tail of a text row while its turn works, though the row carries no state', () => {

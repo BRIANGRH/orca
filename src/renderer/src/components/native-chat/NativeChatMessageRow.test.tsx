@@ -110,7 +110,7 @@ describe('MessageRow control visibility', () => {
             blocks: [
               {
                 type: 'text',
-                text: 'Here it is.\n\n::orca-visual{file="usage.html" title="Usage"}\n\nDone.'
+                text: 'Here it is.\n\n::orca-visual{path="usage.html" title="Usage"}\n\nDone.'
               }
             ]
           }}

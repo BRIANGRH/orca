@@ -122,14 +122,6 @@ export const STRUCTURED_CALLS: {
     hostMethod: 'revealSession',
     result: { ok: true, sessionId: SESSION, workspaceId: WORKSPACE, agent: 'codex', readable: true }
   },
-  // A chat's visual, read from the host's own record and state directory. A bare addition: an older
-  // host answers `method_not_found` and the client shows the visual as unavailable. The stub host
-  // holds no record, so the typed refusal is the declared answer.
-  {
-    method: 'agentSession.readVisual',
-    hostMethod: null,
-    result: { ok: false, error: 'session_not_found' }
-  },
   // A no-op on a host that starts an agent only for work; it still builds the host.
   { method: 'agentSession.hold', hostMethod: null, result: { held: true } },
   // The restart-resume surface. Bare additions, not capability-negotiated: an RPC method's

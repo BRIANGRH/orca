@@ -7,6 +7,7 @@ import type { WorktreeRuntimeOwnerState } from './worktree-runtime-owner'
 
 const USER_FILE_ACCESS: LocalFileAccess = { kind: 'user-file' }
 const CHAT_IMAGE_ACCESS: LocalFileAccess = { kind: 'chat-image' }
+const CHAT_HTML_ACCESS: LocalFileAccess = { kind: 'chat-html' }
 
 /** For a path the user named by a gesture (click, drop, typed path); never for document content. */
 export function userNamedFileAccess(): LocalFileAccess {
@@ -19,6 +20,11 @@ export function userNamedFileAccess(): LocalFileAccess {
  */
 export function chatImageAccess(): LocalFileAccess {
   return CHAT_IMAGE_ACCESS
+}
+
+/** For an HTML visual a chat transcript shows; main reads any local HTML file by its real type. */
+export function chatHtmlAccess(): LocalFileAccess {
+  return CHAT_HTML_ACCESS
 }
 
 /**

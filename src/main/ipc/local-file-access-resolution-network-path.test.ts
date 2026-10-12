@@ -111,6 +111,7 @@ describe('document images on a network share', () => {
 })
 
 const CHAT_IMAGE = { kind: 'chat-image' } as const
+const CHAT_HTML = { kind: 'chat-html' } as const
 
 describe('chat transcript images on Windows', () => {
   beforeEach(() => {
@@ -121,6 +122,16 @@ describe('chat transcript images on Windows', () => {
     'refuses %s without touching it',
     async (target) => {
       await expect(resolveLocalFileRequestPath(target, CHAT_IMAGE, store)).rejects.toThrow(
+        'Access denied'
+      )
+      expect(fsCalls).toEqual([])
+    }
+  )
+
+  it.each([...networkTargets, '\\\\.\\C:\\x.html', 'C:\\Users\\me\\NUL.html'])(
+    'refuses %s as a chat HTML page without touching it',
+    async (target) => {
+      await expect(resolveLocalFileRequestPath(target, CHAT_HTML, store)).rejects.toThrow(
         'Access denied'
       )
       expect(fsCalls).toEqual([])
@@ -276,6 +287,7 @@ describe('the default check runs first for every declared kind', () => {
       { kind: 'document-resource', documentPath: 'C:\\repo\\README.md' }
     ],
     ['chat-image', 'read', CHAT_IMAGE],
+    ['chat-html', 'read', CHAT_HTML],
     ['document-folder', 'import-into', besideTodo]
   ] as const)(
     'never touches a share outside every project while resolving %s %s',

@@ -106,12 +106,13 @@ describe('the bundled skill', () => {
     const example = SKILL_TEXT.split('\n').find((line) => line.startsWith('::orca-visual{'))
     expect(example && parseNativeChatVisualDirectiveLine(example)).toEqual({
       path: 'reports/latency-by-region.html',
-      legacy: false,
       title: 'Latency by region'
     })
     expect(SKILL_TEXT).toContain(`At most ${NATIVE_CHAT_VISUAL_MAX_PER_MESSAGE} per reply`)
     expect(SKILL_TEXT).toContain(`under ${NATIVE_CHAT_VISUAL_MAX_BYTES / 1024} KB`)
     expect(SKILL_TEXT).not.toContain('ORCA_CHAT_VISUALS_DIR')
+    // Opened and shared pages get no CDN allowance, so the page must not need one.
+    expect(SKILL_TEXT).toMatch(/load nothing\s+from the network/)
     expect(SKILL_TEXT).toMatch(new RegExp(`^name: ${NATIVE_CHAT_VISUALS_SKILL_NAME}$`, 'm'))
   })
 

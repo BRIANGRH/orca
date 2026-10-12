@@ -24,7 +24,9 @@ const peek = vi.fn<FileLinkExists>(() => false)
 const snapshot = { check, peek }
 const existence: NativeChatFileLinkExistence = {
   watch: () => ({ subscribe: () => () => {}, getSnapshot: () => snapshot }),
-  recheck: () => {}
+  recheck: () => {},
+  recheckGeneration: () => 0,
+  subscribeRecheck: () => () => {}
 }
 
 afterEach(() => {

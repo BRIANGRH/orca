@@ -17,7 +17,6 @@ export default function NativeChatView(props: NativeChatViewProps): React.JSX.El
         <NativeChatVisualOwnerProvider
           key={props.sessionId}
           target={props.target}
-          sessionId={props.sessionId}
           tabId={props.tabId}
         >
           <NativeChatFileLinkExistenceProvider tabId={props.tabId}>

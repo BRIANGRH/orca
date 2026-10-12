@@ -138,6 +138,7 @@ describe('a declared kind never refuses what the default project check allows', 
     ['user-file write', USER_FILE, 'write'],
     ['document-resource read', documentResource(outsideDocument()), 'read'],
     ['chat-image read', { kind: 'chat-image' }, 'read'],
+    ['chat-html read', { kind: 'chat-html' }, 'read'],
     [
       'document-folder import-into',
       { kind: 'document-folder', documentPath: outsideDocument() },
@@ -467,6 +468,87 @@ describe('chat-image requests', () => {
       expect(
         await settles(resolveLocalFileRequestPath(join(outside, 'zero.png'), CHAT_IMAGE, store))
       ).toBe('denied')
+    }
+  )
+})
+
+describe('chat-html requests', () => {
+  const CHAT_HTML = { kind: 'chat-html' } as const
+
+  it('read any local HTML file in place, outside every project', async () => {
+    const page = join(outside, 'chart.html')
+    await writeFile(page, '<p>chart</p>')
+
+    const filePath = await resolveLocalFileRequestPath(page, CHAT_HTML, makeStore({}))
+
+    await expect(readLocalFileContent(filePath)).resolves.toEqual({
+      content: '<p>chart</p>',
+      isBinary: false
+    })
+    await writeFile(join(outside, 'old.HTM'), '<p>old</p>')
+    expect(
+      await settles(resolveLocalFileRequestPath(join(outside, 'old.HTM'), CHAT_HTML, makeStore({})))
+    ).toBe('ok')
+  })
+
+  it('refuse a relative path, a device, a missing page and other types', async () => {
+    const store = makeStore({})
+    await writeFile(join(outside, 'shot.png'), 'png')
+
+    expect(await settles(resolveLocalFileRequestPath('chart.html', CHAT_HTML, store))).toBe(
+      'denied'
+    )
+    expect(await settles(resolveLocalFileRequestPath('/dev/zero', CHAT_HTML, store))).toBe('denied')
+    for (const name of ['notes.txt', 'shot.png', 'missing.html']) {
+      expect(
+        await settles(resolveLocalFileRequestPath(join(outside, name), CHAT_HTML, store))
+      ).toBe('denied')
+    }
+  })
+
+  it('never writes', async () => {
+    const page = join(outside, 'chart.html')
+    await writeFile(page, '<p>chart</p>')
+
+    await expect(resolveLocalWriteRequestPath(page, CHAT_HTML, makeStore({}))).rejects.toThrow(
+      'Access denied'
+    )
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'judge a link by its target: an HTML-named link to a non-HTML file or a device is refused',
+    async () => {
+      await symlink(join(outside, 'notes.txt'), join(outside, 'secret.html'))
+      await symlink('/dev/zero', join(outside, 'zero.html'))
+      const store = makeStore({})
+
+      expect(
+        await settles(resolveLocalFileRequestPath(join(outside, 'secret.html'), CHAT_HTML, store))
+      ).toBe('denied')
+      expect(
+        await settles(resolveLocalFileRequestPath(join(outside, 'zero.html'), CHAT_HTML, store))
+      ).toBe('denied')
+    }
+  )
+
+  it.skipIf(process.platform === 'win32')(
+    'read a page in a home-folder chat (a floating chat outside every project)',
+    async () => {
+      const home = await mkdtemp(join(homedir(), '.orca-chat-html-test-'))
+      try {
+        const page = join(home, 'reports', 'usage.html')
+        await mkdir(join(home, 'reports'))
+        await writeFile(page, '<p>usage</p>')
+
+        expect(await settles(resolveLocalFileRequestPath(page, CHAT_HTML, makeStore({})))).toBe(
+          'ok'
+        )
+        expect(await settles(resolveLocalFileRequestPath(page, undefined, makeStore({})))).toBe(
+          'denied'
+        )
+      } finally {
+        await rm(home, { recursive: true, force: true })
+      }
     }
   )
 })
