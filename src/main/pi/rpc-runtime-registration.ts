@@ -1,7 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { agentSessionAccountHome } from '../../shared/agent-session-account-home'
-import { isAgentSessionPreSpawnError } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { supportsSupervisedProviderChildLocation } from '../provider-process/supervised-provider-child-location'
 import type {
   StructuredAgentAdapterContext,
@@ -74,18 +73,12 @@ export const PI_RPC_RUNTIME_REGISTRATION: StructuredAgentRuntimeRegistration = {
     })
   }),
   supportsLocation: supportsSupervisedProviderChildLocation,
-  supportsLaunch: async ({ cwd, env, commandSettings }) => {
-    let command: string
-    try {
-      command = resolvePiRpcCommand(env, commandSettings)
-    } catch (error) {
-      // An unrunnable Command setting is the launch's refusal to state, not a terminal.
-      if (isAgentSessionPreSpawnError(error)) {
-        return true
-      }
-      throw error
-    }
-    return piRpcVersionSupported({ command, cwd, env })
+  launchCheck: {
+    resolveLaunch: (env, commandSettings) => ({
+      command: resolvePiRpcCommand(env, commandSettings),
+      env
+    }),
+    supportsVersion: (launch) => piRpcVersionSupported(launch)
   },
   resolveAccountHome: async ({ launchEnv }) =>
     agentSessionAccountHome(

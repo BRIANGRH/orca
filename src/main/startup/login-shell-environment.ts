@@ -18,7 +18,12 @@ export type LoginShellEnvironmentCapture = {
   env: NodeJS.ProcessEnv
 }
 
-type CachedEnvironment = { capture: Promise<LoginShellEnvironmentCapture>; settled: boolean }
+type CachedEnvironment = {
+  capture: Promise<LoginShellEnvironmentCapture>
+  settled: boolean
+  /** A forced capture running behind the settled one; later forced callers join it. */
+  refreshing?: Promise<LoginShellEnvironmentCapture>
+}
 
 const environmentCache = new Map<string, CachedEnvironment>()
 const MAX_CACHED_ENVIRONMENTS = 8
@@ -174,8 +179,12 @@ export function captureLoginShellEnvironment(
           .digest('hex')
   const shellKey = `${shell ?? ''}\0${fallback ?? ''}\0${envKey}`
   const cached = environmentCache.get(shellKey)
-  if (cached && !options.force) {
+  // Why: one run per key at a time, so an older capture can never land over a newer one.
+  if (cached && (!options.force || !cached.settled)) {
     return cached.capture
+  }
+  if (cached?.refreshing) {
+    return cached.refreshing
   }
   const fellBack: LoginShellEnvironmentCapture = { status: 'fallback', env }
   if (!shell) {
@@ -188,23 +197,18 @@ export function captureLoginShellEnvironment(
       return captured ? { status: 'captured', env: captured } : fellBack
     })
     .catch(() => fellBack)
-  if (cached?.settled) {
+  if (cached) {
     // Why: readers keep any settled env, a fallback too, during a forced refresh; only a capture replaces it.
+    cached.refreshing = pending
     void pending.then((capture) => {
+      cached.refreshing = undefined
       if (capture.status === 'captured') {
         cacheEnvironment(shellKey, Promise.resolve(capture))
       }
     })
     return pending
   }
-  // Why: a forced capture that falls back yields to whatever the earlier in-flight entry settles to.
-  const previous = cached?.capture
-  cacheEnvironment(
-    shellKey,
-    previous
-      ? pending.then((capture) => (capture.status === 'captured' ? capture : previous))
-      : pending
-  )
+  cacheEnvironment(shellKey, pending)
   return pending
 }
 

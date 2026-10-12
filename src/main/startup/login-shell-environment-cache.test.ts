@@ -125,3 +125,33 @@ it('serves a cached fallback to other readers while a forced capture runs', asyn
   await expect(resolveLoginShellEnvironment(options)).resolves.toEqual({ PATH: '/profile/bin' })
   expect(spawner).toHaveBeenCalledTimes(2)
 })
+
+it('runs one forced capture at a time, so an older run never lands over a newer one', async () => {
+  const runs = [
+    Promise.withResolvers<NodeJS.ProcessEnv | null>(),
+    Promise.withResolvers<NodeJS.ProcessEnv | null>()
+  ]
+  const spawner = vi
+    .fn<(shell: string, env: NodeJS.ProcessEnv) => Promise<NodeJS.ProcessEnv | null>>()
+    .mockResolvedValueOnce({ PATH: '/first' })
+    .mockReturnValueOnce(runs[0].promise)
+    .mockReturnValueOnce(runs[1].promise)
+  const options = { shellOverride: '/bin/bash', env: { HOME: '/host' }, spawner }
+  await resolveLoginShellEnvironment(options)
+  const forced = [
+    resolveLoginShellEnvironment({ ...options, force: true }),
+    resolveLoginShellEnvironment({ ...options, force: true })
+  ]
+  expect(spawner).toHaveBeenCalledTimes(2)
+  runs[0].resolve({ PATH: '/newest' })
+  await expect(Promise.all(forced)).resolves.toEqual([{ PATH: '/newest' }, { PATH: '/newest' }])
+  // Had the second call started its own run, this older answer would now replace the newest.
+  runs[1].resolve({ PATH: '/old' })
+  await new Promise((resolve) => setImmediate(resolve))
+  await expect(resolveLoginShellEnvironment(options)).resolves.toEqual({ PATH: '/newest' })
+  // The next forced call after it settles runs the shell again.
+  await expect(resolveLoginShellEnvironment({ ...options, force: true })).resolves.toEqual({
+    PATH: '/old'
+  })
+  expect(spawner).toHaveBeenCalledTimes(3)
+})

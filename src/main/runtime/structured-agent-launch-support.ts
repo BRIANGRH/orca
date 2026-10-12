@@ -8,6 +8,8 @@ import {
   warnStructuredAgentSessionCreateUnsupported,
   type StructuredAgentSessionCreateSupport
 } from '../native-chat/structured-agent-session-create-support'
+import { isAgentSessionPreSpawnError } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
+import { resolveAgainAfterRefreshOnMissingProgram } from '../native-chat/structured-agent-command-resolution'
 import { structuredAgentRuntimeRegistration } from './structured-agent-runtime-registrations'
 import {
   refreshHostAgentBaseEnvironmentAfterMiss,
@@ -34,25 +36,35 @@ export async function structuredAgentSupportsLaunch(
   worktreeSelector: string,
   runtime: LaunchSupportRuntime
 ): Promise<boolean> {
-  const supportsLaunch = structuredAgentRuntimeRegistration(agent)?.supportsLaunch
-  if (!supportsLaunch) {
+  const check = structuredAgentRuntimeRegistration(agent)?.launchCheck
+  if (!check) {
     return true
   }
   const settings = runtime.requireStore().getSettings()
-  const ask = async (): Promise<boolean> => {
-    const env = {
-      ...(await resolveHostAgentBaseEnvironment(settings)),
-      ...(isTuiAgent(agent) ? resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv) : {})
+  let launch: { command: string; env: Record<string, string> }
+  try {
+    // Resolved as a launch resolves, sharing its refresh, so an agent installed since the shell
+    // was last read counts and a found one never waits.
+    launch = await resolveAgainAfterRefreshOnMissingProgram(
+      async () =>
+        check.resolveLaunch(
+          {
+            ...(await resolveHostAgentBaseEnvironment(settings)),
+            ...(isTuiAgent(agent) ? resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv) : {})
+          },
+          settings
+        ),
+      refreshHostAgentBaseEnvironmentAfterMiss
+    )
+  } catch (error) {
+    // An unrunnable Command setting is the launch's refusal to state, not a terminal.
+    if (isAgentSessionPreSpawnError(error)) {
+      return true
     }
-    const cwd = (await runtime.resolveRuntimeFileTarget(worktreeSelector)).worktree.path
-    return supportsLaunch({ cwd, env, commandSettings: settings })
+    throw error
   }
-  if (await ask()) {
-    return true
-  }
-  // An agent installed since the shell was last read is found once that read is refreshed.
-  await refreshHostAgentBaseEnvironmentAfterMiss()
-  return ask()
+  const cwd = (await runtime.resolveRuntimeFileTarget(worktreeSelector)).worktree.path
+  return check.supportsVersion({ ...launch, cwd })
 }
 
 /** `agentSession.createSupport` on this host: every refusal it can know before spawning. The

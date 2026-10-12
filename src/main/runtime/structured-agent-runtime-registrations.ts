@@ -13,10 +13,9 @@ import {
 import { CodexStructuredSessionAdapter } from '../codex/codex-structured-session-adapter'
 import { CODEX_STRUCTURED_AGENT } from '../codex/codex-structured-agent-definition'
 import { CLAUDE_STRUCTURED_AGENT } from '../claude/claude-structured-agent-definition'
-import {
-  isAgentSessionPreSpawnError,
-  type StructuredAgentSessionAdapter,
-  type StructuredAgentSessionLifecycleEvent
+import type {
+  StructuredAgentSessionAdapter,
+  StructuredAgentSessionLifecycleEvent
 } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import type { StructuredAgentCommandSettings } from '../native-chat/structured-agent-command-resolution'
 import type { StructuredAgentDefinition } from '../native-chat/agent-session-wire/structured-agent-definition'
@@ -102,6 +101,20 @@ export type StructuredAgentModelCatalogContext = Pick<StructuredAgentAdapterCont
   environment: Omit<StructuredAgentAdapterContext['environment'], 'refreshAfterMissingProgram'>
 }
 
+export type StructuredAgentLaunchCheck = {
+  /** The binary and env a launch from `env` runs; throws the launch's own pre-spawn refusal. */
+  resolveLaunch: (
+    env: Record<string, string>,
+    commandSettings: StructuredAgentCommandSettings
+  ) => { command: string; env: Record<string, string> }
+  /** Whether that binary is a release this agent runs a structured chat on. */
+  supportsVersion: (launch: {
+    command: string
+    cwd: string
+    env: Record<string, string>
+  }) => Promise<boolean>
+}
+
 export type StructuredAgentRuntimeRegistration = {
   definition: StructuredAgentDefinition
   createAdapter: (context: StructuredAgentAdapterContext) => StructuredAgentRuntimeAdapter
@@ -110,13 +123,9 @@ export type StructuredAgentRuntimeRegistration = {
   modelCatalog: (context: StructuredAgentModelCatalogContext) => AgentModelCatalogDiscovery
   /** Whether this agent's chats can run at `location`; answered without building the host. */
   supportsLocation: (location: AgentSessionExecutionLocation) => boolean
-  /** Whether the agent installed on this host runs a structured chat, asked at create with the
+  /** How create asks whether the agent installed on this host runs a structured chat, with the
    *  environment a launch starts from; absent when the location alone decides. */
-  supportsLaunch?: (input: {
-    cwd: string
-    env: Record<string, string>
-    commandSettings: StructuredAgentCommandSettings
-  }) => Promise<boolean>
+  launchCheck?: StructuredAgentLaunchCheck
   /** The account a chat of this agent pins; see `StructuredAgentAccountHomeRequest`. */
   resolveAccountHome: (
     request: StructuredAgentAccountHomeRequest,
@@ -207,19 +216,12 @@ function acpRegistration(spec: AcpLaunchSpec): StructuredAgentRuntimeRegistratio
     supportsLocation: (location) => supportsSupervisedProviderChildLocation(location),
     ...(spec.supportsVersion
       ? {
-          supportsLaunch: async ({ cwd, env, commandSettings }) => {
-            const launchEnv = { ...env, ...spec.env }
-            let command: string
-            try {
-              command = resolveAcpLaunchCommand(spec, launchEnv, { commandSettings })
-            } catch (error) {
-              // An unrunnable Command setting is the launch's refusal to state, not a terminal.
-              if (isAgentSessionPreSpawnError(error)) {
-                return true
-              }
-              throw error
-            }
-            return acpLaunchVersionSupported(spec, { command, cwd, env: launchEnv })
+          launchCheck: {
+            resolveLaunch: (shellEnv, commandSettings) => {
+              const env = { ...shellEnv, ...spec.env }
+              return { command: resolveAcpLaunchCommand(spec, env, { commandSettings }), env }
+            },
+            supportsVersion: (launch) => acpLaunchVersionSupported(spec, launch)
           }
         }
       : {}),

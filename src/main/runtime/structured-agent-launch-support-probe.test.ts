@@ -7,6 +7,7 @@ import { agentSessionRecordFixture } from '../../shared/agent-session-record.tes
 import { acpLaunchSpecFor } from '../acp/acp-launch-specs'
 import { createAcpStructuredLaunchResolver } from '../acp/acp-structured-launch-resolution'
 import { structuredAgentSupportsLaunch } from './structured-agent-launch-support'
+import { resetHostShellEnvironmentForTests } from './structured-agent-shell-environment'
 
 const { loginShell } = vi.hoisted(() => {
   const loginShell: { env: Record<string, string> } = { env: {} }
@@ -73,6 +74,7 @@ function launchWith(settings: Settings) {
 }
 
 beforeEach(async () => {
+  resetHostShellEnvironmentForTests()
   root = await mkdtemp(join(tmpdir(), 'orca-opencode-probe-'))
   shellBin = await fakeOpencode(join(root, 'homebrew'), '1.18.30')
   privateBin = await fakeOpencode(join(root, 'oc-prefix', 'bin'), '1.18.31')

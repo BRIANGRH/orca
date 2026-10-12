@@ -2,13 +2,14 @@ import { EventEmitter } from 'node:events'
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as loginShell from '../startup/login-shell-environment'
 import type * as runProcessModule from '@orca/process-host'
 import { __resetPersistedWindowsPathCacheForTests } from '../pty/windows-environment-path'
 import { __setWindowsPathRegistryLoaderForTests } from '../pty/windows-path-registry-reader'
 import {
   createStructuredAgentEnvironmentResolvers,
+  resetHostShellEnvironmentForTests,
   structuredAgentBaseEnvironment
 } from './structured-agent-shell-environment'
 
@@ -29,6 +30,8 @@ vi.mock('@orca/process-host', async (importOriginal) => {
 })
 
 const INHERIT_ALL = { inheritAll: true, names: [] }
+
+afterEach(resetHostShellEnvironmentForTests)
 
 /** The value if the promise settles without any timer firing; undefined if it is still waiting. */
 async function settledWithoutWaiting<T>(promise: Promise<T>): Promise<T | undefined> {
@@ -243,6 +246,34 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
         await new Promise((resolve) => setTimeout(resolve, 20))
         expect(spawnProcessMock).toHaveBeenCalledTimes(failedRuns + 1)
         expect((await resolvers.resolveBaseEnvironment()).PROFILE_ONLY).toBe('1')
+      }
+    )
+  })
+
+  it('reruns a failed PowerShell profile at most once per TTL, however often a launch misses', async () => {
+    let machinePath = 'C:\\Windows'
+    await withSimulatedWindowsServer(
+      (key) => (key.startsWith('HKLM') ? machinePath : null),
+      async () => {
+        spawnProcessMock.mockImplementation((spec: { env: NodeJS.ProcessEnv }) =>
+          fakePowerShell(spec, true)
+        )
+        const resolvers = createStructuredAgentEnvironmentResolvers({
+          resolveShellEnvironmentPolicy: () => INHERIT_ALL
+        })
+        await resolvers.resolveBaseEnvironment()
+        const profileRuns = spawnProcessMock.mock.calls.length
+        expect(profileRuns).toBeGreaterThan(0)
+        machinePath = 'C:\\Windows;C:\\NewTool'
+        for (let miss = 0; miss < 3; miss += 1) {
+          await resolvers.refreshAfterMissingProgram()
+        }
+        // The saved PATH still reaches a miss, which is where a Windows install lands.
+        expect(pathSegments(await resolvers.resolveBaseEnvironment())).toContain('C:\\NewTool')
+        expect(spawnProcessMock).toHaveBeenCalledTimes(profileRuns)
+        vi.advanceTimersByTime(10_000)
+        await resolvers.refreshAfterMissingProgram()
+        expect(spawnProcessMock).toHaveBeenCalledTimes(2 * profileRuns)
       }
     )
   })

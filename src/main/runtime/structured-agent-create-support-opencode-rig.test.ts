@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { restoreManagedDataAccountEnvironment } from '../../shared/managed-data-account-environment'
 import { openCodeAcpAccountBinding } from '../opencode/opencode-structured-account-home'
 import { resolveHostStructuredAgentCreateSupport } from './structured-agent-launch-support'
+import { resetHostShellEnvironmentForTests } from './structured-agent-shell-environment'
 
 // Live QA run 5 on #25845: the app launched with HOME and every XDG directory pointed into the rig,
 // and OpenCode's Command and per-agent PATH both naming a private 1.18.31. The host's whole create
@@ -73,6 +74,7 @@ function createSupport(settings: ReturnType<typeof rigSettings>) {
 }
 
 beforeEach(async () => {
+  resetHostShellEnvironmentForTests()
   root = await mkdtemp(join(tmpdir(), 'orca-opencode-rig-'))
   await mkdir(join(root, 'proj'))
   const homebrew = await fakeOpencode(join(root, 'homebrew'), '2.0.21')

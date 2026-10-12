@@ -6,11 +6,19 @@ import { agentSessionRecordFixture } from '../../shared/agent-session-record.tes
 import { acpLaunchSpecFor } from '../acp/acp-launch-specs'
 import { createAcpStructuredLaunchResolver } from '../acp/acp-structured-launch-resolution'
 import { structuredAgentSupportsLaunch } from './structured-agent-launch-support'
+import {
+  createStructuredAgentEnvironmentResolvers,
+  resetHostShellEnvironmentForTests
+} from './structured-agent-shell-environment'
 
 const { probeAgentCliVersion, loginShell } = vi.hoisted(() => {
-  const loginShell: { env: Record<string, string>; reread: () => void } = {
+  const loginShell: {
+    env: Record<string, string>
+    capture: ReturnType<typeof vi.fn>
+  } = {
     env: {},
-    reread: () => {}
+    // Each call is one shell run; a test can hold one open to see who shares it.
+    capture: vi.fn(async () => ({ status: 'captured', env: loginShell.env }))
   }
   return { probeAgentCliVersion: vi.fn(), loginShell }
 })
@@ -21,10 +29,7 @@ vi.mock('../agent-cli-version-probe', async (importOriginal) => ({
 vi.mock('../startup/login-shell-environment', () => ({
   LOGIN_SHELL_SPAWN_TIMEOUT_MS: 5000,
   resolveLoginShellEnvironment: async () => loginShell.env,
-  captureLoginShellEnvironment: async () => {
-    loginShell.reread()
-    return { status: 'captured', env: loginShell.env }
-  }
+  captureLoginShellEnvironment: loginShell.capture
 }))
 
 let bin: string
@@ -53,7 +58,8 @@ beforeEach(async () => {
   await writeFile(opencode, '#!/bin/sh\n')
   await chmod(opencode, 0o755)
   loginShell.env = { PATH: bin, HOME: '/home/user' }
-  loginShell.reread = () => {}
+  loginShell.capture.mockClear()
+  resetHostShellEnvironmentForTests()
 })
 afterEach(async () => {
   probeAgentCliVersion.mockReset()
@@ -89,18 +95,47 @@ describe('structuredAgentSupportsLaunch', () => {
     })
   })
 
-  it('asks again after rereading the shell when the last read finds no runnable OpenCode', async () => {
-    // Only the profile's newer PATH reaches an OpenCode that answers its version.
-    probeAgentCliVersion.mockImplementation(async (input, supports) => {
-      asked.push(input)
-      return input.env.PATH === bin && supports('1.18.31')
-    })
-    loginShell.env = { PATH: '/usr/bin', HOME: '/home/user' }
-    loginShell.reread = () => {
-      loginShell.env = { PATH: bin, HOME: '/home/user' }
+  it.skipIf(process.platform === 'win32')(
+    'shares one shell reread between create checks and launches that find no OpenCode',
+    async () => {
+      installedVersion('1.18.31')
+      // A name only the reread PATH has, so no OpenCode on the machine running the test answers.
+      const name = `opencode-installed-${process.pid}`
+      await writeFile(join(bin, name), '#!/bin/sh\n')
+      await chmod(join(bin, name), 0o755)
+      const installing = {
+        ...runtime,
+        requireStore: () => ({
+          getSettings: () => ({ ...settings, agentCmdOverrides: { opencode: name } })
+        })
+      }
+      loginShell.env = { PATH: join(bin, 'not-installed'), HOME: '/home/user' }
+      // A chat launched from this host reads the same snapshot.
+      const launches = createStructuredAgentEnvironmentResolvers({})
+      expect((await launches.resolveBaseEnvironment()).PATH).toBe(join(bin, 'not-installed'))
+      const reread = Promise.withResolvers<{ status: 'captured'; env: Record<string, string> }>()
+      loginShell.capture.mockReturnValueOnce(reread.promise)
+      const checks = Array.from({ length: 8 }, () =>
+        structuredAgentSupportsLaunch('opencode', 'id:workspace-1', installing)
+      )
+      const launchMiss = launches.refreshAfterMissingProgram()
+      await vi.waitFor(() => expect(loginShell.capture).toHaveBeenCalledTimes(2))
+      reread.resolve({ status: 'captured', env: { PATH: bin, HOME: '/home/user' } })
+      expect(await Promise.all(checks)).toEqual(Array(8).fill(true))
+      await launchMiss
+      expect(loginShell.capture).toHaveBeenCalledTimes(2)
+      expect(asked.map(({ program }) => program)).toEqual(Array(8).fill(join(bin, name)))
+      expect((await launches.resolveBaseEnvironment()).PATH).toBe(bin)
     }
-    expect(await structuredAgentSupportsLaunch('opencode', 'id:workspace-1', runtime)).toBe(true)
-    expect(asked.map(({ env }) => env.PATH)).toEqual(['/usr/bin', bin])
+  )
+
+  it('never rereads the shell for an OpenCode that is installed but unsupported', async () => {
+    installedVersion('1.18.30')
+    expect(await structuredAgentSupportsLaunch('opencode', 'id:workspace-1', runtime)).toBe(false)
+    expect(await structuredAgentSupportsLaunch('opencode', 'id:workspace-1', runtime)).toBe(false)
+    // Only the first read of the shell; neither refusal asked for another.
+    expect(loginShell.capture).toHaveBeenCalledOnce()
+    expect(asked).toHaveLength(2)
   })
 
   it('refuses when the version cannot be read', async () => {
