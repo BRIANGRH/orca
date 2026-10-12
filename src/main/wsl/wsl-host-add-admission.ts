@@ -9,6 +9,12 @@ export const WSL_HOST_SERVER_FILES_MISSING_MESSAGE =
 
 type WslHostAddRefusal = Extract<WslHostAddResult, { ok: false }>
 
+export const WSL_HOST_REMOVING_MESSAGE = 'This WSL host is being removed.'
+
+export function wslHostNotConnectedMessage(distro: string): string {
+  return `The WSL host ${distro} isn’t connected. Open one of its projects or connect it in Settings → Remote Orca Servers.`
+}
+
 /** Why no WSL host may run at all right now; null when they may. */
 export function wslHostRunRefusal(gate: {
   isEnabled: () => boolean

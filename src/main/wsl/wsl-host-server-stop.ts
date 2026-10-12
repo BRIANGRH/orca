@@ -4,24 +4,17 @@
  * (`--complete-managed-stop` with `retireIdleDaemon`). The terminal census proves nothing is left
  * before the daemon is asked to retire, since a busy daemon keeps its sessions by design.
  */
-import { ELECTRON_REMOTE_RUNTIME_CLIENT_CAPABILITIES } from '../../shared/electron-remote-runtime-client-capabilities'
 import type { OrcadDecommissionResult } from '../../shared/orcad-decommission'
 import { ORCAD_MANAGED_REMOTE_PORT } from '../../shared/orcad-managed-runtime'
 import type { OrcadTerminalCensus } from '../../shared/orcad-terminal-census'
-import { pairedRuntimeConnectionFromOffer } from '../../shared/paired-runtime-connection'
-import { parsePairingCode } from '../../shared/pairing'
-import { sendRemoteRuntimeRequest } from '../../shared/remote-runtime-client'
 import type { RuntimeTerminalListResult } from '../../shared/runtime-terminal-contracts'
 import type { WslHostServerStop } from '../../shared/wsl-host-types'
 import type { OrcadHostTransport } from '../ssh/orcad-host-transport'
 import { managedOrcadSlot } from '../ssh/orcad-managed-runtime-context'
 import { resolveOrcadRemoteContext } from '../ssh/orcad-remote-context'
 import { decommissionRemoteOrcad } from '../ssh/orcad-remote-decommission'
-import { requestOrcadTerminalCensus } from '../ssh/orcad-terminal-census-client'
-import type { WslOrcadConnection } from './wsl-orcad-connection'
 import type { WslOrcadHostTarget } from './wsl-orcad-host-target'
 
-const RPC_TIMEOUT_MS = 15_000
 const CENSUS_ATTEMPTS = 20
 const CENSUS_INTERVAL_MS = 250
 
@@ -70,58 +63,52 @@ export async function stopWslHostServer(steps: WslHostServerStopSteps): Promise<
     : partial('Orca’s server stopped, but its terminal daemon is still running.')
 }
 
-async function callRuntime<T>(connection: WslOrcadConnection, method: string, params: unknown) {
-  const offer = parsePairingCode(connection.pairingOffer)
-  if (!offer) {
-    throw new Error('The WSL host has no valid pairing.')
-  }
-  const response = await sendRemoteRuntimeRequest<T>(
-    pairedRuntimeConnectionFromOffer(offer),
-    method,
-    params,
-    RPC_TIMEOUT_MS,
-    undefined,
-    undefined,
-    ELECTRON_REMOTE_RUNTIME_CLIENT_CAPABILITIES
-  )
-  if (!response.ok) {
-    throw new Error(response.error.message)
-  }
-  return response.result
+/**
+ * How removal reaches the host's orcad: by environment id, through the same routed transport and
+ * saved pairing every other call to the host uses (the bridge's raw pairing offer is not it).
+ */
+export type WslHostRuntimeAccess = {
+  call: (environmentId: string, method: string, params: unknown) => Promise<unknown>
+  census: (environmentId: string) => Promise<OrcadTerminalCensus>
 }
 
-/** The production steps for a connected host. */
-export function wslHostServerStopSteps(args: {
-  connection: WslOrcadConnection
-  target: WslOrcadHostTarget
-  transport: OrcadHostTransport
-  closeBridge: () => Promise<void>
-}): WslHostServerStopSteps {
-  const { connection } = args
+function isTerminalList(value: unknown): value is Pick<RuntimeTerminalListResult, 'terminals'> {
+  return (
+    typeof value === 'object' && value !== null && Array.isArray(Reflect.get(value, 'terminals'))
+  )
+}
+
+/** Ending terminals and counting what is left, both through the host's own orcad. */
+export function wslHostRuntimeStopSteps(
+  access: WslHostRuntimeAccess,
+  environmentId: string
+): Pick<WslHostServerStopSteps, 'endTerminals' | 'census'> {
   return {
     endTerminals: async () => {
-      const list = await callRuntime<RuntimeTerminalListResult>(connection, 'terminal.list', {
-        limit: 1000
-      })
-      for (const worktreeId of new Set(list.terminals.map((terminal) => terminal.worktreeId))) {
-        await callRuntime(connection, 'terminal.stop', { worktree: `id:${worktreeId}` })
+      const list = await access.call(environmentId, 'terminal.list', { limit: 1000 })
+      if (!isTerminalList(list)) {
+        throw new Error('The host answered its terminal list in an unknown shape.')
+      }
+      for (const owner of new Set(list.terminals.map((terminal) => terminal.worktreeId))) {
+        await access.call(environmentId, 'terminal.stop', { worktree: `id:${owner}` })
       }
     },
-    census: async () => {
-      const offer = parsePairingCode(connection.pairingOffer)
-      return offer
-        ? requestOrcadTerminalCensus(pairedRuntimeConnectionFromOffer(offer), 0)
-        : { liveSessions: null, startedSinceActivation: null, daemonProtocolVersion: null }
-    },
-    closeBridge: args.closeBridge,
-    decommission: async (census) => {
-      const context = await resolveOrcadRemoteContext(args.target, args.transport)
-      return decommissionRemoteOrcad({
-        ...managedOrcadSlot(context, ORCAD_MANAGED_REMOTE_PORT),
-        record: context.activationRecord,
-        census
-      })
-    }
+    census: () => access.census(environmentId)
+  }
+}
+
+/** The managed decommission, over wsl.exe rather than the bridge (which is closed by then). */
+export function decommissionWslHostOrcad(
+  target: WslOrcadHostTarget,
+  transport: OrcadHostTransport
+): WslHostServerStopSteps['decommission'] {
+  return async (census) => {
+    const context = await resolveOrcadRemoteContext(target, transport)
+    return decommissionRemoteOrcad({
+      ...managedOrcadSlot(context, ORCAD_MANAGED_REMOTE_PORT),
+      record: context.activationRecord,
+      census
+    })
   }
 }
 

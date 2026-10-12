@@ -3,7 +3,6 @@
  * reports, and connect only for the user. A stopped distro boots on an explicit add or connect,
  * or while a project or terminal the user has open needs it; never for background work.
  */
-import { listEnvironments } from '../../shared/runtime-environment-store'
 import {
   addWslHostEnvironment,
   removeWslHostEnvironment
@@ -21,10 +20,20 @@ import {
 } from '../../shared/wsl-host-types'
 import { OrcadHostUnsupportedError } from '../orcad/orcad-host-unavailable'
 import type { WslHostDistroCandidate } from './wsl-host-distro-list'
-import { findServerSharingWslOrcad } from './wsl-host-ssh-orcad-conflict'
+import { wslHostSshManagedRefusal } from './wsl-host-ssh-orcad-conflict'
 import { wslDistroHolderKey } from './wsl-distro-holder-record'
-import { persistWslHostConnection, toWslHostStatus } from './wsl-host-connection-record'
-import { admitWslHostDistro, sameWslDistro, wslHostRunRefusal } from './wsl-host-add-admission'
+import {
+  errorMessage,
+  persistWslHostConnection,
+  toWslHostStatus
+} from './wsl-host-connection-record'
+import {
+  admitWslHostDistro,
+  sameWslDistro,
+  wslHostNotConnectedMessage,
+  WSL_HOST_REMOVING_MESSAGE,
+  wslHostRunRefusal
+} from './wsl-host-add-admission'
 import { WslOrcadLaunchDeferredError, type WslOrcadConnection } from './wsl-orcad-connection'
 import type { WslOrcadConnectionStatus } from './wsl-orcad-connection-status'
 import { defaultWslOrcadEnvironmentId } from './wsl-orcad-deploy'
@@ -39,7 +48,7 @@ export type WslHostConnector = {
   get(distro: string): WslOrcadConnection | null
   disconnect(distro: string): Promise<void>
   /** Ends the host's terminals, orcad and its terminal daemon; never boots a stopped distro. */
-  stopServer(distro: string): Promise<WslHostServerStop>
+  stopServer(distro: string, environmentId: string): Promise<WslHostServerStop>
   releaseHolder(distro: string): Promise<void>
   adoptHolders(): Promise<void>
   dispose(): Promise<void>
@@ -63,6 +72,7 @@ export class WslHostService {
   private readonly statuses = new Map<string, WslHostStatus>()
   private readonly adding = new Map<string, Promise<WslHostAddResult>>()
   private visible = new Set<string>()
+  private readonly removing = new Set<string>()
 
   constructor(private readonly deps: WslHostServiceDependencies) {}
 
@@ -127,19 +137,22 @@ export class WslHostService {
     if (!record) {
       throw new Error('This server is not a WSL host.')
     }
+    // First: nothing may reconnect it while it is being stopped (open work, liveness, calls).
+    this.removing.add(environmentId)
+    this.visible.delete(environmentId)
     const connector = this.connector
     let serverStop: WslHostServerStop = { stopped: true }
     if (connector) {
       serverStop = await connector
-        .stopServer(record.distro)
+        .stopServer(record.distro, environmentId)
         .catch((error: unknown) => ({ stopped: false, reason: errorMessage(error) }))
       await connector.disconnect(record.distro)
       // Without its holder the distro idles out.
       await connector.releaseHolder(record.distro)
     }
     removeWslHostEnvironment(this.deps.userDataPath(), environmentId)
+    this.removing.delete(environmentId)
     this.statuses.delete(environmentId)
-    this.visible.delete(environmentId)
     await this.deps.removed(environmentId)
     return serverStop
   }
@@ -171,26 +184,38 @@ export class WslHostService {
       throw new Error('This server is not a WSL host.')
     }
     const refusal = wslHostRunRefusal(this.deps)
-    if (refusal) {
-      throw new Error(refusal.message)
+    if (refusal || this.removing.has(environmentId)) {
+      throw new Error(refusal?.message ?? WSL_HOST_REMOVING_MESSAGE)
     }
     await this.wsl.connect(record.distro)
   }
 
-  /** Before a call to a WSL host: connect only when an open project or terminal needs it. */
+  /**
+   * Before a call to a WSL host: a live connection serves it; otherwise connect only for open
+   * work, and say why not instead of letting the call fail as an unreachable network server.
+   */
   async ensureForRuntimeCall(environmentId: string): Promise<void> {
     const record = this.recordForEnvironment(environmentId)
-    if (!record || !this.connector || !this.canRun()) {
+    if (!record || !this.connector || this.connector.get(record.distro)) {
       return
     }
-    if (this.connector.get(record.distro) || !this.visible.has(environmentId)) {
-      return
+    const refusal = wslHostRunRefusal(this.deps)
+    if (refusal || this.removing.has(environmentId)) {
+      throw new Error(refusal?.message ?? WSL_HOST_REMOVING_MESSAGE)
+    }
+    if (!this.visible.has(environmentId)) {
+      throw new Error(wslHostNotConnectedMessage(record.distro))
     }
     await this.connector.connect(record.distro)
   }
 
+  /** Whether anything may still be started for this distro (spawn guard). */
+  isKnownDistro(distro: string): boolean {
+    return this.adding.has(wslDistroHolderKey(distro)) || this.recordForDistro(distro) !== null
+  }
+
   setVisibleWork(environmentIds: readonly string[], previous = this.visible): void {
-    this.visible = new Set(environmentIds)
+    this.visible = new Set(environmentIds.filter((id) => !this.removing.has(id)))
     if (!this.connector || !this.canRun()) {
       return
     }
@@ -253,20 +278,11 @@ export class WslHostService {
     }
     const { distro } = admission
     const userDataPath = this.deps.userDataPath()
-    try {
-      const sharing = findServerSharingWslOrcad(
-        listEnvironments(userDataPath),
-        await this.wsl.readOrcadPublicKey(distro.name)
-      )
-      if (sharing) {
-        return {
-          ok: false,
-          kind: 'ssh-managed',
-          message: `${distro.name} already runs the Orca server for “${sharing.name}”, which this computer reaches over SSH. Remove that server first; moving it to a WSL host isn’t supported yet.`
-        }
-      }
-    } catch (error) {
-      return { ok: false, kind: 'failed', message: errorMessage(error) }
+    const sharing = await wslHostSshManagedRefusal(distro.name, userDataPath, (name) =>
+      this.wsl.readOrcadPublicKey(name)
+    )
+    if (sharing) {
+      return sharing
     }
     const environmentId = defaultWslOrcadEnvironmentId(distro.name)
     let connection: WslOrcadConnection
@@ -330,8 +346,4 @@ export class WslHostService {
   private recordForEnvironment(environmentId: string): WslHostDeploymentRecord | null {
     return this.records().find((record) => record.environmentId === environmentId) ?? null
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

@@ -48,7 +48,11 @@ function makeConnector(distros: WslHostDistroCandidate[]) {
     disconnect: vi.fn(async (distro: string) => {
       active.delete(distro.toLowerCase())
     }),
-    stopServer: vi.fn(async (_distro: string): Promise<WslHostServerStop> => ({ stopped: true })),
+    stopServer: vi.fn(
+      async (_distro: string, _environmentId: string): Promise<WslHostServerStop> => ({
+        stopped: true
+      })
+    ),
     releaseHolder: vi.fn(async (_distro: string) => {}),
     adoptHolders: vi.fn(async () => {}),
     dispose: vi.fn(async () => {})
@@ -220,7 +224,10 @@ describe('WslHostService', () => {
     await connector.disconnect('Ubuntu')
     connector.connect.mockClear()
 
-    await service.ensureForRuntimeCall('wsl:ubuntu')
+    // Not a network server: the call learns why, and nothing is booted for it.
+    await expect(service.ensureForRuntimeCall('wsl:ubuntu')).rejects.toThrow(
+      'The WSL host Ubuntu isn’t connected.'
+    )
     expect(connector.connect).not.toHaveBeenCalled()
     expect(service.hasUserVisibleWork('Ubuntu')).toBe(false)
 
@@ -239,10 +246,13 @@ describe('WslHostService', () => {
     await service.add({ distro: 'Ubuntu' })
     connector.connect.mockClear()
     enabled = false
+    await service.enabledChanged(false)
 
     await expect(service.connect('wsl:ubuntu')).rejects.toThrow('turned off in Settings')
     service.setVisibleWork(['wsl:ubuntu'])
-    await service.ensureForRuntimeCall('wsl:ubuntu')
+    await expect(service.ensureForRuntimeCall('wsl:ubuntu')).rejects.toThrow(
+      'turned off in Settings'
+    )
     expect(connector.connect).not.toHaveBeenCalled()
 
     await service.remove('wsl:ubuntu')
@@ -266,7 +276,7 @@ describe('WslHostService', () => {
     expect(connector.listDistros).not.toHaveBeenCalled()
     await expect(service.connect('wsl:ubuntu')).rejects.toThrow('server files missing')
     service.setVisibleWork(['wsl:ubuntu'])
-    await service.ensureForRuntimeCall('wsl:ubuntu')
+    await expect(service.ensureForRuntimeCall('wsl:ubuntu')).rejects.toThrow('server files missing')
     expect(connector.connect).not.toHaveBeenCalled()
     expect(service.hasServerFiles()).toBe(false)
   })
@@ -279,7 +289,7 @@ describe('WslHostService', () => {
     await service.remove('wsl:ubuntu')
 
     expect(connector.disconnect).toHaveBeenCalledWith('Ubuntu')
-    expect(connector.stopServer).toHaveBeenCalledWith('Ubuntu')
+    expect(connector.stopServer).toHaveBeenCalledWith('Ubuntu', 'wsl:ubuntu')
     expect(connector.releaseHolder).toHaveBeenCalledWith('Ubuntu')
     expect(listEnvironments(userDataPath)).toEqual([])
     expect(findWslHostDeployment(userDataPath, 'wsl:ubuntu')).toBeNull()
@@ -336,6 +346,54 @@ describe('WslHostService', () => {
     enabled = true
     await service.enabledChanged(true)
     expect(connector.connect).not.toHaveBeenCalled()
+  })
+
+  it('stops tracking a host before stopping its server, and never starts anything for it after', async () => {
+    const connector = makeConnector([UBUNTU])
+    const service = makeService(connector)
+    await service.add({ distro: 'Ubuntu' })
+    service.setVisibleWork(['wsl:ubuntu'])
+    connector.connect.mockClear()
+    let duringStop: { visible: boolean; known: boolean; connect: string } | null = null
+    connector.stopServer.mockImplementationOnce(async () => {
+      // The renderer still reports the open project, and a call arrives with the bridge closed.
+      await connector.disconnect('Ubuntu')
+      service.setVisibleWork(['wsl:ubuntu'])
+      duringStop = {
+        visible: service.hasUserVisibleWork('Ubuntu'),
+        known: service.isKnownDistro('Ubuntu'),
+        connect: await service.ensureForRuntimeCall('wsl:ubuntu').then(
+          () => 'connected',
+          (error: Error) => error.message
+        )
+      }
+      return { stopped: true }
+    })
+
+    await service.remove('wsl:ubuntu')
+
+    expect(duringStop).toEqual({
+      visible: false,
+      known: true,
+      connect: 'This WSL host is being removed.'
+    })
+    expect(connector.connect).not.toHaveBeenCalled()
+    expect(service.isKnownDistro('Ubuntu')).toBe(false)
+    service.setVisibleWork(['wsl:ubuntu'])
+    await service.ensureForRuntimeCall('wsl:ubuntu')
+    expect(connector.connect).not.toHaveBeenCalled()
+  })
+
+  it('treats a distro being added as known, so its first connect may spawn', async () => {
+    const connector = makeConnector([UBUNTU])
+    const service = makeService(connector)
+    let knownWhileAdding = false
+    connector.connect.mockImplementationOnce(async (distro: string) => {
+      knownWhileAdding = service.isKnownDistro(distro)
+      return connection(distro)
+    })
+    await service.add({ distro: 'Ubuntu' })
+    expect(knownWhileAdding).toBe(true)
   })
 
   it('adopts holders at startup only when a WSL host exists', async () => {

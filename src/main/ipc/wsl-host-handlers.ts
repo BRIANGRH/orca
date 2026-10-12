@@ -16,6 +16,11 @@ import { WslHostService } from '../wsl/wsl-host-service'
 import { getWslHostService, setWslHostService } from '../wsl/wsl-host-service-instance'
 import { retireRemovedRuntimeEnvironment } from './runtime-environment-removal-cleanup'
 import { getRuntimeEnvironmentStatus } from './runtime-environment-status-probe'
+import { callRuntimeEnvironment } from './runtime-environment-transport-routing'
+import { resolveEnvironment } from '../../shared/runtime-environment-store'
+import { getPreferredPairedRuntimeConnection } from '../../shared/runtime-environments'
+import { requestOrcadTerminalCensus } from '../ssh/orcad-terminal-census-client'
+import type { WslHostRuntimeAccess } from '../wsl/wsl-host-server-stop'
 
 export const WSL_HOST_HANDLER_CHANNELS = [
   'wslHosts:listDistros',
@@ -36,6 +41,29 @@ function publish(status: WslHostStatus): void {
         /* A renderer can close during publication. */
       }
     }
+  }
+}
+
+/** Removal reaches orcad the way every other call to the host does: by environment id. */
+function wslHostRuntimeAccess(getUserDataPath: () => string): WslHostRuntimeAccess {
+  return {
+    call: async (environmentId, method, params) => {
+      const response = await callRuntimeEnvironment(
+        getUserDataPath(),
+        environmentId,
+        method,
+        params
+      )
+      if (!response.ok) {
+        throw new Error(response.error.message)
+      }
+      return response.result
+    },
+    census: (environmentId) =>
+      requestOrcadTerminalCensus(
+        getPreferredPairedRuntimeConnection(resolveEnvironment(getUserDataPath(), environmentId)),
+        0
+      )
   }
 }
 
@@ -63,13 +91,17 @@ function createService(args: {
       retireRemovedRuntimeEnvironment(environmentId, args.invalidateTransport, args.store)
   })
   const onChange = created.handleConnectionChange.bind(created)
+  const isKnownDistro = (distro: string): boolean => created.isKnownDistro(distro)
+  const runtime = wslHostRuntimeAccess(args.getUserDataPath)
   created.attach(
     fake
-      ? createFakeWslHostConnector(fake, onChange)
+      ? createFakeWslHostConnector(fake, onChange, { isKnownDistro, runtime })
       : createWslHostConnector({
           userDataPath: args.getUserDataPath(),
           onChange,
-          hasUserVisibleWork: (distro) => created.hasUserVisibleWork(distro)
+          hasUserVisibleWork: (distro) => created.hasUserVisibleWork(distro),
+          isKnownDistro,
+          runtime
         })
   )
   return created

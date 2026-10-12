@@ -8,6 +8,11 @@ import { parsePairingCode } from '../../shared/pairing'
 import type { WslHostConnector } from './wsl-host-service'
 import type { WslOrcadConnection, WslOrcadConnectionDependencies } from './wsl-orcad-connection'
 import { defaultWslOrcadEnvironmentId } from './wsl-orcad-deploy'
+import {
+  stopWslHostServer,
+  wslHostRuntimeStopSteps,
+  type WslHostRuntimeAccess
+} from './wsl-host-server-stop'
 
 const FakeDistrosSchema = z.array(
   z.object({
@@ -35,10 +40,16 @@ export function readFakeWslHostsConfig(
   return FakeWslHostsSchema.parse(JSON.parse(raw))
 }
 
+/** Every distro the fake was asked to start, in order, for e2e to prove nothing respawns. */
+export const FAKE_WSL_CONNECT_LOG_GLOBAL = '__orcaE2EWslFakeConnects'
+
 export function createFakeWslHostConnector(
   config: z.infer<typeof FakeWslHostsSchema>,
-  onChange: NonNullable<WslOrcadConnectionDependencies['onChange']>
+  onChange: NonNullable<WslOrcadConnectionDependencies['onChange']>,
+  options: { isKnownDistro: (distro: string) => boolean; runtime: WslHostRuntimeAccess }
 ): WslHostConnector {
+  const connectLog: string[] = []
+  Reflect.set(globalThis, FAKE_WSL_CONNECT_LOG_GLOBAL, connectLog)
   const offer = parsePairingCode(config.pairingCode)
   const port = offer ? Number(new URL(offer.endpoint).port) : 0
   const active = new Map<string, WslOrcadConnection>()
@@ -54,6 +65,11 @@ export function createFakeWslHostConnector(
       })),
     readOrcadPublicKey: async () => null,
     connect: async (distro) => {
+      // Same guard as the real connector: nothing starts for a host that is gone.
+      if (!options.isKnownDistro(distro)) {
+        throw new Error(`${distro} is no longer a WSL host; Orca will not start anything for it.`)
+      }
+      connectLog.push(distro)
       onChange(distro, null, { state: 'connecting' })
       const connection: WslOrcadConnection = {
         distro,
@@ -77,11 +93,25 @@ export function createFakeWslHostConnector(
         onChange(distro, null, { state: 'closed' })
       }
     },
-    stopServer: async (distro) => {
-      if (active.delete(key(distro))) {
-        onChange(distro, null, { state: 'closed' })
+    // Why the real terminal steps: they run against the headless Orca server standing in for
+    // orcad, so e2e sends the same RPCs a real removal does. Only the decommission is faked.
+    stopServer: async (distro, environmentId) => {
+      if (!active.get(key(distro))) {
+        return { stopped: true }
       }
-      return { stopped: true }
+      return stopWslHostServer({
+        ...wslHostRuntimeStopSteps(options.runtime, environmentId),
+        closeBridge: async () => {
+          if (active.delete(key(distro))) {
+            onChange(distro, null, { state: 'closed' })
+          }
+        },
+        decommission: async () => ({
+          outcome: 'decommissioned',
+          version: 'e2e',
+          retirement: 'retired'
+        })
+      })
     },
     releaseHolder: async () => {},
     adoptHolders: async () => {},

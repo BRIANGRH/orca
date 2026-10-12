@@ -9,7 +9,9 @@
  * not ours to see (C4's activation admission still guards it), and a data dir moved off
  * `~/.orca` is not checked.
  */
+import { listEnvironments } from '../../shared/runtime-environment-store'
 import { E2EE_KEYPAIR_FILENAME } from '../../shared/runtime-e2ee-keypair-file'
+import type { WslHostAddResult } from '../../shared/wsl-host-types'
 import {
   getPreferredPairingOffer,
   type KnownRuntimeEnvironment
@@ -43,4 +45,31 @@ export function findServerSharingWslOrcad(
         getPreferredPairingOffer(environment).publicKeyB64 === distroPublicKeyB64
     ) ?? null
   )
+}
+
+/** R25's refusal for adding `distro`, or null when no paired server shares its orcad. */
+export async function wslHostSshManagedRefusal(
+  distro: string,
+  userDataPath: string,
+  readPublicKey: (distro: string) => Promise<string | null>
+): Promise<Extract<WslHostAddResult, { ok: false }> | null> {
+  try {
+    const sharing = findServerSharingWslOrcad(
+      listEnvironments(userDataPath),
+      await readPublicKey(distro)
+    )
+    return sharing
+      ? {
+          ok: false,
+          kind: 'ssh-managed',
+          message: `${distro} already runs the Orca server for “${sharing.name}”, which this computer reaches over SSH. Remove that server first; moving it to a WSL host isn’t supported yet.`
+        }
+      : null
+  } catch (error) {
+    return {
+      ok: false,
+      kind: 'failed',
+      message: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
