@@ -2,20 +2,25 @@
  * E2E only (`ORCA_E2E_FAKE_WSL_HOSTS`): stands in for wsl.exe so CI on any OS drives the WSL host
  * UI against a headless Orca server. Each "distro" connects straight to that server's pairing.
  */
+import { readFileSync } from 'node:fs'
 import { z } from 'zod'
 import { parsePairingCode } from '../../shared/pairing'
 import type { WslHostConnector } from './wsl-host-service'
 import type { WslOrcadConnection, WslOrcadConnectionDependencies } from './wsl-orcad-connection'
 import { defaultWslOrcadEnvironmentId } from './wsl-orcad-deploy'
 
+const FakeDistrosSchema = z.array(
+  z.object({
+    name: z.string().min(1),
+    state: z.enum(['running', 'stopped']),
+    version: z.union([z.literal(1), z.literal(2)])
+  })
+)
+
 const FakeWslHostsSchema = z.object({
-  distros: z.array(
-    z.object({
-      name: z.string().min(1),
-      state: z.enum(['running', 'stopped']),
-      version: z.union([z.literal(1), z.literal(2)])
-    })
-  ),
+  distros: FakeDistrosSchema,
+  /** Re-read on every listing, so a test can register a distro while the app runs. */
+  distrosFile: z.string().optional(),
   pairingCode: z.string().min(1),
   /** `missing` stands in for a build shipped without the orcad template. */
   serverFiles: z.enum(['present', 'missing']).optional()
@@ -40,7 +45,10 @@ export function createFakeWslHostConnector(
   const key = (distro: string): string => distro.toLowerCase()
   return {
     listDistros: async () =>
-      config.distros.map((distro, index) => ({
+      (config.distrosFile
+        ? FakeDistrosSchema.parse(JSON.parse(readFileSync(config.distrosFile, 'utf8')))
+        : config.distros
+      ).map((distro, index) => ({
         ...distro,
         id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`
       })),
