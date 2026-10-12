@@ -7,16 +7,19 @@ import {
 } from './claude-structured-dispatch-waiters'
 import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { AgentSessionDispatchOutcome } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
-import type { StructuredAgentSessionLogger } from '../native-chat/agent-session-wire/structured-agent-session-logger'
-import { stoppedHistoryLeftOut } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-selection'
+import {
+  preparedByAdapter,
+  type AgentSessionPreparedDispatch
+} from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
 import type { ClaudeDispatchWaiter, ClaudeSession } from './claude-structured-session-state'
 import type { ClaudeLateDispatchSettlement } from './claude-replay-turn-resolution'
 import {
   claudeDispatchContentKey,
   claudeDispatchContentRejection,
   claudeDispatchInvokesSlashCommand,
-  claudeDispatchContentWithHistory,
-  claudeDispatchRejection
+  claudeDispatchMessageContent,
+  claudeDispatchRejection,
+  ClaudePreparedDispatch
 } from './claude-structured-dispatch-content'
 import { dispatchWriteOutcomeUnknownReason } from '../native-chat/agent-session-journal/journal-dispatch-doubt-reasons'
 import { DISPATCH_REJECTED_QUEUE_FULL } from '../../shared/structured-agent-session-dispatch-rejection'
@@ -122,21 +125,15 @@ export async function dispatchClaudeTurn(
     requestedAt?: number
     /** The frame's uuid, for a caller that correlates the provider's answer to it. */
     sentUuid?: string
-    /** Stopped messages riding in this frame as framed context. */
-    history?: readonly AgentJournalMessageItem[]
-    historyLeftOut?: () => Promise<void>
-    sessionId?: string
-    logger?: StructuredAgentSessionLogger
+    /** The frame prepared with stopped history, written as is. */
+    prepared?: AgentSessionPreparedDispatch
   },
   beforeDispatch?: () => Promise<void>
 ): Promise<AgentSessionDispatchOutcome> {
-  let content: unknown[]
+  const prepared = preparedByAdapter(input.prepared, ClaudePreparedDispatch)
+  let content: readonly unknown[]
   try {
-    content = await claudeDispatchContentWithHistory(
-      input.body,
-      input.history ?? [],
-      stoppedHistoryLeftOut(input.logger, input)
-    )
+    content = prepared ? prepared.content : await claudeDispatchMessageContent(input.body)
   } catch (error) {
     return { state: 'rejected', ...claudeDispatchContentRejection(error) }
   }

@@ -1,6 +1,6 @@
 import { sliceAtCodeUnitLimit } from '../../shared/surrogate-safe-text-slice'
 import { withoutNativeChatVisualDirectiveLines } from '../../shared/native-chat-visual-directive'
-import { STOPPED_MESSAGE_TAG } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
+import { withoutStoppedHistoryFrame } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
 
 export { sliceAtCodeUnitLimit }
 
@@ -17,9 +17,7 @@ const XML_INSTRUCTIONS_PREFIX = '<INSTRUCTIONS>'
 const HIDDEN_TEXT_BLOCKS = [
   { name: 'system-reminder', closeTag: '</system-reminder>' },
   { name: 'codex_internal_context', closeTag: '</codex_internal_context>' },
-  { name: 'goal_context', closeTag: '</goal_context>' },
-  // Stopped messages a native chat's send carried ahead of the person's own words.
-  { name: STOPPED_MESSAGE_TAG, closeTag: `</${STOPPED_MESSAGE_TAG}>` }
+  { name: 'goal_context', closeTag: '</goal_context>' }
 ] as const
 
 type TextBuilder = {
@@ -39,7 +37,9 @@ export function extractContentText(value: unknown): string | null {
 }
 
 export function normalizeTitleText(value: string): string | null {
-  return finalizeNormalizedText(normalizeStringText(value, SESSION_TITLE_TEXT_LIMIT))
+  return finalizeNormalizedText(
+    normalizeStringText(withoutStoppedHistoryFrame(value), SESSION_TITLE_TEXT_LIMIT)
+  )
 }
 
 /**
@@ -56,8 +56,16 @@ export function normalizePreviewText(value: string, role?: string): string | nul
   )
 }
 
+/** A raw prompt field without the stopped messages a native chat's send carried ahead of it. */
+export function withoutStoppedHistoryPrompt(value: unknown): unknown {
+  return typeof value === 'string' ? withoutStoppedHistoryFrame(value) : value
+}
+
+/** Stopped messages a native chat's send carried ahead of the person's own words are hidden whole,
+ *  however long, before any scan budget applies. */
 function previewSource(text: string, dropVisualLines: boolean): string {
-  return dropVisualLines ? withoutNativeChatVisualDirectiveLines(text) : text
+  const own = withoutStoppedHistoryFrame(text)
+  return dropVisualLines ? withoutNativeChatVisualDirectiveLines(own) : own
 }
 
 function normalizeContentText(

@@ -7,6 +7,10 @@ import type {
 import type { NativeChatBlock } from '../../shared/native-chat-types'
 import type { AgentSessionDispatchOutcome } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import {
+  preparedByAdapter,
+  type AgentSessionPreparedDispatch
+} from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
+import {
   isCodexAppServerRequestError,
   type CodexAppServerConnection
 } from './codex-app-server-connection'
@@ -22,7 +26,8 @@ import {
   codexDispatchRejection,
   codexTurnEndRejection
 } from './codex-structured-turn-end-settlement'
-import { withStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
+import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
+import { fitStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
 
 // Writing a Codex turn and learning which message landed where, which are not
 // the same event. The answer proves admission and nothing about identity, which
@@ -68,41 +73,76 @@ function turnInputFor(body: AgentJournalMessageItem): Record<string, unknown>[] 
   for (const block of body.blocks as NativeChatBlock[]) {
     if (block.type === 'text' && block.text.length > 0) {
       input.push({ type: 'text', text: block.text })
-    } else if (block.type === 'image-ref' && block.path) {
-      input.push({ type: 'localImage', path: block.path })
-    } else if (block.type === 'image-ref' && block.url) {
-      input.push({ type: 'image', url: block.url })
+    } else if (block.type === 'image-ref') {
+      const image = imageInput(block)
+      if (image) {
+        input.push(image)
+      }
     }
   }
   return input
 }
 
+function imageInput(
+  block: Extract<NativeChatBlock, { type: 'image-ref' }>
+): Record<string, unknown> | null {
+  if (block.path) {
+    return { type: 'localImage', path: block.path }
+  }
+  return block.url ? { type: 'image', url: block.url } : null
+}
+
+/** A Codex send prepared with its stopped history: its input items, written as is. */
+export class CodexPreparedDispatch implements AgentSessionPreparedDispatch {
+  constructor(
+    readonly carries: readonly string[],
+    readonly input: readonly Record<string, unknown>[]
+  ) {}
+}
+
 type CodexTurnInput = {
   clientMessageId: string
   body: AgentJournalMessageItem
-  /** Stopped messages riding in this same request as leading framed input. */
-  history?: readonly AgentJournalMessageItem[]
+  prepared?: CodexPreparedDispatch
   timeoutMs?: number
 }
 
-/** The send's input, led by its stopped history. */
-function turnInputWithHistory(input: CodexTurnInput): Record<string, unknown>[] {
-  return turnInputFor(withStoppedHistory(input.body, input.history ?? []))
+function turnInput(input: CodexTurnInput): readonly Record<string, unknown>[] {
+  return input.prepared?.input ?? turnInputFor(input.body)
 }
 
 // Codex's `MAX_USER_INPUT_TEXT_CHARS` (codex-rs/protocol/src/user_input.rs), summed over text items.
 const CODEX_MAX_INPUT_TEXT_CHARS = 1 << 20
 
-/** Within Codex's text limit; UTF-16 length never undercounts Codex's characters. */
-export function codexStoppedHistoryFits(
+/** The send led by the owed stopped history that fits Codex's text limit: its images, then the
+ *  frame as one text item, then the send's own input. UTF-16 length never undercounts Codex's
+ *  characters. Null when none fits. */
+export async function prepareCodexDispatch(
   body: AgentJournalMessageItem,
-  history: readonly AgentJournalMessageItem[]
-): boolean {
-  const chars = turnInputFor(withStoppedHistory(body, history)).reduce(
+  owed: readonly OwedStoppedMessage[]
+): Promise<CodexPreparedDispatch | null> {
+  const own = turnInputFor(body)
+  const ownChars = own.reduce(
     (sum, item) => sum + (typeof item.text === 'string' ? item.text.length : 0),
     0
   )
-  return chars <= CODEX_MAX_INPUT_TEXT_CHARS
+  const fit = await fitStoppedHistory({
+    owed,
+    room: { chars: CODEX_MAX_INPUT_TEXT_CHARS - ownChars },
+    sendImages: own.filter((item) => item.type !== 'text').length,
+    textCost: (text) => ({ chars: text.length }),
+    image: async (block) => {
+      const item = imageInput(block)
+      return item ? { content: item, cost: {} } : null
+    }
+  })
+  return fit
+    ? new CodexPreparedDispatch(fit.carries, [
+        ...fit.images,
+        { type: 'text', text: fit.frame },
+        ...own
+      ])
+    : null
 }
 
 /**
@@ -122,7 +162,7 @@ async function steerCodexTurn(
         threadId: host.threadId,
         expectedTurnId,
         clientUserMessageId: input.clientMessageId,
-        input: turnInputWithHistory(input)
+        input: turnInput(input)
       },
       { timeoutMs: input.timeoutMs }
     )
@@ -168,7 +208,7 @@ export async function startCodexTurn(
     {
       threadId: host.threadId,
       clientUserMessageId: input.clientMessageId,
-      input: turnInputWithHistory(input),
+      input: turnInput(input),
       // Codex omits a tier the model does not list.
       ...Object.fromEntries(host.options)
     },
@@ -190,13 +230,20 @@ export async function dispatchCodexTurn(
     clientMessageId: string
     body: AgentJournalMessageItem
     requestedAt?: number
-    history?: readonly AgentJournalMessageItem[]
+    prepared?: AgentSessionPreparedDispatch
   },
   timeoutMs: number | undefined
 ): Promise<AgentSessionDispatchOutcome> {
+  const prepared = preparedByAdapter(input.prepared, CodexPreparedDispatch)
   let answer: { turnId: string | null; via: AgentJournalTurnJoin } | false
   try {
-    answer = await startCodexTurn(session, { ...input, timeoutMs })
+    answer = await startCodexTurn(session, {
+      clientMessageId: input.clientMessageId,
+      body: input.body,
+      ...(input.requestedAt !== undefined ? { requestedAt: input.requestedAt } : {}),
+      ...(prepared ? { prepared } : {}),
+      timeoutMs
+    })
   } catch (error) {
     if (isCodexAppServerRequestError(error) || isCodexAppServerUnsupportedError(error)) {
       // Codex answered and declined, so no echo for this write can arrive.

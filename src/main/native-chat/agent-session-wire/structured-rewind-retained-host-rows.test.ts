@@ -13,7 +13,10 @@ import {
   retainedRowReplacement
 } from './structured-rewind-retained-host-rows'
 import { restoreRewindJournalBody } from './structured-rewind-journal-body'
-import { withStoppedHistory } from './structured-agent-session-stopped-history-frame'
+import {
+  stoppedHistoryElement,
+  stoppedHistoryFrame
+} from './structured-agent-session-stopped-history-frame'
 import type * as RewindJournalBody from './structured-rewind-journal-body'
 
 vi.mock('./structured-rewind-journal-body', async (importOriginal) => {
@@ -190,12 +193,25 @@ describe("a rewind keeps another agent's messages its", () => {
     const carrier = codexKey('turn-2', 0)
     const mail = codexKey('turn-3', 0)
     // Codex stores what it received: the framed stopped message ahead of the send.
-    const framed = withStoppedHistory(user('B'), [user('A')])
+    const frame = stoppedHistoryFrame({
+      elements: [
+        stoppedHistoryElement({
+          number: 1,
+          text: 'A',
+          images: { first: 1, count: 0 },
+          omittedImages: 0
+        })
+      ],
+      notIncluded: 0,
+      shortened: 0,
+      sendImages: { first: 1, count: 0 }
+    })
+    const framed = user(`${frame}\nB`)
     const merged = mergeRetainedHostLifecycleRows(
       [retained(carrier, user('B')), retained(mail, { ...user('mail'), from })],
       [providerItem(carrier, framed), providerItem(mail, user('mail, as Codex holds it'))]
     )
-    expect(JSON.stringify(framed)).toContain('<stopped-message>')
+    expect(JSON.stringify(framed)).toContain('<stopped-history>')
     expect(merged[0]?.body).toEqual(user('B'))
     // Another sender's message still takes the provider's body.
     expect(merged[1]?.body).toEqual({ ...user('mail, as Codex holds it'), from })

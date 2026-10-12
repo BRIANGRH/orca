@@ -71,8 +71,8 @@ export class StructuredAgentSessionAdapterRouter implements StructuredAgentSessi
   dispatch: StructuredAgentSessionAdapter['dispatch'] = (input) =>
     this.owner(input.sessionId).dispatch(input)
 
-  historyFits: NonNullable<StructuredAgentSessionAdapter['historyFits']> = async (input) =>
-    (await this.owner(input.sessionId).historyFits?.(input)) ?? true
+  prepareDispatch: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']> = async (input) =>
+    (await this.owner(input.sessionId).prepareDispatch?.(input)) ?? null
 
   /** The owner's declared rewind, narrowed by its adapter for this session; never widened. */
   rewindSupport: NonNullable<StructuredAgentSessionAdapter['rewindSupport']> = (

@@ -25,7 +25,9 @@ import { acpAgentName } from './acp-structured-acquire'
 import type { AcpStructuredConnection } from './acp-structured-connection'
 import { acpSessionAcceptsImages } from './acp-structured-options'
 import type { ContentBlock } from './generated/acp-protocol.generated'
-import { withStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-frame'
+import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
+import type { AgentSessionPreparedDispatch } from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
+import { fitStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
 
 const ACP_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 /** A prompt is one JSON-RPC line; this leaves room for the request around its blocks. */
@@ -105,11 +107,17 @@ async function imageBlock(
   return { block: { type: 'image', mimeType, data: data.toString('base64') }, bytes: data.length }
 }
 
-/** The prompt for `body`; throws `AcpPromptContentError` for what Orca will not send. */
-export async function acpPromptBlocks(
+type AcpMeasuredPrompt = {
+  blocks: ContentBlock[]
+  lineBytes: number
+  images: number
+  imageBytes: number
+}
+
+async function measuredPromptBlocks(
   body: AgentJournalMessageItem,
   acceptsImages: boolean
-): Promise<ContentBlock[]> {
+): Promise<AcpMeasuredPrompt> {
   const blocks: ContentBlock[] = []
   const signal = AbortSignal.timeout(READ_TIMEOUT_MS)
   let imageCount = 0
@@ -130,11 +138,22 @@ export async function acpPromptBlocks(
     imageBytes += image.bytes
     blocks.push(image.block)
   }
-  // Only images can carry a message past one line here; their words are the refusal's.
-  if (imageCount > 0 && Buffer.byteLength(JSON.stringify(blocks)) > ACP_PROMPT_LINE_BUDGET) {
-    throw attachmentProblem({ reason: 'totalTooLarge', limit: ACP_PROMPT_IMAGE_MAX_BYTES })
+  // The whole prompt is one line, whatever it holds; the writer refuses a longer one.
+  const lineBytes = Buffer.byteLength(JSON.stringify(blocks))
+  if (lineBytes > ACP_PROMPT_LINE_BUDGET) {
+    throw imageCount > 0
+      ? attachmentProblem({ reason: 'totalTooLarge', limit: ACP_PROMPT_IMAGE_MAX_BYTES })
+      : new AcpPromptContentError(agentSessionFailureFact('writeFailed'))
   }
-  return blocks
+  return { blocks, lineBytes, images: imageCount, imageBytes }
+}
+
+/** The prompt for `body`; throws `AcpPromptContentError` for what Orca will not send. */
+export async function acpPromptBlocks(
+  body: AgentJournalMessageItem,
+  acceptsImages: boolean
+): Promise<ContentBlock[]> {
+  return (await measuredPromptBlocks(body, acceptsImages)).blocks
 }
 
 /** The prompt for `body` to `session`'s agent, or Orca's refusal of it in words that name the
@@ -159,31 +178,58 @@ export async function acpDispatchPrompt(
   }
 }
 
-/** Whether stopped history fits beside `body` in one prompt. */
-export async function acpStoppedHistoryFits(
-  body: AgentJournalMessageItem,
-  history: readonly AgentJournalMessageItem[],
-  session: Parameters<typeof acpDispatchPrompt>[1]
-): Promise<boolean> {
-  return Array.isArray(await acpDispatchPrompt(withStoppedHistory(body, history), session))
+/** An ACP prompt prepared with its stopped history: its content blocks, written as is. */
+export class AcpPreparedDispatch implements AgentSessionPreparedDispatch {
+  constructor(
+    readonly carries: readonly string[],
+    readonly prompt: readonly ContentBlock[]
+  ) {}
 }
 
-/** The prompt with its stopped history as leading framed blocks. Alone, reported before the write,
- *  if the history stopped fitting since the adapter's `historyFits`: history never refuses a send. */
-export async function acpDispatchPromptWithHistory(
-  {
-    body,
-    history = []
-  }: { body: AgentJournalMessageItem; history?: readonly AgentJournalMessageItem[] },
-  session: Parameters<typeof acpDispatchPrompt>[1],
-  reportLeftOut: (error: unknown) => Promise<void>
-): Promise<ContentBlock[] | AgentJournalDispatchRejection> {
-  if (history.length > 0) {
-    const combined = await acpDispatchPrompt(withStoppedHistory(body, history), session)
-    if (Array.isArray(combined)) {
-      return combined
-    }
-    await reportLeftOut(combined.reason)
+/** JSON-escaped UTF-8 bytes, which add up as text is joined. */
+function jsonTextBytes(text: string): number {
+  return Buffer.byteLength(JSON.stringify(text)) - 2
+}
+
+/** The prompt led by the owed stopped history that fits its one line, the request around it
+ *  reserved, and the agent's image limits: their images, the frame as one text block, then the
+ *  send's own blocks. Null when none fits or the send alone fails, whose refusal dispatch gives. */
+export async function prepareAcpDispatch(
+  body: AgentJournalMessageItem,
+  owed: readonly OwedStoppedMessage[],
+  session: Parameters<typeof acpDispatchPrompt>[1]
+): Promise<AcpPreparedDispatch | null> {
+  const acceptsImages = await acpSessionAcceptsImages(session)
+  const own = await measuredPromptBlocks(body, acceptsImages).catch(() => null)
+  if (!own) {
+    return null
   }
-  return acpDispatchPrompt(body, session)
+  const signal = AbortSignal.timeout(READ_TIMEOUT_MS)
+  // The frame's own block around its text, and the comma before the next block.
+  const frameBlock = Buffer.byteLength(JSON.stringify({ type: 'text', text: '' })) + 1
+  const fit = await fitStoppedHistory({
+    owed,
+    room: {
+      line: ACP_PROMPT_LINE_BUDGET - own.lineBytes - frameBlock,
+      images: MAX_IMAGE_COUNT - own.images,
+      bytes: ACP_PROMPT_IMAGE_MAX_BYTES - own.imageBytes
+    },
+    sendImages: own.images,
+    textCost: (text) => ({ line: jsonTextBytes(text) }),
+    image: async (block) => {
+      if (!acceptsImages) {
+        return null
+      }
+      const image = await imageBlock(block, ACP_PROMPT_IMAGE_MAX_BYTES, signal)
+      const line = Buffer.byteLength(JSON.stringify(image.block)) + 1
+      return { content: image.block, cost: { line, images: 1, bytes: image.bytes } }
+    }
+  })
+  return fit
+    ? new AcpPreparedDispatch(fit.carries, [
+        ...fit.images,
+        { type: 'text', text: fit.frame },
+        ...own.blocks
+      ])
+    : null
 }

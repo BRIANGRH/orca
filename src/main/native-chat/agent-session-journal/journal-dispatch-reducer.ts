@@ -75,8 +75,7 @@ export function applyJournalDispatchRow(
   })
 }
 
-/** A later pending row of the same send replaces what it carries (an adapter that left the history
- *  out writes one without); a malformed list carries none. */
+/** A later pending row of the same send replaces what it carries; a malformed list carries none. */
 function foldStoppedHistoryCarried(
   state: JournalReducerState,
   row: Extract<JournalRow, { kind: 'dispatch' }>

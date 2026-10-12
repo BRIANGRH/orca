@@ -38,6 +38,8 @@ import type {
 } from '../../../shared/agent-session-wire'
 import type { AgentSessionRefusalReason } from '../../../shared/agent-session-wire-refusals'
 import type { SubmissionRejectionFact } from '../../../shared/agent-session-failure'
+import type { OwedStoppedMessage } from '../../../shared/agent-session-stopped-history'
+import type { AgentSessionPreparedDispatch } from './structured-agent-session-prepared-dispatch'
 import type {
   AgentSessionCancelOutcome,
   StructuredAgentSessionAdapterStop
@@ -304,20 +306,18 @@ export type StructuredAgentSessionAdapter = StructuredAgentSessionAdapterStop & 
     requestedAt?: number
     /** Revalidate after preparation, immediately before writing to the provider. */
     beforeDispatch?: () => Promise<void>
-    /** Stopped messages that ride in this same write as framed context, in the order they were
-     *  sent (`structured-agent-session-stopped-history-frame.ts`); never sent on their own. */
-    history?: readonly AgentJournalMessageItem[]
-    /** Called before the write when the adapter leaves `history` out, so the host stops listing it
-     *  as carried. Never throws. */
-    historyLeftOut?: () => Promise<void>
+    /** This send as `prepareDispatch` prepared it, history included: written exactly as is. */
+    prepared?: AgentSessionPreparedDispatch
   }): Promise<AgentSessionDispatchOutcome>
-  /** Whether `history` fits beside `body` within this agent's own limits, asked before the
-   *  handover is recorded; false sends the message alone. Absent: it always fits. */
-  historyFits?(input: {
+  /** Prepares a person's send once with the stopped messages it can carry within this agent's
+   *  limits, before the handover is recorded. Null when none rides or the send alone fails to
+   *  prepare. Absent: sends never carry history. */
+  prepareDispatch?(input: {
     sessionId: string
+    fence: number
     body: AgentJournalMessageItem
-    history: readonly AgentJournalMessageItem[]
-  }): Promise<boolean>
+    owed: readonly OwedStoppedMessage[]
+  }): Promise<AgentSessionPreparedDispatch | null>
   /** How this session narrows its agent's declared rewind; `agent` answers for one with no child
    *  running. The router applies the declaration first, so an adapter's answer never widens it. */
   rewindSupport?(sessionId: string, agent?: string): AgentSessionRewindSupport
