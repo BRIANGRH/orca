@@ -17,6 +17,7 @@ import { getOrcaElectronLaunchArgs } from './helpers/electron-launch-args'
 import { cleanupE2EDaemons, closeElectronAppForE2E } from './helpers/electron-process-shutdown'
 import { createElectronHomeIsolation } from './helpers/electron-home-isolation'
 import { expect, forwardElectronProcessLogs, test } from './helpers/orca-app'
+import { RuntimeClient } from '../../src/cli/runtime/client'
 import { createRuntimeDesktopPairingOffer } from './helpers/paired-electron-client'
 import { openSidebarProjectDialog } from './helpers/sidebar-project-dialog'
 import { ensureTerminalVisible, waitForSessionReady } from './helpers/store'
@@ -80,6 +81,14 @@ async function launchDesktopWithFakeWsl(
   }
 }
 
+/** Every distro the fake connector was asked to start, read from the desktop's main process. */
+async function fakeWslConnects(app: ElectronApplication): Promise<string[]> {
+  return app.evaluate(() => {
+    const log: unknown = Reflect.get(globalThis, '__orcaE2EWslFakeConnects')
+    return Array.isArray(log) ? log.map(String) : []
+  })
+}
+
 async function setWslHostsEnabled(page: Page, enabled: boolean): Promise<void> {
   await page.evaluate(async (experimentalWslHosts) => {
     const settings = await window.api.settings.set({ experimentalWslHosts })
@@ -114,7 +123,8 @@ function createGitProject(): string {
 }
 
 test('adds a WSL distro as a host, adds a project on it, and runs a terminal there', async ({
-  orcaPage
+  orcaPage,
+  electronApp
 }, testInfo) => {
   test.setTimeout(240_000)
   await waitForSessionReady(orcaPage)
@@ -271,8 +281,21 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     await expect(confirm).toContainText('Files in the distro are untouched.')
     await settleAnimations(page)
     await page.screenshot({ path: testInfo.outputPath('wsl-host-remove-confirm.png') })
+    // The "distro's orcad" is the HUB: its terminal for the WSL project must exist until Remove.
+    const hubRuntime = new RuntimeClient(
+      await electronApp.evaluate(({ app }) => app.getPath('userData'))
+    )
+    const projectTerminals = async (): Promise<number> => {
+      const listed = await hubRuntime.call<{ terminals: { worktreeId: string }[] }>('terminal.list')
+      return listed.result.terminals.filter((terminal) =>
+        terminal.worktreeId.includes(path.basename(projectPath))
+      ).length
+    }
+    expect(await projectTerminals()).toBeGreaterThan(0)
     await confirm.getByRole('button', { name: 'Remove host' }).click()
     await expect(confirm).toBeHidden({ timeout: 30_000 })
+    await expect.poll(projectTerminals, { timeout: 30_000 }).toBe(0)
+    await expect(page.getByText(/something in the distro is still running/)).toHaveCount(0)
     await expect
       .poll(() =>
         page.evaluate(
@@ -284,6 +307,14 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
         )
       )
       .toBe(false)
+    // The project that lived on the host is no longer active, and nothing starts for the host
+    // again, though its rows still point at it (the respawn loop after removal).
+    expect(
+      await page.evaluate(() => window.__store?.getState().activeWorktreeId ?? null)
+    ).toBeNull()
+    const connectsAfterRemoval = await fakeWslConnects(desktop.app)
+    await new Promise((resolve) => setTimeout(resolve, 3_000))
+    expect(await fakeWslConnects(desktop.app)).toEqual(connectsAfterRemoval)
   } finally {
     await desktop.dispose()
     rmSync(projectPath, { recursive: true, force: true })

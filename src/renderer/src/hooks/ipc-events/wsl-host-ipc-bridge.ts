@@ -11,7 +11,7 @@ import type { AppState } from '../../store/types'
 import { useAppStore } from '../../store'
 
 /** The host that owns a workspace's own row; null while that row is unknown. */
-function workspaceOwnerHostId(state: AppState, workspaceId: string): ExecutionHostId | null {
+export function workspaceOwnerHostId(state: AppState, workspaceId: string): ExecutionHostId | null {
   const scope = parseWorkspaceKey(workspaceId)
   if (scope?.type === 'folder') {
     const workspace = state.folderWorkspaces.find(({ id }) => id === scope.folderWorkspaceId)
