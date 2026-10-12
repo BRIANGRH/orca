@@ -137,14 +137,14 @@ async function checkWindowsFolderPicker(
   })
   const pickFolder = async (picked: string): Promise<void> => {
     await app.evaluate(({ dialog }, filePath) => {
-      Reflect.set(globalThis, 'c8PickerDefaultPath', null)
+      delete process.env.ORCA_E2E_PICKER_DEFAULT_PATH
       dialog.showOpenDialog = async (...args: unknown[]) => {
         const options = args.at(-1)
         const defaultPath =
           typeof options === 'object' && options !== null && 'defaultPath' in options
             ? String(options.defaultPath)
             : 'none'
-        Reflect.set(globalThis, 'c8PickerDefaultPath', defaultPath)
+        process.env.ORCA_E2E_PICKER_DEFAULT_PATH = defaultPath
         return { canceled: false, filePaths: [filePath] }
       }
     }, picked)
@@ -155,10 +155,7 @@ async function checkWindowsFolderPicker(
     await dialog.getByRole('button', { name: /Browse folder|Browse host/i }).click()
   }
   const pickerDefaultPath = (): Promise<string | null> =>
-    app.evaluate((): string | null => {
-      const value: unknown = Reflect.get(globalThis, 'c8PickerDefaultPath')
-      return typeof value === 'string' ? value : null
-    })
+    app.evaluate((): string | null => process.env.ORCA_E2E_PICKER_DEFAULT_PATH ?? null)
 
   // A pick through the lowercase share name lands as the host's Linux path.
   const uncPick = `\\\\wsl.localhost\\ubuntu${projectPath.replace(/\//g, '\\')}`
