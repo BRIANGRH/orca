@@ -22,7 +22,6 @@ import {
   codexProviderHandleLink,
   codexSpawnedProcessIdentity
 } from './codex-structured-owner-identity'
-import { codexStructuredChildEnvironment } from './codex-structured-child-environment'
 import { openCodexThread } from './codex-structured-thread-open'
 import { withCodexVisualsThreadConfig } from './codex-structured-visuals'
 import {
@@ -117,6 +116,7 @@ export async function acquireCodexStructuredSession(input: {
     const launch = await deps
       .resolveLaunch({
         identity: acquireInput.identity,
+        spawnToken: acquireInput.spawnToken,
         ...(acquireInput.permissionMode ? { permissionMode: acquireInput.permissionMode } : {})
       })
       .catch((error: unknown) => {
@@ -129,7 +129,8 @@ export async function acquireCodexStructuredSession(input: {
         command: launch.command,
         args: launch.args,
         cwd: launch.cwd,
-        ...codexStructuredChildEnvironment(launch, acquireInput.spawnToken, sessionId)
+        ...(launch.env ? { env: launch.env } : {}),
+        ...(launch.envToDelete ? { envToDelete: launch.envToDelete } : {})
       },
       {
         onNotification: codexAcquisitionNotificationHandler({

@@ -36,7 +36,6 @@ const RELEASE_SKELETON: Record<string, string> = Object.fromEntries(
     'src/main/placeholder.ts',
     'src/shared/placeholder.ts',
     'src/preload/placeholder.ts',
-    'src/relay/placeholder.ts',
     'src/renderer/src/placeholder.ts',
     'src/types/placeholder.ts',
     'mobile/src/worktree/agent-row-display.ts'
@@ -202,5 +201,20 @@ describe('release checkout workspace packages', () => {
 
     expect(readFileSync(join(staging, 'src/main/old.ts'), 'utf8')).toBe(source)
     expect(existsSync(join(staging, 'pnpm-workspace.yaml'))).toBe(false)
+    expect(existsSync(join(staging, 'src/wsl-guest'))).toBe(false)
+  })
+
+  it('extracts the WSL guest sources a release relay imports when the release has them', async () => {
+    const source = "export { RELAY_SENTINEL } from '../wsl-guest/protocol'\n"
+    const { repo, commit } = commitRelease({
+      'src/relay/relay.ts': source,
+      'src/wsl-guest/protocol.ts': "export const RELAY_SENTINEL = 'sentinel'\n"
+    })
+    const staging = temporaryDirectory('orca-cross-version-release-staging-')
+
+    await extractReleaseCheckoutTree(repo, staging, commit)
+
+    expect(readFileSync(join(staging, 'src/relay/relay.ts'), 'utf8')).toBe(source)
+    expect(existsSync(join(staging, 'src/wsl-guest/protocol.ts'))).toBe(true)
   })
 })

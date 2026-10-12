@@ -12,10 +12,8 @@ import type {
   ClaudeStreamJsonConnection,
   openClaudeStreamJsonConnection
 } from './claude-stream-json-connection'
-import type {
-  ClaudeStructuredLaunch,
-  ClaudeStructuredLaunchInput
-} from './claude-structured-launch-resolution'
+import type { ClaudeStructuredLaunch } from './claude-structured-launch-resolution'
+import type { StructuredLaunchRequest } from '../runtime/structured-agent-launch-composition'
 import type { ClaudeJournalTranslator } from './claude-journal-translator-contract'
 import type { ClaudePendingPrompt, ClaudePromptRegistry } from './claude-structured-prompt-replies'
 import { cancelProcessAcquisition } from '@orca/process-host/cancel-process-acquisition'
@@ -98,7 +96,7 @@ export type ClaudeLateDispatchOutcome =
 export type ClaudeStructuredSessionAdapterDeps = {
   /** The `/` surface of a chat whose Claude is not running. */
   atRestCommands?: ClaudeAtRestCommandCatalog
-  resolveLaunch: (input: ClaudeStructuredLaunchInput) => Promise<ClaudeStructuredLaunch>
+  resolveLaunch: (input: StructuredLaunchRequest) => Promise<ClaudeStructuredLaunch>
   onEvent?: (event: ClaudeStructuredSessionEvent) => void
   /** Direct settlement path for provider-proven late dispatch outcomes. */
   onDispatchSettledLate?: (input: { sessionId: string } & ClaudeLateDispatchOutcome) => void

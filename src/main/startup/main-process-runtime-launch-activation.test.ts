@@ -30,6 +30,7 @@ vi.mock('../runtime/runtime-rpc', () => ({
       launchOrder.push('rpc-start')
     })
     setOnUnpairedDeviceAuthFailure = vi.fn()
+    setMobileDesktopRelayHosts = vi.fn()
   }
 }))
 vi.mock('../runtime/headless-runtime-graph', () => ({ publishHeadlessRuntimeGraph: vi.fn() }))
@@ -39,10 +40,11 @@ vi.mock('./headless-serve-ssh-registration', () => ({
   })
 }))
 vi.mock('../ipc/mobile', () => ({ registerMobileHandlers: vi.fn() }))
-vi.mock('../ipc/pty', () => ({
-  getLocalPtyProvider: vi.fn(),
-  registerHeadlessPtyRuntime: vi.fn()
+vi.mock('../ipc/runtime-environment-mobile-relay-hosts', () => ({
+  createRuntimeEnvironmentMobileRelayHosts: vi.fn()
 }))
+vi.mock('../ipc/pty/provider/registry', () => ({ getLocalPtyProvider: vi.fn() }))
+vi.mock('../ipc/pty/register-headless-runtime', () => ({ registerHeadlessPtyRuntime: vi.fn() }))
 vi.mock('../providers/local-pty-provider', () => ({ LocalPtyProvider: class {} }))
 vi.mock('../browser/offscreen-browser-backend', () => ({ OffscreenBrowserBackend: class {} }))
 vi.mock('../browser/browser-manager', () => ({ browserManager: {} }))

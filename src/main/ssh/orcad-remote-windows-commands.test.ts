@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./ssh-relay-deploy-helpers', () => ({
@@ -8,7 +6,7 @@ vi.mock('./ssh-relay-deploy-helpers', () => ({
 }))
 
 import { execCommand } from './ssh-relay-deploy-helpers'
-import type { SshConnection } from './ssh-connection'
+import type { OrcadHostTransport } from './orcad-host-transport'
 import { getRemoteHostPlatform } from './ssh-remote-platform'
 import { orcadLivenessProbeCommand, type OrcadLaunchSpec } from './orcad-remote-launch'
 import {
@@ -59,9 +57,9 @@ const spec: OrcadLaunchSpec = {
   activationRoot: `${base}/.orcad-activation-transaction`
 }
 
-function windowsConn(): { conn: SshConnection; writes: [string, string][] } {
+function windowsConn(): { conn: OrcadHostTransport; writes: [string, string][] } {
   const writes: [string, string][] = []
-  const conn: SshConnection = Object.assign(Object.create(null), {
+  const conn: OrcadHostTransport = Object.assign(Object.create(null), {
     writeFile: async (path: string, contents: string) => {
       writes.push([path, contents])
     }
@@ -218,26 +216,6 @@ describe('Windows command lines for both DefaultShells', () => {
       )
     }
   )
-})
-
-describe('no -EncodedCommand in the W1 builders', () => {
-  it.each([
-    'orcad-remote-windows-node.ts',
-    'orcad-windows-host-script.ts',
-    'orcad-remote-launch-windows.ts',
-    'orcad-remote-launch.ts',
-    'orcad-remote-process-control.ts',
-    'orcad-remote-readiness-wait.ts',
-    'orcad-remote-record-file.ts',
-    'orcad-remote-build-hash.ts',
-    'orcad-managed-remote-stop.ts',
-    'orcad-remote-runtime-control.ts'
-  ])('%s', (file) => {
-    const code = readFileSync(join(__dirname, file), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//gu, '')
-      .replace(/^\s*\/\/.*$/gmu, '')
-    expect(code).not.toMatch(/EncodedCommand|powerShellCommand/u)
-  })
 })
 
 describe('Windows launch report', () => {

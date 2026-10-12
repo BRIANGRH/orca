@@ -12,7 +12,7 @@ const CHECKOUT_PROCESS_TIMEOUT_MS = 45_000
 const CHECKOUT_MAX_OUTPUT_BYTES = 1024 * 1024
 
 // Why: the wire endpoints only need the runtime RPC host, the renderer client, and
-// the shared codec, plus the relay an app update leaves running. Skipping cli keeps a cold CI
+// the shared codec, plus a release's relay that an app update leaves running. Skipping cli keeps a cold CI
 // extraction a few seconds.
 // The phone's `worktree ps` row reader is one self-contained file, so it rides along alone.
 // Workspace packages the release declares are added per release (releaseWorkspaceArchivePaths).
@@ -20,11 +20,12 @@ const ARCHIVE_PATHS = [
   'src/main',
   'src/shared',
   'src/preload',
-  'src/relay',
   'src/renderer',
   'src/types',
   'mobile/src/worktree/agent-row-display.ts'
 ]
+// Why optional: a release may have either or both, and `git archive` refuses a missing pathspec.
+const OPTIONAL_ARCHIVE_PATHS = ['src/relay', 'src/wsl-guest']
 
 const WORKSPACE_POLICY = 'pnpm-workspace.yaml'
 
@@ -187,23 +188,32 @@ function workspacePatternRoot(pattern: string): string {
   return segments.join('/')
 }
 
+async function listReleasePaths(
+  repoRoot: string,
+  commit: string,
+  paths: string[],
+  deadline: number
+): Promise<string[]> {
+  return (
+    await runCheckoutProcess(
+      repoRoot,
+      'git',
+      ['ls-tree', '-z', '--name-only', commit, '--', ...paths],
+      deadline
+    )
+  )
+    .split('\0')
+    .filter(Boolean)
+}
+
 /** The release's workspace policy and declared package directories; none before workspaces. */
 async function releaseWorkspaceArchivePaths(
   repoRoot: string,
   commit: string,
   deadline: number
 ): Promise<string[]> {
-  const listed = async (paths: string[]): Promise<string[]> =>
-    (
-      await runCheckoutProcess(
-        repoRoot,
-        'git',
-        ['ls-tree', '-z', '--name-only', commit, '--', ...paths],
-        deadline
-      )
-    )
-      .split('\0')
-      .filter(Boolean)
+  const listed = (paths: string[]): Promise<string[]> =>
+    listReleasePaths(repoRoot, commit, paths, deadline)
   if ((await listed([WORKSPACE_POLICY])).length === 0) {
     return []
   }
@@ -230,11 +240,13 @@ async function releaseWorkspaceArchivePaths(
 export async function extractReleaseCheckoutTree(
   repoRoot: string,
   staging: string,
-  commit: string
-): Promise<void> {
+  commit: string,
+  sourceOnly = false
+): Promise<PackageImports> {
   const archive = join(staging, '.release-checkout.tar')
   const deadline = Date.now() + CHECKOUT_PROCESS_TIMEOUT_MS
   const workspacePaths = await releaseWorkspaceArchivePaths(repoRoot, commit, deadline)
+  const optionalPaths = await listReleasePaths(repoRoot, commit, OPTIONAL_ARCHIVE_PATHS, deadline)
   try {
     await runCheckoutProcess(
       repoRoot,
@@ -246,6 +258,7 @@ export async function extractReleaseCheckoutTree(
         commit,
         '--',
         ...ARCHIVE_PATHS,
+        ...optionalPaths,
         ...workspacePaths
       ],
       deadline
@@ -261,12 +274,15 @@ export async function extractReleaseCheckoutTree(
   }
   const packageImports: PackageImports = new Map()
   await prepareExtractedTree(staging, workspacePaths, packageImports)
-  await installMissingPackageStandIns(
-    staging,
-    commit,
-    packageImports,
-    JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'))
-  )
+  if (!sourceOnly) {
+    await installMissingPackageStandIns(
+      staging,
+      commit,
+      packageImports,
+      JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'))
+    )
+  }
+  return packageImports
 }
 
 export async function scavengeReleaseCheckoutStaging(

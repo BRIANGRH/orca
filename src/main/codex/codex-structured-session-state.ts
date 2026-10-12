@@ -2,8 +2,7 @@ import type { StructuredAgentSessionLogger } from '../native-chat/agent-session-
 import type { AgentSessionAccountKind } from '../../shared/agent-session-availability'
 import type {
   AgentJournalAnsweredTurnIdentity,
-  AgentJournalItemIdentity,
-  AgentSessionJournalIdentity
+  AgentJournalItemIdentity
 } from '../../shared/agent-session-journal-types'
 import { randomUUID } from 'node:crypto'
 import type { AgentJournalDispatchRejection } from '../../shared/agent-session-failure-words'
@@ -23,7 +22,7 @@ import type { CodexBackgroundTaskTracker } from './codex-background-task-tracker
 import type { CodexJournalTranslator } from './codex-structured-journal-translation'
 import type { StructuredAgentSessionEndedEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import type { CodexStructuredPermissionPolicy } from './codex-structured-permission-policy'
-import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
+import type { StructuredLaunchRequest } from '../runtime/structured-agent-launch-composition'
 import type {
   AgentModelCatalogSessionAccess,
   AgentModelCatalogStore
@@ -31,12 +30,6 @@ import type {
 import type { NativeChatVisualsLaunch } from '../native-chat/native-chat-visuals-delivery'
 
 export type CodexSessionCatalogAccess = AgentModelCatalogSessionAccess
-
-/** The conversation and the permission mode the host decided it starts with (absent asks). */
-export type CodexStructuredLaunchInput = {
-  identity: AgentSessionJournalIdentity
-  permissionMode?: AgentChatPermissionMode
-}
 
 export type CodexStructuredLaunch = {
   command: string
@@ -51,7 +44,9 @@ export type CodexStructuredLaunch = {
   permissionPolicy?: CodexStructuredPermissionPolicy
   /** The model the session chose; the thread opens on it so its first turn is not a switch. */
   model?: string
+  /** The child's sealed environment, and the inherited keys it must not keep. */
   env?: Record<string, string>
+  envToDelete?: readonly string[]
   /** This chat's visuals folder and skill; absent when the chat has no visuals. */
   visuals?: NativeChatVisualsLaunch
 }
@@ -95,7 +90,7 @@ export type CodexStructuredSessionEvent =
 
 export type CodexStructuredSessionAdapterDeps = {
   resolveAccountKind?: (home: string) => AgentSessionAccountKind | undefined
-  resolveLaunch: (input: CodexStructuredLaunchInput) => Promise<CodexStructuredLaunch>
+  resolveLaunch: (input: StructuredLaunchRequest) => Promise<CodexStructuredLaunch>
   onEvent?: (event: CodexStructuredSessionEvent) => void
   /** Where bookkeeping a close or exit does after the child is gone reports a failure. */
   logger?: StructuredAgentSessionLogger

@@ -1,3 +1,7 @@
+import {
+  createCodexStructuredLaunchResolver,
+  TEST_SPAWN_TOKEN
+} from '../runtime/structured-agent-launch-composition.test-support'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,8 +10,8 @@ import { FLOATING_TERMINAL_WORKTREE_ID } from '../../shared/constants'
 import type { AgentSessionRecord } from '../../shared/agent-session-record'
 import type { AgentSessionProviderHandleLink } from '../../shared/agent-session-provider-handle'
 import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
-import { createCodexStructuredLaunchResolver } from './codex-structured-launch-resolution'
 import { codexProviderHandle } from '../../shared/agent-session-provider-handle-encoding'
+import { NATIVE_CHAT_VISUALS_DIR_ENV } from '../native-chat/native-chat-visuals-delivery'
 
 const { isWindowsProcessStartTimeAvailable } = vi.hoisted(() => ({
   isWindowsProcessStartTimeAvailable: vi.fn(() => true)
@@ -165,7 +169,9 @@ describe('codex structured launch resolution', () => {
         approvalPolicy: 'on-request',
         sandbox: 'workspace-write',
         approvalsReviewer: 'user'
-      }
+      },
+      env: { CODEX_HOME: '/home/work/.codex' },
+      envToDelete: [NATIVE_CHAT_VISUALS_DIR_ENV]
     })
   })
 
@@ -262,7 +268,11 @@ describe('codex structured launch resolution', () => {
       { approvalPolicy: 'never', sandbox: 'danger-full-access', approvalsReviewer: 'user' }
     ]
   ] as const)('opens a %s chat with its thread policy', async (permissionMode, policy) => {
-    const launch = await resolverFor(record())({ identity: IDENTITY, permissionMode })
+    const launch = await resolverFor(record())({
+      identity: IDENTITY,
+      spawnToken: TEST_SPAWN_TOKEN,
+      permissionMode
+    })
 
     expect(launch.args).toEqual(['app-server'])
     expect(launch.permissionPolicy).toEqual(policy)
@@ -272,7 +282,7 @@ describe('codex structured launch resolution', () => {
   it('ignores the bypass flag the agent Arguments carry', async () => {
     const launch = await resolverFor(record(), undefined, undefined, () => [
       '--dangerously-bypass-approvals-and-sandbox'
-    ])({ identity: IDENTITY, permissionMode: 'ask' })
+    ])({ identity: IDENTITY, spawnToken: TEST_SPAWN_TOKEN, permissionMode: 'ask' })
 
     expect(launch.permissionPolicy).toMatchObject({ approvalPolicy: 'on-request' })
   })

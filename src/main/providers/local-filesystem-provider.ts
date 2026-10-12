@@ -1,7 +1,6 @@
 import { constants, copyFile, lstat, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { throwIfSignalAborted, waitForPromiseWithSignal } from '../../shared/abort-signal-reason'
-import type { ChildProcessHandle } from '@orca/process-host/process-spec'
 import { readAuthorizedDocPreviewFile } from '../../shared/doc-preview-file-access'
 import { renameLocalPathSerializedByDestination } from '../destination-serialized-local-rename'
 import type { resolveAuthorizedPath as ResolveAuthorizedPath } from '../ipc/filesystem-auth'
@@ -12,7 +11,7 @@ import { getLocalGitOptionsForRegisteredWorktree } from '../ipc/local-worktree-r
 import { listMarkdownDocuments } from '../ipc/markdown-documents'
 import type { Store } from '../persistence'
 import { runBundledRipgrepTextSearch } from '../ripgrep/bundled-ripgrep-text-search'
-import { parseWslPath } from '../wsl'
+import { resolveBundledRipgrepWslRouting } from '../ripgrep/bundled-ripgrep-wsl-routing'
 import type { IFilesystemProvider } from './filesystem-provider-contract'
 
 export type LocalFilesystemProviderOptions = {
@@ -20,32 +19,30 @@ export type LocalFilesystemProviderOptions = {
   requireStore(): Store
   /** Injected: the auth layer reaches the host router, so importing it here would be a cycle. */
   resolveAuthorizedPath: typeof ResolveAuthorizedPath
-  /** Registers a running text search for cancellation; returns its release. */
-  onTextSearchSpawn?: (child: ChildProcessHandle) => () => void
 }
 
 /**
  * Contract methods with a runtime-command local twin. Reads, listing and watching keep
  * their existing local call sites: their local limits and result shapes differ from the contract.
  */
-export type LocalFilesystemProvider = Pick<
-  IFilesystemProvider,
-  | 'readDir'
-  | 'readDocPreviewFile'
-  | 'writeFile'
-  | 'writeFileBase64'
-  | 'writeFileBase64Chunk'
-  | 'pathsExist'
-  | 'stat'
-  | 'deletePath'
-  | 'createFile'
-  | 'createDir'
-  | 'createDirNoClobber'
-  | 'renameNoClobber'
-  | 'copy'
-  | 'search'
-  | 'listMarkdownDocuments'
->
+export type LocalFilesystemProvider = Required<Pick<IFilesystemProvider, 'listMarkdownDocuments'>> &
+  Pick<
+    IFilesystemProvider,
+    | 'readDir'
+    | 'readDocPreviewFile'
+    | 'writeFile'
+    | 'writeFileBase64'
+    | 'writeFileBase64Chunk'
+    | 'pathsExist'
+    | 'stat'
+    | 'deletePath'
+    | 'createFile'
+    | 'createDir'
+    | 'createDirNoClobber'
+    | 'renameNoClobber'
+    | 'copy'
+    | 'search'
+  >
 
 /** This machine's file operations behind the store's path authorization; build one per call. */
 export function createLocalFilesystemProvider(
@@ -137,19 +134,19 @@ export function createLocalFilesystemProvider(
         signal
       )
       throwIfSignalAborted(signal)
-      const { wslDistro } = getLocalGitOptionsForRegisteredWorktree(
-        store,
-        searchOptions.rootPath,
-        rootPath
+      const { wslDistro, wslDistroForOutput } = resolveBundledRipgrepWslRouting(
+        rootPath,
+        getLocalGitOptionsForRegisteredWorktree(store, searchOptions.rootPath, rootPath).wslDistro
       )
       return runBundledRipgrepTextSearch({
         options: searchOptions,
         rootPath,
         resultRootPath: rootPath,
         wslDistro,
-        wslDistroForOutput: parseWslPath(rootPath)?.distro ?? wslDistro,
+        wslDistroForOutput,
         signal,
-        onSpawn: options.onTextSearchSpawn ?? (() => () => undefined)
+        // Why: request abort owns cancellation; only the renderer IPC search keeps a by-id registry.
+        onSpawn: () => () => undefined
       })
     },
     listMarkdownDocuments: (rootPath) =>

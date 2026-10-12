@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import '@testing-library/jest-dom/vitest'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { projectStructuredItemsToNativeChat } from '../../../../shared/structured-agent-session-projection'
 import type { AgentJournalStatusItem } from '../../../../shared/agent-session-journal-types'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { MessageRow } from './NativeChatMessageRow'
 import { NativeChatNoticeRow } from './NativeChatNoticeRow'
 import { i18n } from '@/i18n/i18n'
@@ -32,17 +33,21 @@ it('keeps a skipped compaction warning truthful instead of showing the success s
 function orcaStopView(
   hostLabel: string | null,
   continueAvailable: boolean,
-  remoteHost: boolean
+  remoteHost: boolean,
+  offer: Pick<NativeChatOrcaStopView, 'offeredTurnItemId' | 'continueNow'>
 ): NativeChatOrcaStopView {
-  return { hostLabel, remoteHost, continueAvailable }
+  return { hostLabel, remoteHost, continueAvailable, ...offer }
 }
+
+const NO_OFFER = { offeredTurnItemId: null, continueNow: () => {} }
 
 function renderStatus(
   body: AgentJournalStatusItem,
   hostLabel: string | null = null,
   continueAvailable = false,
   remoteHost = false,
-  agentName?: string
+  agentName?: string,
+  offer: Pick<NativeChatOrcaStopView, 'offeredTurnItemId' | 'continueNow'> = NO_OFFER
 ) {
   const [message] = projectStructuredItemsToNativeChat([
     {
@@ -54,16 +59,18 @@ function renderStatus(
       turnScope: { kind: 'turn', turnItemId: 'cut-turn' }
     }
   ])
-  const view = orcaStopView(hostLabel, continueAvailable, remoteHost)
+  const view = orcaStopView(hostLabel, continueAvailable, remoteHost, offer)
   return render(
-    <NativeChatOrcaStopContext.Provider value={view}>
-      <MessageRow
-        message={message!}
-        agentName={agentName}
-        expandSignal={false}
-        onScrollMessageToTop={vi.fn()}
-      />
-    </NativeChatOrcaStopContext.Provider>
+    <TooltipProvider>
+      <NativeChatOrcaStopContext.Provider value={view}>
+        <MessageRow
+          message={message!}
+          agentName={agentName}
+          expandSignal={false}
+          onScrollMessageToTop={vi.fn()}
+        />
+      </NativeChatOrcaStopContext.Provider>
+    </TooltipProvider>
   )
 }
 
@@ -88,7 +95,7 @@ describe('the row an Orca stop leaves', () => {
   ])('names a %s and the machine, muted', (cause, sentence) => {
     renderStatus(orcaStopRow(cause), 'studio-mac')
     const row = screen.getByText(`${sentence} You can continue in this conversation.`)
-    expect(row.parentElement?.parentElement).toHaveClass('text-muted-foreground')
+    expect(row.parentElement?.parentElement).toHaveClass('text-chat-foreground-faint')
     expect(screen.queryByText(LEGACY_TEXT)).toBeNull()
   })
 
@@ -101,12 +108,35 @@ describe('the row an Orca stop leaves', () => {
     ).toBeInTheDocument()
   })
 
+  it('carries Continue on the cut it is offered for, and only there', () => {
+    const continueNow = vi.fn()
+    renderStatus(orcaStopRow('quit'), 'studio-mac', true, false, undefined, {
+      offeredTurnItemId: 'cut-turn',
+      continueNow
+    })
+    const sentence = screen.getByText(
+      'Orca on studio-mac was closed while this response was in progress.'
+    )
+    const button = screen.getByRole('button', { name: 'Continue' })
+    // Beside the words that say why, in the same card.
+    expect(sentence.parentElement).toContainElement(button)
+    fireEvent.click(button)
+    expect(continueNow).toHaveBeenCalledOnce()
+    cleanup()
+
+    renderStatus(orcaStopRow('quit'), 'studio-mac', true, false, undefined, {
+      offeredTurnItemId: 'another-turn',
+      continueNow
+    })
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
+  })
+
   it("says a remote host's Orca stopped, not that it was closed", () => {
     renderStatus(orcaStopRow('quit'), 'QA SSH', true, true)
     expect(
       screen.getByText('Orca on QA SSH stopped while this response was in progress.').parentElement
         ?.parentElement
-    ).toHaveClass('text-muted-foreground')
+    ).toHaveClass('text-chat-foreground-faint')
     expect(screen.queryByText(/was closed/)).toBeNull()
   })
 
@@ -140,13 +170,13 @@ describe('the row an Orca stop leaves', () => {
       screen.getByText(
         'Orca on studio-mac stopped unexpectedly while this response was in progress.'
       ).parentElement?.parentElement
-    ).toHaveClass('text-muted-foreground')
+    ).toHaveClass('text-chat-foreground-faint')
     cleanup()
     renderStatus(represented, null, true)
     expect(
       screen.getByText('This response was interrupted. You can continue in this conversation.')
         .parentElement?.parentElement
-    ).toHaveClass('text-muted-foreground')
+    ).toHaveClass('text-chat-foreground-faint')
   })
 
   it('keeps the host words for a cause this build does not know', () => {
@@ -157,8 +187,18 @@ describe('the row an Orca stop leaves', () => {
   it('keeps the host words when the chat has no machine to name, muted all the same', () => {
     renderStatus(orcaStopRow('update'), null)
     expect(screen.getByText(LEGACY_TEXT).parentElement?.parentElement).toHaveClass(
-      'text-muted-foreground'
+      'text-chat-foreground-faint'
     )
+  })
+
+  it('calls a paired server with no name the remote server, so its words match the button', () => {
+    renderStatus(orcaStopRow('update'), null, true, true)
+    expect(
+      screen.getByText(
+        'Orca on the remote server restarted for an update while this response was in progress.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.queryByText(LEGACY_TEXT)).toBeNull()
   })
 
   it('keeps the host words for a stop Orca did not cause', () => {
@@ -307,7 +347,7 @@ describe('notice rows', () => {
   it('renders compaction as a centered separator', () => {
     renderStatus({ kind: 'status', text: 'Context compacted', presentation: 'compaction' })
     expect(screen.getByRole('separator', { name: 'Context compacted' })).toHaveClass(
-      'text-muted-foreground'
+      'text-chat-foreground-faint'
     )
     expect(
       screen.getByText('Context compacted').parentElement?.querySelectorAll('.bg-border')
@@ -375,7 +415,7 @@ describe('notice rows', () => {
     ['history-item-too-large', 'This part of the chat was too large to show.']
   ])('words a %s row itself, as a muted status line', (presentation, words) => {
     renderStatus({ kind: 'status', text: 'Words an older host wrote', presentation })
-    expect(screen.getByText(words)).toHaveClass('text-muted-foreground', 'text-sm')
+    expect(screen.getByText(words)).toHaveClass('text-chat-foreground-faint', 'text-sm')
     expect(screen.queryByText('Words an older host wrote')).toBeNull()
   })
 })

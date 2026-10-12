@@ -11,13 +11,19 @@ import {
 } from '../../../shared/agent-chat-permission-mode'
 import type { StructuredAgentSessionHostDeps } from './structured-agent-session-host-types'
 
-/** Saved catalog only, so a start never waits on a listing. */
+/** Saved catalog only, so a start never waits on a listing; for the chat's own folder, as its
+ *  options read names its default. */
 async function listedAutoModeSupport(
   catalog: StructuredAgentSessionHostDeps['modelCatalog'],
   record: AgentSessionRecord
 ): Promise<boolean> {
   const listing = await catalog
-    ?.read({ agent: record.provider, sessionId: record.sessionId, savedOnly: true })
+    ?.read({
+      agent: record.provider,
+      sessionId: record.sessionId,
+      savedOnly: true,
+      inSessionWorkspace: true
+    })
     .catch(() => null)
   return (
     listing !== null &&

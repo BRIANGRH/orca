@@ -34,7 +34,10 @@ import { AgentModelCatalogStore } from '../../src/main/native-chat/agent-model-c
 import { workspaceMayOverrideDefaultModel } from '../../src/main/native-chat/agent-model-catalog/agent-project-model-override'
 import { claudeAndCodexDeclared } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-adapter-router-test-support'
 import type { StructuredAgentSessionMutationContext } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-host-mutations'
-import { readStructuredAgentSessionOptions } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-options-read'
+import {
+  IN_PROCESS_OPTIONS_READER,
+  readStructuredAgentSessionOptions
+} from '../../src/main/native-chat/agent-session-wire/structured-agent-session-options-read'
 import { resolveStructuredAgentCommand } from '../../src/main/native-chat/structured-agent-command-resolution'
 import { resetHostModelCatalogSnapshotsForTests } from '@/runtime/host-model-catalog-snapshots'
 import { useStructuredAgentSessionOptions } from '../../src/renderer/src/components/native-chat/use-structured-agent-session-options'
@@ -109,6 +112,7 @@ async function hostCatalog(listingLands: Promise<void>) {
     getRecord: () => record,
     drivesRecord: () => true,
     resolveAccountHome: async () => record.accountHome,
+    recordWorkspacePath: async () => join(dir, 'project'),
     workspaceMayOverrideDefaultModel,
     probes: {
       claude: createClaudeModelCatalogProbe({
@@ -154,7 +158,7 @@ async function hostCatalog(listingLands: Promise<void>) {
             ...(params.waitForListing ? { waitForListing: true } : {})
           })
         : method === 'agentSession.options'
-          ? readStructuredAgentSessionOptions(context, SESSION)
+          ? readStructuredAgentSessionOptions(context, SESSION, IN_PROCESS_OPTIONS_READER)
           : new Promise(() => {})
   )
   return { persistence }

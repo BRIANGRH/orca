@@ -58,6 +58,9 @@ async function stoppingChild(reportsOutcome: boolean) {
   agent.on('_x.ai/subagent/cancel', (frame) =>
     agent.fail(frame, -32602, 'Invalid params', 'invalid params: missing field `subagentId`')
   )
+  agent.on('_x.ai/task/kill', (frame) =>
+    agent.fail(frame, -32602, 'Invalid params', 'invalid params: missing field `sessionId`')
+  )
   agent.on('session/new', (frame) =>
     agent.reply(frame, { sessionId: PROVIDER_SESSION, configOptions: GROK_CONFIG_OPTIONS })
   )
@@ -154,8 +157,9 @@ describe('Grok child outcome during a full host Stop', () => {
     const [unavailable] = await fixture.rosters()
     expect(fixture.childWork.views()).toMatchObject([{ membership: 'settled', outcome: 'unknown' }])
     expect(unavailable.row.itemId).toBe(fixture.original.row.itemId)
+    // Contact was lost when the session ended, a moment the host observed.
     expect(unavailable.group.agents).toEqual([
-      { ...fixture.original.group.agents[0], state: 'unverifiable' }
+      { ...fixture.original.group.agents[0], state: 'unverifiable', settledAt: expect.any(Number) }
     ])
     fixture.agent.notify(fixture.finished.method, fixture.finished.params)
     expect((await fixture.rosters())[0].group).toEqual(unavailable.group)

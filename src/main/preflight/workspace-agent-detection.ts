@@ -1,7 +1,9 @@
+import { WORKSPACE_ON_OTHER_RUNTIME } from '../../shared/protocol-version'
 import {
   getRepoExecutionHostId,
   getSshTargetIdForExecutionHost,
-  LOCAL_EXECUTION_HOST_ID
+  LOCAL_EXECUTION_HOST_ID,
+  parseExecutionHostId
 } from '../../shared/execution-host'
 import {
   findFolderWorkspaceCandidateRepos,
@@ -16,9 +18,9 @@ import {
 } from '../local-project-runtime-resolution'
 import type { PreflightRuntimeContext } from '../ipc/preflight-runtime-target'
 import { resolveWorktreeHostRouting } from '../runtime/worktree-launch-host-repo'
+import { SshHostNotServedError } from '../providers/ssh-host-not-served-error'
 import {
   detectInstalledAgentsWithShellPathHydration,
-  detectRemoteAgents,
   refreshShellPathAndDetectAgents,
   type RefreshAgentsResult
 } from './agent-detection'
@@ -86,7 +88,10 @@ function resolveWorktree(
   if (sshTargetId) {
     return { kind: 'ssh', connectionId: sshTargetId }
   }
-  // A worktree another runtime owns is not this host's to probe; keep the host default.
+  // Why refuse: another runtime's worktree is not this host's to probe, and its list would mislead.
+  if (parseExecutionHostId(routing.hostId)?.kind === 'runtime') {
+    throw new Error(WORKSPACE_ON_OTHER_RUNTIME)
+  }
   return routing.hostId === LOCAL_EXECUTION_HOST_ID && routing.repo
     ? { kind: 'local', repo: routing.repo, path: worktree.path }
     : null
@@ -108,6 +113,9 @@ function resolveFolderWorkspace(
   if (host.kind === 'ambiguous') {
     throw new Error('worktree_execution_host_unresolved')
   }
+  if (host.kind === 'runtime') {
+    throw new Error(WORKSPACE_ON_OTHER_RUNTIME)
+  }
   const folder = state.folderWorkspaces.find((entry) => entry.id === folderWorkspaceId)
   const candidates = findFolderWorkspaceCandidateRepos(state, folderWorkspaceId)
   // Why one candidate: a folder spanning several repos has no single project runtime to pick.
@@ -121,22 +129,17 @@ function resolveFolderWorkspace(
 }
 
 /** The one agent-detection entry point: IPC, runtime RPC, and SSH all probe through here. */
-export function detectAgentsOnHost(host: AgentDetectionHost): Promise<string[]> {
-  return host.kind === 'ssh'
-    ? detectRemoteAgents({ connectionId: host.connectionId })
-    : detectInstalledAgentsWithShellPathHydration(host.context)
+export async function detectAgentsOnHost(host: AgentDetectionHost): Promise<string[]> {
+  // Why reject, never []: an unserved host is unverifiable, and [] would be cached as "no agents".
+  if (host.kind === 'ssh') {
+    throw new SshHostNotServedError(host.connectionId)
+  }
+  return detectInstalledAgentsWithShellPathHydration(host.context)
 }
 
 export async function refreshAgentsOnHost(host: AgentDetectionHost): Promise<RefreshAgentsResult> {
-  if (host.kind === 'local') {
-    return refreshShellPathAndDetectAgents(host.context)
+  if (host.kind === 'ssh') {
+    throw new SshHostNotServedError(host.connectionId)
   }
-  // Why: an SSH probe already reads the target's fresh login PATH; there is no local PATH to merge.
-  return {
-    agents: await detectRemoteAgents({ connectionId: host.connectionId }),
-    addedPathSegments: [],
-    shellHydrationOk: true,
-    pathSource: 'sync_seed_only',
-    pathFailureReason: 'none'
-  }
+  return refreshShellPathAndDetectAgents(host.context)
 }

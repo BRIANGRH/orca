@@ -318,7 +318,19 @@ export type SshManagedServerStatus =
       offerMove?: boolean
       /** Those terminals belong to another Orca desktop or session, so this one offers no move. */
       terminalsElsewhere?: boolean
+      /** The older Orca's relay processes the census found, for the stop action and instructions. */
+      oldRelays?: SshOldRelayProcesses
     }
+
+/** `pids` are this account's relay daemons found by argv; empty when the host could not list them. */
+export type SshOldRelayProcesses = { hostOs: 'posix' | 'windows'; pids: number[] }
+
+/** `ended`: relay processes proven gone; `connected`: the follow-up connect succeeded. */
+export type SshEndOldRelayTerminalsResult = {
+  ended: number
+  connected: boolean
+  error?: string
+}
 
 /** Plain SSH terminals and SFTP browsing only; `reason` is the ladder's classified cause. */
 export type SshPlainSshMode = {
@@ -419,9 +431,7 @@ export type PortForwardEntry = {
   advertisedProtocol?: 'http' | 'https'
 }
 
-/** A listening port detected on the remote host by the relay.
- *  Keep in sync with src/relay/port-scan-handler.ts — DetectedPort.
- *  The relay is deployed as a standalone bundle and cannot import from shared. */
+/** A listening port detected on a remote host. */
 export type DetectedPort = {
   port: number
   host: string

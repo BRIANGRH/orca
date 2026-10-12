@@ -91,6 +91,7 @@ export async function resolveClaudeAcquisitionLaunch(args: {
     const launch = await deps
       .resolveLaunch({
         identity: launchIdentity,
+        spawnToken: input.spawnToken,
         ...(input.permissionMode ? { permissionMode: input.permissionMode } : {})
       })
       .catch((error: unknown) => {

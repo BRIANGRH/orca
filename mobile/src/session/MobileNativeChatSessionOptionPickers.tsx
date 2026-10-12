@@ -196,10 +196,12 @@ export function MobileNativeChatSessionOptionPickers({
 }
 
 const styles = StyleSheet.create({
+  // The composer row's only shrinkable item: a long label truncates before it pushes Send off.
   pills: {
     flexDirection: 'row',
     alignItems: 'center',
     flexShrink: 1,
+    minWidth: 0,
     gap: spacing.xs
   },
   sheet: {
