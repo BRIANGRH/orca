@@ -3587,6 +3587,9 @@
             "title": "Sleeping — click to resume",
             "resume": "Resume",
             "resumeAutomaticRestores": "Resume automatic restores"
+          },
+          "WslHostUnavailableBanner": {
+            "turnOn": "Turn on"
           }
         }
       },

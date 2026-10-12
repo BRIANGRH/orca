@@ -4,6 +4,7 @@
  * workspace rows, which `repo.rm` deletes, so stopping afterwards left the shells running.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import { createTestStore, makeWorktree } from './store-test-helpers'
 import type { Repo } from '../../../../shared/repo-types'
 import { clearRuntimeCompatibilityCacheForTests } from '../../runtime/runtime-rpc-client'
@@ -22,6 +23,7 @@ const repo: Repo = {
 }
 
 const runtimeCall = vi.fn()
+const MethodCallSchema = z.object({ method: z.string() })
 
 beforeEach(() => {
   clearRuntimeCompatibilityCacheForTests()
@@ -56,7 +58,7 @@ describe('project removal on a runtime host', () => {
       repos: [repo],
       worktreesByRepo: {
         app: [
-          makeWorktree({ id: 'app::/home/me/app', repoId: 'app', hostId: repo.executionHostId })
+          makeWorktree({ id: 'app::/home/me/app', repoId: 'app', hostId: 'runtime:wsl%3Aubuntu' })
         ]
       }
     })
@@ -64,7 +66,7 @@ describe('project removal on a runtime host', () => {
     await store.getState().removeProject('app', { hostId: 'runtime:wsl%3Aubuntu' })
 
     const methods = runtimeCall.mock.calls
-      .map(([args]: [{ method: string }]) => args.method)
+      .map((call: unknown[]) => MethodCallSchema.parse(call[0]).method)
       .filter((method) => method === 'terminal.stop' || method === 'repo.rm')
     expect(methods).toEqual(['terminal.stop', 'repo.rm'])
     expect(store.getState().repos).toEqual([])
