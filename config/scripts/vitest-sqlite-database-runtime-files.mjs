@@ -196,6 +196,9 @@ export const SQLITE_DATABASE_RUNTIME_INCLUDE = [
   'src/main/runtime/structured-claude-auth-policy-wiring.test.ts',
   'src/main/runtime/structured-codex-child-work-runtime.test.ts',
   'src/main/runtime/structured-worker-at-rest.test.ts',
+  'src/main/runtime/worker-terminal-archive-release.test.ts',
+  'src/main/runtime/worker-terminal-archive-screen.test.ts',
+  'src/main/runtime/worker-terminal-wrap-provenance.test.ts',
   'tests/e2e/completed-worker-retirement-resume.unit.test.ts',
   'tests/e2e/cross-version-wire/agent-session-clear-old-client.unit.test.ts',
   'tests/e2e/cross-version-wire/agent-session-clear-old-tab-mirror.unit.test.ts'
