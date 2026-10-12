@@ -9,7 +9,7 @@ export const WslDistroNameSchema = z
 /**
  * The distro's registration GUID (the key under HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss),
  * lowercase and unbraced. Names are case-insensitive and can be reused by a different install;
- * the GUID survives a rename but not an unregister or an export/import.
+ * the GUID lasts as long as the registration (an unregister or export/import mints a new one).
  */
 export const WslDistroIdSchema = z
   .string()
@@ -27,5 +27,3 @@ export const OrcadWslDeploymentLinkSchema = z.object({
   /** orcad's listen port inside the distro, which each bridge connection dials. */
   remotePort: PortSchema
 })
-
-export type OrcadWslDeploymentLink = z.infer<typeof OrcadWslDeploymentLinkSchema>
