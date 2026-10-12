@@ -1,10 +1,10 @@
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import * as fsPromises from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  ensureSessionParseCacheLoaded,
   flushSessionParseCachePersistForTests,
   initSessionParseCachePersistence,
   resetSessionParseCachePersistenceForTests,
@@ -13,14 +13,13 @@ import {
 import { scanAiVaultSessions } from './session-scanner'
 import {
   createSessionParseStats,
-  resetSessionParseCacheForTests,
-  snapshotSessionParseCacheForPersistence
+  resetSessionParseCacheForTests
 } from './session-scanner-parse-cache'
 import type * as ParseCacheModule from './session-scanner-parse-cache'
 import { isolatedScanRoots } from './session-scanner-test-fixtures'
 
 const hooks = vi.hoisted(() => {
-  const state: { afterParse: (() => void) | null } = { afterParse: null }
+  const state: { beforeParse: (() => Promise<void>) | null } = { beforeParse: null }
   return state
 })
 
@@ -32,9 +31,8 @@ vi.mock('./session-scanner-parse-cache', async (importOriginal) => {
     parseAgentSessionFileCached: async (
       ...args: Parameters<typeof actual.parseAgentSessionFileCached>
     ) => {
-      const session = await actual.parseAgentSessionFileCached(...args)
-      hooks.afterParse?.()
-      return session
+      await hooks.beforeParse?.()
+      return actual.parseAgentSessionFileCached(...args)
     }
   }
 })
@@ -45,7 +43,7 @@ let tempRoots: string[] = []
 beforeEach(() => {
   resetSessionParseCacheForTests()
   resetSessionParseCachePersistenceForTests()
-  hooks.afterParse = null
+  hooks.beforeParse = null
 })
 
 afterEach(async () => {
@@ -71,32 +69,29 @@ async function writeClaudeHistory(projectDir: string, count: number): Promise<vo
 }
 
 describe('session parse cache checkpoints', () => {
-  it('a cancelled scan keeps the files it finished for the next launch', async () => {
+  it('a scan saves the files it finished while it is still running', async () => {
     const root = await mkdtemp(join(tmpdir(), 'orca-parse-cache-checkpoint-'))
     tempRoots.push(root)
     const cacheFile = join(root, 'session-parse-cache.json')
     initSessionParseCachePersistence({ filePath: cacheFile, appVersion: APP_VERSION })
     const roots = isolatedScanRoots(root)
     await writeClaudeHistory(join(roots.claudeProjectsDir, 'project'), 20)
-    const controller = new AbortController()
-    let parsed = 0
-    // Cancel once the first batch of eight has parsed, as a timeout or a
-    // superseding refresh would mid-scan.
-    hooks.afterParse = () => {
-      if (++parsed === 8) {
-        controller.abort()
-      }
-    }
+    let started = 0
+    let release = (): void => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    // Hold everything after the first batch of eight, as a scan still running
+    // when its deadline kills it would be.
+    hooks.beforeParse = () => (++started > 8 ? held : Promise.resolve())
 
-    await expect(scanAiVaultSessions({ ...roots, signal: controller.signal })).rejects.toThrow()
-    await flushSessionParseCachePersistForTests()
-
-    // A fresh launch on the same profile: only the checkpoint on disk remains.
-    resetSessionParseCacheForTests()
-    resetSessionParseCachePersistenceForTests()
-    initSessionParseCachePersistence({ filePath: cacheFile, appVersion: APP_VERSION })
-    await ensureSessionParseCacheLoaded()
-    expect(snapshotSessionParseCacheForPersistence()).toHaveLength(8)
+    const scan = scanAiVaultSessions(roots)
+    await vi.waitFor(() => expect(existsSync(cacheFile)).toBe(true), {
+      timeout: 10_000,
+      interval: 50
+    })
+    release()
+    expect((await scan).sessions).toHaveLength(20)
   })
 
   it('a long run of parse batches saves every max-wait window, not only after the last one', async () => {
