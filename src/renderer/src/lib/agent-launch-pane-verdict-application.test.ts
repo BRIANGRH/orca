@@ -61,18 +61,18 @@ beforeEach(() => {
 })
 
 describe("a launch pane's verdict in the window", () => {
-  it('settled: the tab forgets the launch and its prompt, so a restart reads nothing for it', () => {
+  it('settled: the tab forgets the launch and its prompt', () => {
     apply({ kind: 'proceed' })
     expect(launchTab()?.agentLaunchPane).toBeUndefined()
     expect(agentLaunchPanePrompt(tabId)).toBeNull()
   })
 
-  it('final: the tab keeps it for its life', () => {
-    apply({ kind: 'unconfirmed' })
+  it('final: the tab keeps it for this session', () => {
+    apply({ kind: 'not-started', code: 'boom' })
     expect(launchTab()?.agentLaunchPane).toEqual({
       leafId: LEAF,
       operationId: 'op-1',
-      outcome: { kind: 'unconfirmed' }
+      outcome: { kind: 'not-started', code: 'boom' }
     })
     expect(agentLaunchPanePrompt(tabId)).toBe('fix the build')
   })
@@ -122,7 +122,7 @@ describe('the user closing a launch tab', () => {
   })
 
   it('is not, for a tab whose launch already has its outcome', () => {
-    apply({ kind: 'unconfirmed' })
+    apply({ kind: 'not-started', code: 'boom' })
     store.getState().closeTab(tabId)
     expect(wasAgentLaunchPaneClosedByUser(tabId, LEAF)).toBe(false)
   })

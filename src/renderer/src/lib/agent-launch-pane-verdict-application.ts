@@ -23,8 +23,7 @@ export function applyAgentLaunchPaneVerdict(event: AgentLaunchPaneVerdictEvent):
       forgetAgentLaunchPanePrompt(tabId)
       state.setTabAgentLaunchPane(tabId, undefined)
       return
-    case 'not-started':
-    case 'unconfirmed': {
+    case 'not-started': {
       const root = state.terminalLayoutsByTabId[tabId]?.root
       if (root && !collectLeafIdsInOrder(root).includes(leafId)) {
         // The user closed that pane: nothing is left for the outcome to describe.
@@ -32,7 +31,7 @@ export function applyAgentLaunchPaneVerdict(event: AgentLaunchPaneVerdictEvent):
         state.setTabAgentLaunchPane(tabId, undefined)
         return
       }
-      // Final for this pane, for the tab's life: no later spawn needs the launch record.
+      // Final for this pane for this session.
       state.setTabAgentLaunchPane(tabId, { ...tab.agentLaunchPane, outcome: verdict })
       return
     }

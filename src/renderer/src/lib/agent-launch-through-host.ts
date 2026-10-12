@@ -53,12 +53,12 @@ export type HostAgentLaunchArgs = {
 export type HostAgentLaunchOutcome =
   /** The agent was started in this tab's pane, which is attached to it. */
   | { kind: 'started' }
-  /** The pane shows how the launch ended: couldn't start, or couldn't confirm it started. */
+  /** The pane shows how the launch ended. */
   | { kind: 'pane-says' }
   /** The user closed the tab while it started, and with it the launch: nothing more to say. */
   | { kind: 'closed-by-user' }
-  /** The tab is gone, so the window says it: nothing started, or whether it did is unknown. */
-  | { kind: 'not-started'; unconfirmed: boolean; code?: string }
+  /** The tab is gone, so the window says nothing started there. */
+  | { kind: 'not-started'; code?: string }
 
 /** Refused at admission: nothing ran under this click, and the host takes back the tab it was shown. */
 const ADMISSION_REFUSAL_CODES = new Set([
@@ -125,11 +125,7 @@ async function settleLaunch(
     const hostTookPane = !isAgentLaunchPaneSpawnHeld(pane.tabId, pane.leafId)
     if (!hostTookPane || (code !== undefined && ADMISSION_REFUSAL_CODES.has(code))) {
       closeLaunchTab(args.worktreeId, pane.tabId)
-      return {
-        kind: 'not-started',
-        unconfirmed: code === 'agent_session_operation_unknown',
-        ...(code ? { code } : {})
-      }
+      return { kind: 'not-started', ...(code ? { code } : {}) }
     }
     return { kind: 'pane-says' }
   } finally {

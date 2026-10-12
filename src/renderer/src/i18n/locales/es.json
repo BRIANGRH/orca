@@ -3347,7 +3347,6 @@
             "copyPrompt": "Copiar prompt",
             "exitedDuringStart": "Se cerró mientras se iniciaba.",
             "notStarted": "El agente no pudo iniciarse.",
-            "unconfirmed": "No se pudo confirmar que el agente se iniciara.",
             "workspaceGone": "Su espacio de trabajo ya no está disponible."
           }
         }
