@@ -219,6 +219,17 @@ jobs:
           if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
           bun --bun run check:process-host-imports
 
+      - name: Check main-process sync launches
+        if: '!cancelled()'
+        id: main-sync-spawn-ratchet
+        background: true
+        env:
+          PREFLIGHT_PHASE_SELECTED: ${{ needs.code_paths.outputs.static_analysis == 'true' }}
+          PREFLIGHT_PRIOR_SUCCESS: ${{ job.status == 'success' }}
+        run: |
+          if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
+          bun --bun run check:main-sync-spawn-ratchet
+
       # Keep each check in its own log while sharing this runner.
       - name: Lint
         if: '!cancelled()'
@@ -471,6 +482,8 @@ jobs:
       - wait: typecheck
 
       - wait: process-host-imports
+
+      - wait: main-sync-spawn-ratchet
 
       - wait: unit-plan
 
@@ -1111,7 +1124,7 @@ jobs:
           status=0
           pnpm run build:cli || status=1
 
-          scripts=(build:relay build:electron-vite:parallel)
+          scripts=(build:wsl-guest build:electron-vite:parallel)
           pids=()
           for script in "${scripts[@]}"; do
             pnpm run "$script" &
@@ -1273,6 +1286,7 @@ jobs:
           src/main/agent-hooks/windows-cmd-hook-command-unicode.test.ts
           src/main/agent-hooks/windows-batch-hook-launcher.test.ts
           src/main/agent-hooks/windows-powershell-hook-launcher.test.ts
+          src/main/claude/claude-status-line-windows.test.ts
           src/main/codex/windows-hook-command.test.ts
           src/main/codex/windows-hook-upgrade.test.ts
           src/main/codex/hook-service-managed-install.test.ts
@@ -1282,6 +1296,7 @@ jobs:
           src/main/windows/windows-host-job.win32.test.ts
           src/main/windows/windows-process-tree-command-line-patch.test.ts
           src/main/windows/windows-process-table-native-addon.win32.test.ts
+          src/main/daemon/daemon-pid-identity-native.win32.test.ts
           src/main/persistence/profile-state/profile-state-access-windows-native.win32.test.ts
           src/main/windows-live-tree-kill.win32.test.ts
           src/main/wsl/wsl-runner.test.ts

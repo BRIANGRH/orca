@@ -1,6 +1,3 @@
-// A model the account's loaded list no longer offers gives way to the list's default, so the next
-// send runs a model that exists instead of failing.
-
 const EFFORT_RANK = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 type ListedModelRow = { id: string; isDefault?: boolean; efforts: readonly { value: string }[] }

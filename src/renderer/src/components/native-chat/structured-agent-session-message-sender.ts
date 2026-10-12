@@ -15,7 +15,8 @@ import {
   agentSessionWriteNotDoneParts
 } from '../../../../shared/agent-session-refusal-notice'
 import type { AgentSessionWriteFailure } from '../../../../shared/agent-session-write-failure'
-import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import { structuredAgentSessionSettledSends } from '../../../../shared/structured-agent-session-send-settlement'
+import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import {
   attemptStructuredAgentSessionSend,
   forgetStructuredAgentSessionFence,
@@ -60,7 +61,7 @@ async function attempt(
   if (!runtime) {
     return
   }
-  // Settles what the send runs on (a gone model's replacement); a failure never holds it back.
+  // Settles what the send runs on, after it holds its slot; a failure never holds it back.
   if (prepare) {
     await prepare().catch(() => undefined)
   }
@@ -108,7 +109,6 @@ function dispatch(
 export function sendStructuredAgentSessionMessage(
   input: StructuredAgentSessionSendInput & {
     target: RuntimeClientTarget
-    /** Runs, awaited, after the send takes its slot and before its request. */
     prepare?: () => Promise<unknown>
   }
 ): StructuredAgentSessionSent | null {
@@ -231,10 +231,7 @@ export function reserveStructuredAgentSessionSend(
   }
 }
 
-/**
- * Settles sends from the host's published state: a row under the message's id, a hand-off of a card
- * under it, or a card under it. Whichever of this and the send's own reply comes first decides.
- */
+/** Settles sends from the host's published state; see `structuredAgentSessionSettledSends`. */
 export function settleStructuredAgentSessionSendsFromJournal(
   sessionId: string,
   submissions: readonly AgentJournalSubmission[],
@@ -244,15 +241,9 @@ export function settleStructuredAgentSessionSendsFromJournal(
   if (entries.length === 0) {
     return
   }
-  const cards = new Set(queuedMessageIds)
-  for (const submission of submissions) {
-    if (submission.queuedMessageId !== undefined) {
-      cards.add(submission.queuedMessageId)
-    }
-  }
-  const rows = new Map(submissions.map((submission) => [submission.clientMessageId, submission]))
+  const { cards, recorded } = structuredAgentSessionSettledSends(submissions, queuedMessageIds)
   for (const entry of entries) {
-    const submission = rows.get(entry.clientMessageId)
+    const submission = recorded.get(entry.clientMessageId)
     if (cards.has(entry.clientMessageId)) {
       finish(entry, 'recorded')
     } else if (submission) {

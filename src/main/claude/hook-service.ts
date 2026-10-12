@@ -23,7 +23,7 @@ import {
 } from './windows-hook-files'
 
 export { getManagedScript }
-import { getManagedStatusLineScript } from './statusline-script'
+import { getManagedStatusLineCommand, getManagedStatusLineScript } from './statusline-script'
 import { refuseProfileAtDefaultHome } from './claude-profile-hook-target'
 import {
   applyManagedHooks,
@@ -31,7 +31,6 @@ import {
   CLAUDE_HOOK_SETTINGS,
   getManagedScriptFileName,
   getConfigPath,
-  getManagedCommand,
   getManagedEventHook,
   getManagedScriptPath,
   getPosixManagedScriptFileName,
@@ -222,7 +221,7 @@ export class ClaudeHookService {
     writeManagedScript(statusLineScriptPath, getManagedStatusLineScript('local'))
     const next = applyManagedStatusLine(
       config,
-      getManagedCommand(statusLineScriptPath),
+      getManagedStatusLineCommand(statusLineScriptPath),
       scriptFileName
     )
     try {

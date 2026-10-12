@@ -11,7 +11,7 @@ import {
   settleStructuredAgentSessionBuiltinCatalog,
   type StructuredAgentSessionOptionState
 } from '../../../../shared/structured-agent-session-options'
-import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
 import { recordHostModelCatalogSnapshot } from '@/runtime/host-model-catalog-snapshots'
 import { structuredAgentSessionHostKey } from '@/runtime/structured-agent-session-host-capability'
@@ -59,21 +59,20 @@ export function useHostModelCatalogUpgrade(args: {
   reportedUnpickedModel?: boolean
   /** The host runs the chat's agent: a reason its start gave ends with it. */
   providerRunning?: boolean
+  /** A listing landed after the chat's options were read, which answered without it. */
+  onListingLanded?: () => void
   activeOptionRecordRef: MutableRefObject<NativeChatSessionOptionRecord>
   updateOptionState: (
     update: (current: StructuredAgentSessionOptionState) => StructuredAgentSessionOptionState
   ) => void
-}): {
-  unavailable: AgentSessionUnavailable | null
-  /** The host's latest answer for this chat, apart from the session's own list; null until one. */
-  listed: AgentSessionModelCatalogResult | null
-} {
+}) {
   const {
     activeOptionRecordRef,
     agent,
     enabled,
     fence,
     newLaunch,
+    onListingLanded,
     optionCatalog,
     sessionId,
     target,
@@ -142,7 +141,7 @@ export function useHostModelCatalogUpgrade(args: {
               })
             : settleStructuredAgentSessionBuiltinCatalog(current)
       )
-      // Kept once the answer applied; the same answer again must not render the chat again.
+      // The plain list, apart from the session's own; an unchanged answer renders nothing.
       setAnswer((current) =>
         current?.key === waitKey && JSON.stringify(current.catalog) === JSON.stringify(catalog)
           ? current
@@ -151,7 +150,16 @@ export function useHostModelCatalogUpgrade(args: {
     }
     let leave: (() => void) | null = null
     const waitForListing = (): void => {
-      leave = joinHostModelListingWait(waitKey, () => read(true), apply)
+      leave = joinHostModelListingWait(
+        waitKey,
+        () => read(true),
+        (catalog) => {
+          apply(catalog)
+          if (catalog && catalog.origin !== 'unknown') {
+            onListingLanded?.()
+          }
+        }
+      )
     }
     if (isHostModelListingWaitInFlight(waitKey)) {
       // The host already answered that its listing is running: the built-in list stands meanwhile.
@@ -189,6 +197,7 @@ export function useHostModelCatalogUpgrade(args: {
     enabled,
     fence,
     newLaunch,
+    onListingLanded,
     optionCatalog,
     reportedUnpickedModel,
     rereads,

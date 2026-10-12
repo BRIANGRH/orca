@@ -7,6 +7,7 @@ import type {
 import type { AgentType } from '../../../../shared/agent-status-types'
 import { structuredAgentSessionSeedCatalog } from '../../../../shared/structured-agent-session-seed-catalog'
 import type { SessionOptionsSurface } from '../../../../shared/native-chat-session-options'
+import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../../../shared/agent-chat-permission-mode'
 import {
   applyStructuredAgentSessionOptions,
   canSetStructuredAgentSessionOption,
@@ -17,13 +18,13 @@ import {
   type StructuredAgentSessionOptionState
 } from '../../../../shared/structured-agent-session-options'
 import { structuredAgentSessionOptionView } from '../../../../shared/structured-agent-session-option-view'
-import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
 import { enqueueSessionOptionSettingsWrite } from './native-chat-session-option-settings-write'
 import { encodeStructuredAgentSessionOptionValue } from '../../../../shared/structured-agent-session-option-codec'
 import type { StructuredAgentSessionMutate } from './use-structured-agent-session-mutate'
 import { useHostModelCatalogUpgrade } from './use-host-model-catalog-upgrade'
-import { useListedModelSendPrepare } from './use-listed-model-send-prepare'
+import { useListedModelSend } from './use-listed-model-send'
 import { useStructuredAgentSessionOptionState } from './use-structured-agent-session-option-state'
 import { agentSessionWriteFailureText } from './agent-session-write-notice-text'
 import type { StructuredAgentSessionLaunchView } from './use-native-chat-provisional-launch'
@@ -44,6 +45,7 @@ export function useStructuredAgentSessionOptions(args: {
   providerVisible: boolean
   providerStarting?: boolean
   providerRunning?: boolean
+  hostOptionStamp?: string
   fence: number | null
   turnId: string | null
   unloadedTurnRevisions: number | undefined
@@ -74,6 +76,7 @@ export function useStructuredAgentSessionOptions(args: {
     pendingOptionRef,
     optionMutationGeneration,
     updateOptionState,
+    rereadOptions,
     conversationSupport
   } = useStructuredAgentSessionOptionState({
     agent,
@@ -87,6 +90,7 @@ export function useStructuredAgentSessionOptions(args: {
     seedsModel: launchSeedOptions?.model !== undefined,
     providerVisible,
     providerStarting: args.providerStarting ?? false,
+    hostOptionStamp: args.hostOptionStamp ?? '',
     // A new chat's host knows nothing of its model before the provider starts; a resumed one's
     // holds the model it ran, so only the former waits rather than show the host's guess.
     readsBeforeStart: launch?.kind !== 'new',
@@ -111,7 +115,8 @@ export function useStructuredAgentSessionOptions(args: {
       optionState.catalogSource === 'live',
     ...(args.providerRunning ? { providerRunning: true } : {}),
     activeOptionRecordRef,
-    updateOptionState
+    updateOptionState,
+    onListingLanded: rereadOptions
   })
 
   // What a settled pick must remember so the next launch starts where the user left off.
@@ -132,10 +137,21 @@ export function useStructuredAgentSessionOptions(args: {
       const isCurrent = (): boolean =>
         activeOptionRecordRef.current === targetRecord &&
         optionMutationGeneration.current === mutationGeneration
-      pendingOptionRef.current = id
-      updateOptionState((current) => ({ ...current, pendingId: id }))
+      // Record-only: shown at once, so the picker stays usable while the write waits behind a start.
+      const shownAtOnce = id === AGENT_CHAT_PERMISSION_MODE_OPTION_ID
+      if (shownAtOnce) {
+        updateOptionState((current) =>
+          current.record === targetRecord
+            ? commitStructuredAgentSessionOptionValues(current, { [id]: encoded })
+            : current
+        )
+      } else {
+        pendingOptionRef.current = id
+        updateOptionState((current) => ({ ...current, pendingId: id }))
+      }
+      let result: AgentSessionOptionResult | null = null
       try {
-        const result = await mutate<AgentSessionOptionResult>(
+        result = await mutate<AgentSessionOptionResult>(
           'agentSession.setOption',
           'agentSession.setOption',
           { key: id, value: encoded }
@@ -152,6 +168,11 @@ export function useStructuredAgentSessionOptions(args: {
             structuredAgentSessionOptionView(currentState, launchSeedOptions, NO_HELD_OPTIONS),
             committed
           )
+        }
+        return Boolean(result)
+      } finally {
+        // A settled write, or a shown one that failed, reads back what the host now holds.
+        if (isCurrent() && (result || shownAtOnce)) {
           void callStructuredAgentSession<AgentSessionOptionsResult>(
             target,
             'agentSession.options',
@@ -168,8 +189,6 @@ export function useStructuredAgentSessionOptions(args: {
             })
             .catch(() => {})
         }
-        return Boolean(result)
-      } finally {
         if (isCurrent()) {
           pendingOptionRef.current = null
           updateOptionState((current) =>
@@ -252,13 +271,6 @@ export function useStructuredAgentSessionOptions(args: {
       transportEnabled
     ]
   )
-  const prepareSend = useListedModelSendPrepare({
-    optionState,
-    launchSeed: launchSeedOptions,
-    held,
-    listed: hostCatalog.listed,
-    setStructuredOption
-  })
   const setOption = useCallback(
     async (id: string, value: string | boolean) => {
       await setStructuredOption(id, value)
@@ -301,7 +313,7 @@ export function useStructuredAgentSessionOptions(args: {
     optionSnapshot,
     optionSurface,
     setStructuredOption,
-    prepareSend,
+    prepareSend: useListedModelSend(optionState, launch, hostCatalog.listed, setStructuredOption),
     unavailable: hostCatalog.unavailable
   }
 }

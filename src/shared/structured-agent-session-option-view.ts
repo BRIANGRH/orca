@@ -5,6 +5,7 @@ import {
 import { cloneNativeChatSessionOptionRecord } from './native-chat-session-option-state'
 import type { AgentSessionModelCatalogResult } from './agent-session-wire'
 import { valuesOnListedModel } from './agent-session-unlisted-model'
+import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from './agent-chat-permission-mode'
 
 function catalogListsSeedModel(
   state: StructuredAgentSessionOptionState,
@@ -17,19 +18,31 @@ function catalogListsSeedModel(
 /**
  * What the picker shows before the host has confirmed this session's values:
  * `seed` (the selection a launch seeds) stands in until the record names a
- * model, and `picked` (held) picks outrank both until the host settles them, as does what a send
- * moves a model `listed` no longer offers to. All show as `dispatched`; derived on every read,
- * never written into the record.
+ * model, and `held` picks outrank both until the host settles them, as does what a send moves
+ * a model `listed` lacks to. All show as `dispatched`; derived on every read, never written into
+ * the record.
+ *
+ * The permission mode reads its own way: the held pick, else what the host stated, else the seed.
  */
 export function structuredAgentSessionOptionView(
   state: StructuredAgentSessionOptionState,
   seed: Readonly<Record<string, string>> | undefined,
-  picked: Readonly<Record<string, string>>,
+  held: Readonly<Record<string, string>>,
   listed: AgentSessionModelCatalogResult | null = null
 ): StructuredAgentSessionOptionState {
-  // A model the host's list no longer offers shows as what the next send moves to.
-  const replaced = structuredAgentSessionListedPicks(state, seed, picked, listed)
-  const held = replaced ? { ...picked, ...replaced } : picked
+  const { [AGENT_CHAT_PERMISSION_MODE_OPTION_ID]: heldPermission, ...heldSelection } = held
+  const replaced = structuredAgentSessionListedPicks(state, seed, heldSelection, listed)
+  const view = modelOptionView(state, seed, { ...heldSelection, ...replaced })
+  const permissionMode =
+    heldPermission ?? state.permissionMode ?? seed?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID] ?? null
+  return view.permissionMode === permissionMode ? view : { ...view, permissionMode }
+}
+
+function modelOptionView(
+  state: StructuredAgentSessionOptionState,
+  seed: Readonly<Record<string, string>> | undefined,
+  held: Readonly<Record<string, string>>
+): StructuredAgentSessionOptionState {
   const unconfirmedSeed = seed !== undefined && state.record.model === undefined
   const hasHeld = Object.keys(held).length > 0
   // A saved pick the host's list does not name would show its raw id or another model's label.
@@ -59,16 +72,14 @@ export function structuredAgentSessionOptionView(
   return { ...commitStructuredAgentSessionOptionValues(view, held), pendingId: state.pendingId }
 }
 
-/** The model and effort a send moves a Claude chat to when the host's loaded list lacks the model
- *  it holds (a held pick, else the record's, else the launch seed's): decided at send from the list
- *  in hand, and shown as held until then. Null keeps both. */
+/** What a send moves a Claude chat to when the host's loaded list lacks its model (held, else
+ *  recorded, else seeded); null keeps it. */
 export function structuredAgentSessionListedPicks(
   state: StructuredAgentSessionOptionState,
   seed: Readonly<Record<string, string>> | undefined,
   held: Readonly<Record<string, string>>,
   listed: AgentSessionModelCatalogResult | null
 ): Record<string, string> | null {
-  // A host answer is read as given: one naming no rows is no loaded list.
   if (
     state.record.agent !== 'claude' ||
     (listed?.origin !== 'probe' && listed?.origin !== 'live-session') ||
