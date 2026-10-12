@@ -6,6 +6,7 @@ import {
   type PreflightRuntimeContext
 } from '../ipc/preflight-runtime-target'
 import { isCommandOnPath } from '../ipc/preflight-command-exec'
+import { buildLocalPreflightEnv } from '../ipc/preflight-local-env'
 
 export async function detectAgentCommandsOnHost(
   commands: readonly string[],
@@ -28,7 +29,11 @@ export async function detectAgentCommandsOnHost(
   const missedCommands = pathChecks.filter((check) => !check.installedOnPath).map(({ cmd }) => cmd)
   // Why: PATH may still be unhydrated on a cold GUI launch; bulk resolution
   // computes user install dirs once instead of blocking once per missed CLI.
-  const installDirCommands = detectCommandsInInstallDirs(missedCommands)
+  // Same PATH as the walk above: on a WSL guest it must not re-admit /mnt/<drive> shims.
+  const installDirCommands = detectCommandsInInstallDirs(
+    missedCommands,
+    buildLocalPreflightEnv()?.PATH
+  )
   const foundCommands = new Set(
     pathChecks
       .filter(({ cmd, installedOnPath }) => installedOnPath || installDirCommands.has(cmd))
