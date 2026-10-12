@@ -154,7 +154,8 @@ describe('deployAndLaunchWslOrcad', () => {
       census: { liveSessions: 0, startedSinceActivation: 0, daemonProtocolVersion: null },
       appVersion: '1.5.0',
       localOrcadDir: '/local/orcad',
-      target: 'linux-x64-glibc'
+      target: 'linux-x64-glibc',
+      recordedNodeRuntimeProbe: true
     })
     const newer = { ...emptyOrcadActivationRecord(), active: '2.0.0+cd', activeAppVersion: '2.0.0' }
     expect(options.admitRecord(newer, '1.5.0+ab')).toBe(

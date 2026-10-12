@@ -140,7 +140,8 @@ async function launchOverTransport(
     target: context.serverTarget,
     ...managedOrcadDeployPolicy(context, appVersion, options.force),
     force: options.force,
-    appVersion
+    appVersion,
+    recordedNodeRuntimeProbe: true
   })
   if (deployed.outcome === 'installed-not-activated') {
     return {
