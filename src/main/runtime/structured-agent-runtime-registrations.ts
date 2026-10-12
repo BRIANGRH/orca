@@ -141,9 +141,6 @@ function createCodexAdapter(context: StructuredAgentAdapterContext): StructuredA
         structuredAgentLaunchSources(context),
         codexStructuredLaunchPart({
           resolveLaunchArgs: () => deps.resolveLaunchArgs('codex'),
-          ...(deps.resolveCodexPermissionPolicy
-            ? { resolvePermissionPolicy: deps.resolveCodexPermissionPolicy }
-            : {}),
           ...(deps.resolveCodexCommand ? { resolveCommand: deps.resolveCodexCommand } : {})
         })
       ),
@@ -181,9 +178,6 @@ function createClaudeAdapter(
         resolveLaunchArgs: () => deps.resolveLaunchArgs('claude'),
         ...(deps.resolveClaudeCommand ? { resolveCommand: deps.resolveClaudeCommand } : {}),
         resolveAuthPolicy: deps.resolveClaudeAuthPolicy,
-        ...(deps.resolveClaudePermissionMode
-          ? { resolvePermissionMode: deps.resolveClaudePermissionMode }
-          : {}),
         attachmentDirectory: agentSessionAttachmentStoreRoot(deps.stateDirectory),
         ...(deps.claudeCliFlags ? { cliFlags: deps.claudeCliFlags } : {})
       })

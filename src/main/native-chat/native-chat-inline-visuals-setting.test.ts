@@ -14,7 +14,6 @@ import { agentSessionRecordFixture } from './agent-session-record-test-fixture'
 import { createNativeChatVisualsDelivery } from './native-chat-visuals-delivery'
 
 const SKILL = { pluginDir: '/app/plugin', skillsRoot: '/app/plugin/skills' }
-const MANUAL = { approvalPolicy: 'on-request', sandbox: 'workspace-write' } as const
 function delivery(isEnabled: () => boolean) {
   const prepareVisuals = createNativeChatVisualsDelivery({
     logger: { warn: vi.fn(), error: vi.fn() },
@@ -70,7 +69,6 @@ describe('inline visuals launch preference', () => {
       resolveWorkspacePath: async () => '/repo',
       resolveCommand: () => '/bin/codex',
       resolveLaunchArgs: () => [],
-      resolvePermissionPolicy: () => MANUAL,
       resolveEnvironment: async () => ({ KEEP: 'yes' }),
       prepareVisuals
     })

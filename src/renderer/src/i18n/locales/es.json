@@ -16,6 +16,8 @@
   },
   "settings": {
     "chat": {
+      "permissionsTitle": "Permisos para chats nuevos",
+      "permissionsDescription": "Se aplica solo a chats nuevos. Los agentes que abres en una terminal usan Configuración → Agentes → Permisos de agentes.",
       "description": "Elige cómo se ven y se nombran los chats.",
       "names": {
         "title": "Nombres de chats",
@@ -17988,6 +17990,19 @@
         "attachmentOwnerChanged": "Este espacio de trabajo cambió de host durante la conexión; vuelve a soltar los archivos.",
         "attachmentUnreadable": "No se pudieron leer los archivos soltados.",
         "tooManyAttachments": "Adjunta {{value0}} archivos o menos a la vez.",
+        "permissions": "Permisos",
+        "permissionAsk": "Pedir aprobación",
+        "permissionAskDescription": "Pregunta antes de ediciones y comandos que tu configuración no permite",
+        "permissionAskCodexDescription": "Edita archivos y ejecuta comandos en este espacio de trabajo; pregunta antes de cualquier otra cosa",
+        "permissionAskSharedDescription": "Pregunta antes de ediciones o comandos que aún no tiene permitidos",
+        "permissionAcceptEdits": "Aceptar ediciones",
+        "permissionAcceptEditsDescription": "Aprueba ediciones y comandos de archivos; pregunta por lo demás",
+        "permissionAuto": "Aprobar por mí",
+        "permissionAutoDescription": "Revisa las solicitudes de aprobación por ti",
+        "permissionFullAccess": "Acceso total",
+        "permissionFullAccessDescription": "Nunca pregunta antes de ediciones o comandos",
+        "permissionFullAccessCodexDescription": "Nunca pregunta; puede editar cualquier archivo y usar la red",
+        "permissionFullAccessSharedDescription": "Nunca pregunta antes de ediciones o comandos",
         "pasteFailed": "Error al pegar.",
         "commandAttachmentsUnsupported": "Quita los archivos adjuntos antes de usar un comando de la sesión de chat."
       },
