@@ -1,6 +1,7 @@
-// A message a person sent and then stopped before the agent started on it reaches the agent with
-// their next send, as framed context in that same write, exactly once. Against the real host,
-// store and journal, with an agent that stays starting until the test proves its start.
+// A message a person sent and then stopped before the agent started on it goes into the agent's own
+// log at their next send, ahead of it, at most once; an agent that cannot append carries it in that
+// send instead. Against the real host, store and journal, with an agent that stays starting until
+// the test proves its start.
 
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -48,6 +49,13 @@ function journal(): AgentSessionJournal {
 
 function text(body: AgentJournalMessageItem): string {
   return body.blocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
+}
+
+/** Each append, as the texts of the stopped messages it wrote. */
+function appended(): string[][] {
+  return rig.appendStoppedMessages.mock.calls.map(([input]) =>
+    input.messages.map((entry) => text(entry.body))
+  )
 }
 
 /** Each dispatch as `carrier <- [history]`, the history as the prepared send carries it. */
@@ -171,15 +179,19 @@ async function transcript(rejectedInPlace: boolean): Promise<string[]> {
   )
 }
 
-describe('stopped messages ride with the next send', () => {
-  it('carries both messages a Stop withdrew while the agent started, in order, on the handover row', async () => {
+describe("stopped messages go into the agent's own log ahead of the next send", () => {
+  it('appends both messages a Stop withdrew while the agent started, in order, before the send', async () => {
     await start()
     const [first, second] = await stopWhileStarting('first', 'second')
 
-    const next = await nextSend('what did I send?')
+    await nextSend('what did I send?')
 
-    expect(dispatched()).toEqual(['what did I send? <- [first, second]'])
-    expect(journal().stoppedHistoryCarried().get(next)).toEqual([first, second])
+    expect(appended()).toEqual([['first', 'second']])
+    expect(dispatched()).toEqual(['what did I send?'])
+    expect(rig.appendStoppedMessages.mock.invocationCallOrder[0]).toBeLessThan(
+      rig.dispatch.mock.invocationCallOrder[0]!
+    )
+    expect([...journal().stoppedHistory.appended().values()]).toEqual([[first, second]])
     // The work outcome is untouched: each stopped message still reads Stopped manually, once.
     for (const id of [first!, second!]) {
       expect(await rig.submission(id)).toMatchObject({
@@ -197,41 +209,83 @@ describe('stopped messages ride with the next send', () => {
     }
   })
 
-  it('a carrier refused before any write leaves them owed: the next send carries them again', async () => {
-    await start()
-    const [first, second] = await stopWhileStarting('first', 'second')
-    rig.dispatch.mockResolvedValueOnce({
-      state: 'rejected',
-      ...agentSessionFailureWords(agentSessionFailureFact('writeFailed'), { surface: 'rejection' })
-    })
-    await nextSend('refused')
-    const next = await nextSend('again')
-
-    expect(dispatched()).toEqual(['refused <- [first, second]', 'again <- [first, second]'])
-    expect(journal().stoppedHistoryCarried().get(next)).toEqual([first, second])
-  })
-
-  it('a carrier the agent accepted delivered them: the next send carries nothing', async () => {
+  it('appends nothing again once the agent took them', async () => {
     await start()
     await stopWhileStarting('first')
     const carrier = await nextSend('carrier')
     await rig.settleAccepted(carrier, 'carrier')
     await nextSend('after')
 
-    expect(dispatched()).toEqual(['carrier <- [first]', 'after'])
+    expect(appended()).toEqual([['first']])
+    expect(dispatched()).toEqual(['carrier', 'after'])
   })
 
-  it('a carrier in doubt is never re-sent, nor what it carried', async () => {
+  it('appends them again at the next send when the agent proved it refused them', async () => {
     await start()
     await stopWhileStarting('first')
+    // As a Codex without `thread/inject_items` answers.
+    rig.appendStoppedMessages.mockResolvedValueOnce({ outcome: 'refused', reason: '-32601' })
     const carrier = await nextSend('carrier')
-    await settle(carrier, { kind: 'unknown' })
+    await rig.settleAccepted(carrier, 'carrier')
     await nextSend('after')
 
-    expect(dispatched()).toEqual(['carrier <- [first]', 'after'])
+    expect(appended()).toEqual([['first'], ['first']])
+    expect(dispatched()).toEqual(['carrier', 'after'])
+    expect(journal().stoppedHistory.appended().size).toBe(1)
   })
 
-  it('a retry of the same send replays its answer and carries nothing again', async () => {
+  it('never appends them again when the outcome is unknown, or the append threw', async () => {
+    for (const fails of [
+      () =>
+        rig.appendStoppedMessages.mockResolvedValueOnce({
+          outcome: 'unknown',
+          reason: 'timed out'
+        }),
+      () => rig.appendStoppedMessages.mockRejectedValueOnce(new Error('lost contact'))
+    ]) {
+      await start()
+      await stopWhileStarting('first')
+      fails()
+      const carrier = await nextSend('carrier')
+      await rig.settleAccepted(carrier, 'carrier')
+      await nextSend('after')
+
+      // The send goes on whatever came of the append.
+      expect(appended()).toEqual([['first']])
+      expect(dispatched()).toEqual(['carrier', 'after'])
+      await rig.dispose()
+    }
+    await start()
+  })
+
+  it('a record written before a crash covers them across the restart', async () => {
+    await start()
+    const [first] = await stopWhileStarting('first')
+    // The host died after the record and before the write's answer.
+    await journal().stoppedHistory.recordAppend(
+      { appendId: 'crashed', messageIds: [first!] },
+      rig.store.getRecord(SESSION)!.lease.runtimeFence
+    )
+    await rig.restartHostProcess()
+    await nextSend('after restart')
+
+    expect(appended()).toEqual([])
+    expect(dispatched()).toEqual(['after restart'])
+  })
+
+  it('a refusal survives a restart: what it refused is still owed', async () => {
+    await start()
+    await stopWhileStarting('first')
+    rig.appendStoppedMessages.mockResolvedValueOnce({ outcome: 'refused', reason: 'Codex busy' })
+    const carrier = await nextSend('carrier')
+    await rig.settleAccepted(carrier, 'carrier')
+    await rig.restartHostProcess()
+    await nextSend('after restart')
+
+    expect(appended()).toEqual([['first'], ['first']])
+  })
+
+  it('a retry of the same send replays its answer and appends nothing again', async () => {
     await start()
     await stopWhileStarting('first')
     const request = sendRequest('carrier')
@@ -244,52 +298,32 @@ describe('stopped messages ride with the next send', () => {
       value: { clientMessageId: request.envelope.clientOperationId }
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(dispatched()).toEqual(['carrier <- [first]'])
+    expect(appended()).toEqual([['first']])
+    expect(dispatched()).toEqual(['carrier'])
   })
 
-  it('two Stops in a row, the second while the next send waited on the start, flatten in send order', async () => {
+  it('two Stops in a row, the second while the next send waited on the start, append in send order', async () => {
     await start()
     await stopWhileStarting('first')
-    // Stopped during its own start: nothing was written, so it is owed with what it would carry.
+    // Stopped during its own start: nothing was written, so it is owed too.
     await stopWhileStarting('second')
     expect(rig.dispatch).not.toHaveBeenCalled()
     await nextSend('third')
 
-    expect(dispatched()).toEqual(['third <- [first, second]'])
+    expect(appended()).toEqual([['first', 'second']])
+    expect(dispatched()).toEqual(['third'])
   })
 
-  it('a carrier a Stop withdrew unwritten is owed with what it carried, flattened', async () => {
-    await start()
-    const [first] = await stopWhileStarting('first')
-    const carrier = await nextSend('carrier')
-    await settle(carrier, { kind: 'rejected', fact: 'cancelled', neverReached: true })
-    const next = await nextSend('next')
-
-    expect(dispatched()).toEqual(['carrier <- [first]', 'next <- [first, carrier]'])
-    expect(journal().stoppedHistoryCarried().get(next)).toEqual([first, carrier])
-  })
-
-  it('never carries a withdrawal no one proved unwritten, as Codex writes and old journals hold', async () => {
+  it('never appends a withdrawal no one proved unwritten, as Codex writes and old journals hold', async () => {
     await start()
     const sent = await nextSend('sent')
     await settle(sent, { kind: 'rejected', fact: 'cancelled' })
     await nextSend('next')
 
-    expect(dispatched()).toEqual(['sent', 'next'])
+    expect(appended()).toEqual([])
   })
 
-  it('a host restart with a carrier still pending recovers it as doubt and re-sends nothing', async () => {
-    await start()
-    await stopWhileStarting('first')
-    const carrier = await nextSend('carrier')
-    await rig.restartHostProcess()
-    await nextSend('after restart')
-
-    expect(await rig.submission(carrier)).toMatchObject({ dispatchState: 'unknown' })
-    expect(dispatched()).toEqual(['carrier <- [first]', 'after restart'])
-  })
-
-  it('two sends at once, from a phone and a desktop: the first handed over carries them, once', async () => {
+  it('two sends at once, from a phone and a desktop: the first handed over appends them, once', async () => {
     await start()
     await stopWhileStarting('first')
     const phoneRequest = sendRequest('from the phone')
@@ -305,12 +339,13 @@ describe('stopped messages ride with the next send', () => {
     await rig.settleAccepted(phoneRequest.envelope.clientOperationId, 'phone')
     await eventually(() => expect(rig.dispatch).toHaveBeenCalledTimes(2))
 
-    expect(dispatched()).toEqual(['from the phone <- [first]', 'from the desktop'])
+    expect(appended()).toEqual([['first']])
+    expect(dispatched()).toEqual(['from the phone', 'from the desktop'])
   })
 
-  it('mail and slash commands never carry, and stopped mail is never carried', async () => {
+  it('mail and slash commands append nothing, and stopped mail is never appended', async () => {
     await start()
-    const ids = await heldWhileStarting('first')
+    await heldWhileStarting('first')
     const mail = rig.send('mail', undefined, { internal: true, from: MAIL })
     expect(await mail.result).toMatchObject({ ok: true })
     expect(await rig.stop()).toMatchObject({ ok: true })
@@ -321,108 +356,13 @@ describe('stopped messages ride with the next send', () => {
     await rig.settleAccepted(rig.dispatch.mock.calls.at(-1)![0].clientMessageId, 'mail')
     await nextSend('/review')
     await rig.settleAccepted(rig.dispatch.mock.calls.at(-1)![0].clientMessageId, 'review')
-    const next = await nextSend('next')
+    await nextSend('next')
 
-    expect(dispatched()).toEqual(['more mail', '/review', 'next <- [first]'])
-    expect(journal().stoppedHistoryCarried().get(next)).toEqual(ids)
+    expect(appended()).toEqual([['first']])
+    expect(dispatched()).toEqual(['more mail', '/review', 'next'])
   })
 
-  it('history that would not fit goes later: the send goes alone and they stay owed', async () => {
-    let fits = false
-    await start({
-      prepareDispatch: async ({ owed }) =>
-        fits
-          ? new RigPreparedDispatch(
-              owed.map((entry) => entry.submission.clientMessageId),
-              owed.map((entry) => text(entry.body))
-            )
-          : null
-    })
-    const [first] = await stopWhileStarting('first')
-    const alone = await nextSend('alone')
-    expect(journal().stoppedHistoryCarried().has(alone)).toBe(false)
-    await rig.settleAccepted(alone, 'alone')
-    fits = true
-    const next = await nextSend('next')
-
-    expect(dispatched()).toEqual(['alone', 'next <- [first]'])
-    expect(journal().stoppedHistoryCarried().get(next)).toEqual([first])
-  })
-
-  it('the row lists exactly what the prepared send carries, and the rest stays owed', async () => {
-    // Room for the oldest only, as an agent near its limit prepares it.
-    await start({
-      prepareDispatch: async ({ owed }) =>
-        new RigPreparedDispatch([owed[0]!.submission.clientMessageId], [text(owed[0]!.body)])
-    })
-    const [first, second] = await stopWhileStarting('first', 'second')
-    const carrier = await nextSend('carrier')
-    const prepared = rig.dispatch.mock.calls[0]![0].prepared
-
-    expect(journal().stoppedHistoryCarried().get(carrier)).toEqual(prepared?.carries)
-    expect(prepared?.carries).toEqual([first])
-    await rig.settleAccepted(carrier, 'carrier')
-    const next = await nextSend('next')
-
-    expect(dispatched()).toEqual(['carrier <- [first]', 'next <- [second]'])
-    expect(journal().stoppedHistoryCarried().get(next)).toEqual([second])
-  })
-
-  it('a preparation that throws sends the message alone, lists nothing, and leaves them owed', async () => {
-    let fails = true
-    await start({
-      prepareDispatch: async ({ owed }) => {
-        if (fails) {
-          throw new Error('image read failed')
-        }
-        return new RigPreparedDispatch(
-          owed.map((entry) => entry.submission.clientMessageId),
-          owed.map((entry) => text(entry.body))
-        )
-      }
-    })
-    const [first] = await stopWhileStarting('first')
-    const alone = await nextSend('alone')
-    expect(journal().stoppedHistoryCarried().has(alone)).toBe(false)
-    await rig.settleAccepted(alone, 'alone')
-    fails = false
-    const next = await nextSend('next')
-
-    expect(dispatched()).toEqual(['alone', 'next <- [first]'])
-    expect(journal().stoppedHistoryCarried().get(next)).toEqual([first])
-  })
-
-  it('a carrier Pi refused at its sign-in check leaves them owed; one refused without that proof covers them', async () => {
-    for (const neverReached of [true, false]) {
-      await start()
-      await stopWhileStarting('first')
-      const carrier = await nextSend('carrier')
-      await settle(carrier, {
-        kind: 'rejected',
-        fact: 'notSignedIn',
-        ...(neverReached ? { neverReached } : {})
-      })
-      // A child that said it is signed out is replaced before the next send.
-      const { result } = rig.send('next')
-      expect(await result).toMatchObject({ ok: true })
-      await eventually(() =>
-        expect(rig.host.collaboratorsForTests().sessions.get(SESSION)?.child?.phase).toBe(
-          'starting'
-        )
-      )
-      await rig.proveStart()
-      await eventually(() => expect(rig.dispatch).toHaveBeenCalledTimes(2))
-
-      expect(dispatched()).toEqual([
-        'carrier <- [first]',
-        neverReached ? 'next <- [first]' : 'next'
-      ])
-      await rig.dispose()
-    }
-    await start()
-  })
-
-  it('carrying them changes no work outcome: the chat is idle and each still reads Stopped manually once', async () => {
+  it('appending them changes no work outcome: the chat is idle and each still reads Stopped manually once', async () => {
     await start()
     await stopWhileStarting('first')
     expect(working()).toBe(false)
@@ -430,7 +370,6 @@ describe('stopped messages ride with the next send', () => {
     await rig.settleAccepted(carrier, 'carrier')
 
     expect(working()).toBe(false)
-    expect(await rig.submission(carrier)).toMatchObject({ dispatchState: 'accepted' })
     const page = await rig.host.history({ sessionId: SESSION, direction: 'tail' })
     expect(page.ok && page.page.submissions.some((entry) => 'carries' in entry)).toBe(false)
     for (const rejectedInPlace of [true, false]) {
@@ -442,7 +381,7 @@ describe('stopped messages ride with the next send', () => {
     }
   })
 
-  it('a real /clear bounds what is owed: what was stopped before it is never carried', async () => {
+  it('a real /clear bounds what is owed: what was stopped before it is never appended', async () => {
     await start()
     await stopWhileStarting('before clear')
     const fields = { command: 'clear' as const }
@@ -452,10 +391,103 @@ describe('stopped messages ride with the next send', () => {
         ...fields
       })
     ).toMatchObject({ ok: true, value: { command: 'clear', state: 'completed' } })
-    const [after] = await stopWhileStarting('after clear')
+    await stopWhileStarting('after clear')
+    await nextSend('next')
+
+    expect(appended()).toEqual([['after clear']])
+  })
+})
+
+describe('an agent that cannot append carries them in the next send', () => {
+  const carrying = (options: QueuedRigProviderOptions = {}) =>
+    start({ carriesStoppedHistory: true, ...options })
+
+  it('carries both, in order, named on the handover row', async () => {
+    await carrying()
+    const [first, second] = await stopWhileStarting('first', 'second')
+    const next = await nextSend('what did I send?')
+
+    expect(dispatched()).toEqual(['what did I send? <- [first, second]'])
+    expect(journal().stoppedHistory.carried().get(next)).toEqual([first, second])
+    expect(appended()).toEqual([])
+  })
+
+  it('a carrier refused before any write leaves them owed: the next send carries them again', async () => {
+    await carrying()
+    await stopWhileStarting('first', 'second')
+    rig.dispatch.mockResolvedValueOnce({
+      state: 'rejected',
+      ...agentSessionFailureWords(agentSessionFailureFact('writeFailed'), { surface: 'rejection' })
+    })
+    await nextSend('refused')
+    await nextSend('again')
+
+    expect(dispatched()).toEqual(['refused <- [first, second]', 'again <- [first, second]'])
+  })
+
+  it('a carrier in doubt is never re-sent, nor what it carried', async () => {
+    await carrying()
+    await stopWhileStarting('first')
+    const carrier = await nextSend('carrier')
+    await settle(carrier, { kind: 'unknown' })
+    await nextSend('after')
+
+    expect(dispatched()).toEqual(['carrier <- [first]', 'after'])
+  })
+
+  it('a carrier Pi refused at its sign-in check leaves them owed', async () => {
+    await carrying()
+    await stopWhileStarting('first')
+    const carrier = await nextSend('carrier')
+    await settle(carrier, { kind: 'rejected', fact: 'notSignedIn', neverReached: true })
+    // A child that said it is signed out is replaced before the next send.
+    const { result } = rig.send('next')
+    expect(await result).toMatchObject({ ok: true })
+    await eventually(() =>
+      expect(rig.host.collaboratorsForTests().sessions.get(SESSION)?.child?.phase).toBe('starting')
+    )
+    await rig.proveStart()
+    await eventually(() => expect(rig.dispatch).toHaveBeenCalledTimes(2))
+
+    expect(dispatched()).toEqual(['carrier <- [first]', 'next <- [first]'])
+  })
+
+  it('the row lists exactly what the prepared send carries, and the rest stays owed', async () => {
+    // Room for the oldest only, as an agent near its limit prepares it.
+    await carrying({
+      prepareDispatch: async ({ owed }) =>
+        new RigPreparedDispatch([owed[0]!.submission.clientMessageId], [text(owed[0]!.body)])
+    })
+    const [first, second] = await stopWhileStarting('first', 'second')
+    const carrier = await nextSend('carrier')
+
+    expect(journal().stoppedHistory.carried().get(carrier)).toEqual([first])
+    await rig.settleAccepted(carrier, 'carrier')
     const next = await nextSend('next')
 
-    expect(dispatched()).toEqual(['next <- [after clear]'])
-    expect(journal().stoppedHistoryCarried().get(next)).toEqual([after])
+    expect(dispatched()).toEqual(['carrier <- [first]', 'next <- [second]'])
+    expect(journal().stoppedHistory.carried().get(next)).toEqual([second])
+  })
+
+  it('a preparation that throws sends the message alone and leaves them owed', async () => {
+    let fails = true
+    await carrying({
+      prepareDispatch: async ({ owed }) => {
+        if (fails) {
+          throw new Error('image read failed')
+        }
+        return new RigPreparedDispatch(
+          owed.map((entry) => entry.submission.clientMessageId),
+          owed.map((entry) => text(entry.body))
+        )
+      }
+    })
+    await stopWhileStarting('first')
+    const alone = await nextSend('alone')
+    await rig.settleAccepted(alone, 'alone')
+    fails = false
+    await nextSend('next')
+
+    expect(dispatched()).toEqual(['alone', 'next <- [first]'])
   })
 })

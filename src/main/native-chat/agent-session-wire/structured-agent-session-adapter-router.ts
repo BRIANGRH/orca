@@ -74,6 +74,19 @@ export class StructuredAgentSessionAdapterRouter implements StructuredAgentSessi
   prepareDispatch: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']> = async (input) =>
     (await this.owner(input.sessionId).prepareDispatch?.(input)) ?? null
 
+  appendsStoppedMessages = (sessionId: string): boolean =>
+    this.liveOwnerOrNull(sessionId)?.appendStoppedMessages !== undefined
+
+  appendStoppedMessages: NonNullable<StructuredAgentSessionAdapter['appendStoppedMessages']> = (
+    input
+  ) => {
+    const owner = this.owner(input.sessionId)
+    if (!owner.appendStoppedMessages) {
+      throw new Error(`the agent of ${input.sessionId} cannot append stopped messages`)
+    }
+    return owner.appendStoppedMessages(input)
+  }
+
   /** The owner's declared rewind, narrowed by its adapter for this session; never widened. */
   rewindSupport: NonNullable<StructuredAgentSessionAdapter['rewindSupport']> = (
     sessionId,

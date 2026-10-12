@@ -1,5 +1,5 @@
-// The handover's choice of stopped history: bounded by the latest /clear, never on a steer, prepared
-// once by the adapter, and never a reason a send waits or fails.
+// The handover's choice of stopped history: bounded by the latest /clear, never on a steer, appended
+// with its record written first or prepared once by the adapter, and never a reason a send fails.
 
 import { describe, expect, it, vi } from 'vitest'
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
@@ -11,10 +11,12 @@ import {
   type AgentJournalSubmission
 } from '../../../shared/agent-session-journal-types'
 import {
+  appendStoppedHistory,
   owedStoppedHistory,
   prepareStoppedHistory
 } from './structured-agent-session-stopped-history-selection'
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
+import type { JournalStoppedMessageAppend } from '../agent-session-journal/journal-row-schema'
 
 function message(text: string): AgentJournalMessageItem {
   return { kind: 'message', role: 'user', blocks: [{ type: 'text', text }] }
@@ -46,12 +48,18 @@ const CARRIER: AgentJournalSubmission = {
   rejection: undefined
 }
 
-function journal(options: { clearSequence?: number }): Parameters<typeof owedStoppedHistory>[0] {
+function journal(options: {
+  clearSequence?: number
+  appended?: Map<string, readonly string[]>
+}): Parameters<typeof owedStoppedHistory>[0] {
   const submissions = [stopped('old', 2), stopped('new', 9), CARRIER]
   return {
     journal: {
       submissions: () => submissions,
-      stoppedHistoryCarried: () => new Map(),
+      stoppedHistory: {
+        carried: () => new Map(),
+        appended: () => options.appended ?? new Map()
+      },
       context: {
         floor: () =>
           options.clearSequence ? { epoch: 'epoch-1', sequence: options.clearSequence } : null
@@ -146,5 +154,100 @@ describe('choosing the stopped history a handover carries', () => {
     })
     expect(await prepareStoppedHistory(ctx, message('next'), OWED)).toBeNull()
     expect(ctx.logger.warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('owes nothing an append record names', () => {
+    expect(
+      owedIds(
+        journal({ appended: new Map([['append-1', ['old']]]) }),
+        CARRIER,
+        message('next'),
+        AGENT_JOURNAL_THREAD_SCOPE
+      )
+    ).toEqual(['new'])
+  })
+})
+
+describe('appending the stopped messages owed to the agent', () => {
+  function appending(
+    append: NonNullable<StructuredAgentSessionAdapter['appendStoppedMessages']>,
+    record: (append: JournalStoppedMessageAppend) => Promise<void> = async () => {}
+  ) {
+    const events: string[] = []
+    const ctx = {
+      sessionId: 'session-1',
+      fence: 1,
+      adapter: {
+        appendStoppedMessages: vi.fn(async (input: Parameters<typeof append>[0]) => {
+          events.push(
+            `append ${input.messages.map((entry) => entry.submission.clientMessageId).join(',')}`
+          )
+          return append(input)
+        })
+      },
+      journal: {
+        stoppedHistory: {
+          recordAppend: vi.fn(async (entry: JournalStoppedMessageAppend) => {
+            events.push(
+              'refused' in entry ? 'record refused' : `record ${entry.messageIds.join(',')}`
+            )
+            await record(entry)
+            return { epoch: 'epoch-1', sequence: 1 }
+          })
+        }
+      },
+      logger: { warn: vi.fn(), error: vi.fn() }
+    }
+    return { ctx, events }
+  }
+
+  it('records the append before writing it, and records nothing more when the agent took it', async () => {
+    const { ctx, events } = appending(async () => ({ outcome: 'accepted' }))
+    await appendStoppedHistory(ctx, OWED)
+
+    expect(events).toEqual(['record old,new', 'append old,new'])
+    expect(ctx.logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('records a proven refusal, so they are owed again', async () => {
+    const { ctx, events } = appending(async () => ({ outcome: 'refused', reason: '-32601' }))
+    await appendStoppedHistory(ctx, OWED)
+
+    expect(events).toEqual(['record old,new', 'append old,new', 'record refused'])
+  })
+
+  it('leaves an unknown or thrown append covered, never to be appended again', async () => {
+    for (const append of [
+      async () => ({ outcome: 'unknown' as const, reason: 'timed out' }),
+      async () => {
+        throw new Error('lost contact')
+      }
+    ]) {
+      const { ctx, events } = appending(append)
+      await appendStoppedHistory(ctx, OWED)
+
+      expect(events).toEqual(['record old,new', 'append old,new'])
+      expect(ctx.logger.warn).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('writes nothing to the agent when the record cannot be written, so they stay owed', async () => {
+    const { ctx, events } = appending(
+      async () => ({ outcome: 'accepted' }),
+      async () => {
+        throw new Error('disk full')
+      }
+    )
+    await appendStoppedHistory(ctx, OWED)
+
+    expect(events).toEqual(['record old,new'])
+    expect(ctx.adapter.appendStoppedMessages).not.toHaveBeenCalled()
+  })
+
+  it('appends nothing when nothing is owed', async () => {
+    const { ctx, events } = appending(async () => ({ outcome: 'accepted' }))
+    await appendStoppedHistory(ctx, [])
+
+    expect(events).toEqual([])
   })
 })
