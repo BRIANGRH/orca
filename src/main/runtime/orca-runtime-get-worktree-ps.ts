@@ -236,6 +236,8 @@ export class OrcaRuntimeWithGetWorktreePs extends OrcaRuntimeWithStartTuiIdleVis
           ? resolveTuiAgentLaunchEnv(agent, this.requireStore().getSettings().agentDefaultEnv)
           : {},
       resolveAgentCommandSettings: () => this.requireStore().getSettings(),
+      resolveNewChatPermissionMode: () =>
+        this.requireStore().getSettings().nativeChatPermissionMode,
       resolveCodexAccountKind: (home) =>
         resolveStructuredCodexAccountKind(home, this.requireStore().getSettings()),
       resolveAgentAccountHome: (agent) => this.resolveStructuredAgentAccountHome(agent),

@@ -35,14 +35,16 @@ async function listedAutoModeSupport(
 
 /** Null for an agent whose chats offer no modes, or one this runtime did not register. */
 export async function structuredAgentSessionLaunchPermission(
-  deps: Pick<StructuredAgentSessionHostDeps, 'agents' | 'modelCatalog'>,
+  deps: Pick<StructuredAgentSessionHostDeps, 'agents' | 'modelCatalog' | 'newChatPermissionMode'>,
   record: AgentSessionRecord
 ): Promise<AgentChatPermissionMode | null> {
   const support = agentChatPermissionModes(record.provider)
   if (!support || !deps.agents.definition(record.provider)) {
     return null
   }
-  const intent = record.options?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID]
+  // A chat saved before chats had modes runs the new-chat default, not Ask.
+  const intent =
+    record.options?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID] ?? deps.newChatPermissionMode?.()
   const autoSupported =
     chatPermissionModeNeedsModelSupport(support, intent) &&
     (await listedAutoModeSupport(deps.modelCatalog, record))

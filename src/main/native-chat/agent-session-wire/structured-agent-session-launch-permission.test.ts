@@ -28,7 +28,8 @@ const listing = (
 function launchPermission(
   provider: string,
   options: Record<string, string> | undefined,
-  answer: AgentSessionModelCatalogResult | Error = { origin: 'unknown' }
+  answer: AgentSessionModelCatalogResult | Error = { origin: 'unknown' },
+  newChatPermissionMode?: () => unknown
 ) {
   const read = vi.fn(async () => {
     if (answer instanceof Error) {
@@ -46,7 +47,11 @@ function launchPermission(
   return {
     read,
     result: structuredAgentSessionLaunchPermission(
-      { agents: claudeAndCodexDeclared(), modelCatalog },
+      {
+        agents: claudeAndCodexDeclared(),
+        modelCatalog,
+        ...(newChatPermissionMode ? { newChatPermissionMode } : {})
+      },
       record(provider, options)
     )
   }
@@ -62,8 +67,41 @@ describe('the permission mode a chat starts with', () => {
     expect(codex.read).not.toHaveBeenCalled()
   })
 
-  it('asks for a chat saved before modes existed', async () => {
+  it('asks for a chat saved before modes existed when the host has no new-chat setting', async () => {
     await expect(launchPermission('claude', undefined).result).resolves.toBe('ask')
+  })
+
+  it('runs the new-chat setting for a chat saved before modes existed, read per call', async () => {
+    let setting = 'full-access'
+    const read = (): unknown => setting
+    await expect(launchPermission('claude', undefined, undefined, read).result).resolves.toBe(
+      'full-access'
+    )
+    await expect(
+      launchPermission('codex', { model: 'gpt-5' }, undefined, read).result
+    ).resolves.toBe('full-access')
+    setting = 'ask'
+    await expect(launchPermission('codex', undefined, undefined, read).result).resolves.toBe('ask')
+  })
+
+  it('narrows the new-chat setting to what the agent offers', async () => {
+    const acceptEdits = (): unknown => 'accept-edits'
+    await expect(
+      launchPermission('claude', undefined, undefined, acceptEdits).result
+    ).resolves.toBe('accept-edits')
+    await expect(launchPermission('codex', undefined, undefined, acceptEdits).result).resolves.toBe(
+      'ask'
+    )
+    // Approve for me still needs a model listed for it, as a saved choice does.
+    await expect(
+      launchPermission('claude', undefined, undefined, () => 'auto').result
+    ).resolves.toBe('ask')
+  })
+
+  it('keeps a chat saved choice over the new-chat setting', async () => {
+    await expect(
+      launchPermission('claude', { permissionMode: 'ask' }, undefined, () => 'full-access').result
+    ).resolves.toBe('ask')
   })
 
   it('runs Claude auto on a model the saved catalog lists as supporting it', async () => {

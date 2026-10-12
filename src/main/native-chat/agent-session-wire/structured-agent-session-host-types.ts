@@ -169,4 +169,6 @@ export type StructuredAgentSessionHostDeps = {
   statusSink?: StructuredAgentSessionStatusSink
   /** Host model catalog surface; absent means every catalog read answers `unknown`. */
   modelCatalog?: AgentModelCatalogService
+  /** The new-chat permission setting, read per call; absent, a chat with no saved mode asks. */
+  newChatPermissionMode?: () => unknown
 }
