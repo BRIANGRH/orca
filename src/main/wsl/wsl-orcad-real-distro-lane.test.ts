@@ -369,11 +369,12 @@ async function survivePhase(): Promise<void> {
   if (waitMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, waitMs))
   }
-  receipt.secondsSinceLaunchExited = Math.round((Date.now() - state.launchEndedAtMs) / 1000)
+  const secondsSinceLaunchExited = Math.round((Date.now() - state.launchEndedAtMs) / 1000)
+  receipt.secondsSinceLaunchExited = secondsSinceLaunchExited
   // Only the holders keep them up: no other wsl.exe client survived the launch process.
   const running = await runningDistros()
   for (const { name } of DISTROS) {
-    expect(running, `${name} Running ${receipt.secondsSinceLaunchExited} s later`).toContain(
+    expect(running, `${name} Running ${secondsSinceLaunchExited} s later`).toContain(
       wslDistroHolderKey(name)
     )
   }
