@@ -171,7 +171,7 @@ export function AddRepoDialogStepContent({
         isAddingServerPath={isAddingServerPath}
         addProjectBusyLabel={addProjectBusyLabel}
         hostSelector={hostSelector}
-        initialBrowsing
+        initialBrowsing={!serverPath.trim()}
         onServerPathChange={onServerPathChange}
         onAddServerPath={onAddServerPath}
         onOpenCloneStep={onOpenCloneStep}

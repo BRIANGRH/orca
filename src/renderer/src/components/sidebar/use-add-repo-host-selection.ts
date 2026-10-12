@@ -21,10 +21,13 @@ import { isWebClientLocation } from '@/lib/web-client-location'
 
 export function useAddRepoHostSelection({
   isOpen,
-  setStep
+  setStep,
+  preferredHostId = null
 }: {
   isOpen: boolean
   setStep: (step: AddRepoDialogStep) => void
+  /** The host the dialog was opened for (a dropped folder's owner); wins over the focused host. */
+  preferredHostId?: ExecutionHostId | null
 }): {
   hostOptions: ReturnType<typeof useSidebarHostScopeOptions>['hostOptions']
   selectedHostId: ExecutionHostId | null
@@ -99,15 +102,18 @@ export function useAddRepoHostSelection({
 
   useEffect(() => {
     if (isOpen && !previousOpenRef.current) {
-      const focusedHost = indexExecutionHostsById(hostOptions).get(
-        getSettingsFocusedExecutionHostId(settings)
-      )
+      const hostsById = indexExecutionHostsById(hostOptions)
+      const preferredHost = preferredHostId ? hostsById.get(preferredHostId) : undefined
+      const focusedHost = hostsById.get(getSettingsFocusedExecutionHostId(settings))
+      // Why no selectability check: a dropped folder's WSL host may still be starting.
       const nextHostId =
-        focusedHost &&
-        selectableHostOptions.includes(focusedHost) &&
-        canSelectAddRepoHost(focusedHost)
-          ? focusedHost.id
-          : (pairedWebRuntimeHost?.id ?? (isWebClient ? null : LOCAL_EXECUTION_HOST_ID))
+        preferredHost && selectableHostOptions.includes(preferredHost)
+          ? preferredHost.id
+          : focusedHost &&
+              selectableHostOptions.includes(focusedHost) &&
+              canSelectAddRepoHost(focusedHost)
+            ? focusedHost.id
+            : (pairedWebRuntimeHost?.id ?? (isWebClient ? null : LOCAL_EXECUTION_HOST_ID))
       if (nextHostId) {
         setSelectedAddProjectHostId(nextHostId)
       }
@@ -116,7 +122,15 @@ export function useAddRepoHostSelection({
       setHostSelectorOpen(false)
     }
     previousOpenRef.current = isOpen
-  }, [hostOptions, isOpen, isWebClient, pairedWebRuntimeHost?.id, selectableHostOptions, settings])
+  }, [
+    hostOptions,
+    isOpen,
+    isWebClient,
+    pairedWebRuntimeHost?.id,
+    preferredHostId,
+    selectableHostOptions,
+    settings
+  ])
 
   const handleSelectAddProjectHost = useCallback(
     async (hostId: ExecutionHostId): Promise<void> => {

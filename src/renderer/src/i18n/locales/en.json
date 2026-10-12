@@ -6084,7 +6084,8 @@
           "0bed8727db": "It may have been moved or deleted. Refresh workspaces or remove it from Orca.",
           "3921d3d9a5": "Workspace folder was not found.",
           "f387af445b": "Workspace path is not a valid local path.",
-          "3ec372b664": "file-manager"
+          "3ec372b664": "file-manager",
+          "wsl": "WSL"
         },
         "WorktreeTitleInlineRename": {
           "2f42ae024f": "Unread:",
@@ -6209,7 +6210,9 @@
               "740e8d0d46": "Use Add Project for host paths",
               "e344666fb8": "Server runtime active",
               "d0f8943f8b": "Preparing the project add flow",
-              "18d3cf40e9": "Checking folder"
+              "18d3cf40e9": "Checking folder",
+              "wslFolder": "Drop a WSL folder to add project",
+              "wslFolderDescription": "Folders under \\\\wsl.localhost"
             }
           }
         },
@@ -6247,7 +6250,9 @@
           "451a4638db": "Drop a folder to add it as a project.",
           "5ccb56c7be": "Use Add Project to enter a host path.",
           "849ef13dc0": "Local folder drops are unavailable for server runtimes.",
-          "c0315153d1": "Drop one folder at a time."
+          "c0315153d1": "Drop one folder at a time.",
+          "windowsDriveOnWslHost": "Folders on a Windows drive stay on this computer, not in {{value0}}.",
+          "windowsDriveOnWslHostDescription": "Git in WSL is slow on Windows drives. Switch the host to this computer to add it, or drop a folder from \\\\wsl.localhost\\{{value0}}."
         },
         "workspace": {
           "status": {
@@ -6722,6 +6727,12 @@
         },
         "wslHostRemoval": {
           "partial": "The host was removed, but something in the distro is still running: {{value0}}"
+        },
+        "addRepoWslHostFolderPicker": {
+          "otherDistro": "That folder is in {{value0}}, not {{value1}}.",
+          "outsideDistro": "Pick a folder inside {{value0}}.",
+          "underDistro": "This host can only add folders under \\\\wsl.localhost\\{{value0}}.",
+          "windowsDrive": "Folders on a Windows drive stay on this computer. Choose this computer as the host to add one."
         }
       },
       "shared": {
