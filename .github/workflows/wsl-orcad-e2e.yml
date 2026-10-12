@@ -72,11 +72,25 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: WSL version
+      # The image ships WSL 2.7.14, where stopping a systemd distro drops the VM-wide WSLInterop
+      # entry (microsoft/WSL#13885, fixed in 3.0.1). The lane asserts the fixed behavior.
+      - name: Update WSL to at least 3.0.1
+        timeout-minutes: 8
         run: |
           "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion"
+          function WslVersion { [version](((wsl.exe --version) -join "`n") -replace '(?s)^\D*?(\d+\.\d+\.\d+).*$', '$1') }
+          $before = WslVersion
+          "WSL before: $before"
+          # Stable first; the pre-release channel only if stable is still older.
+          foreach ($channel in @(@(), @('--pre-release'))) {
+            if ((WslVersion) -ge [version]'3.0.1') { break }
+            wsl.exe --update --web-download @channel
+            if ($LASTEXITCODE -ne 0) { throw "wsl --update $channel failed: $LASTEXITCODE" }
+            wsl.exe --shutdown
+          }
           wsl.exe --version
-          if ($LASTEXITCODE -ne 0) { throw 'wsl.exe --version failed' }
+          $after = WslVersion
+          if ($after -lt [version]'3.0.1') { throw "WSL $after is older than 3.0.1" }
       - name: Restore the pinned rootfs
         id: rootfs-cache
         uses: actions/cache/restore@v5
