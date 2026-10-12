@@ -1,5 +1,6 @@
 import { getSchema } from '@tiptap/core'
 import { Slice, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { NodeSelection } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
 import { describe, expect, it } from 'vitest'
 import {
@@ -61,10 +62,12 @@ function characterPositions(doc: ProseMirrorNode): { text: string; positions: nu
   return { text, positions }
 }
 
-/** Every position a caret or selection end can take: inside paragraphs and the document's ends. */
+/** Text carets and paragraph node selections, including positions between paragraphs. */
 function selectablePositions(doc: ProseMirrorNode): number[] {
   const positions = [0, doc.content.size]
   doc.forEach((block, blockOffset) => {
+    const selection = NodeSelection.create(doc, blockOffset)
+    positions.push(selection.from, selection.to)
     for (
       let position = blockOffset + 1;
       position <= blockOffset + 1 + block.content.size;
@@ -123,7 +126,7 @@ describe('prompt document reads', () => {
     expect(promptText(doc)).toBe('a😀$rev\nb\n@f$x\n')
   })
 
-  it('counts a position between paragraphs as the end of the earlier one', () => {
+  it('counts a paragraph node selection from the start of its serialized line', () => {
     const doc = schema.nodeFromJSON({
       type: 'doc',
       content: [
@@ -131,7 +134,9 @@ describe('prompt document reads', () => {
         { type: 'paragraph', content: [{ type: 'text', text: 'b' }] }
       ]
     })
-    expect(promptTextOffset(doc, 3)).toBe(1)
+    const selection = NodeSelection.create(doc, 3)
+    expect(promptTextOffset(doc, selection.from)).toBe(2)
+    expect(promptTextOffset(doc, selection.to)).toBe(3)
   })
 
   it('reads a pill without a token as empty', () => {
