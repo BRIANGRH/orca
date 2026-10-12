@@ -22,9 +22,14 @@ export type OrcadMigrationSourceKind =
 
 export const ORCAD_MIGRATION_SOURCE_KIND_UNKNOWN = 'orcad_migration_source_kind_unknown'
 
+/** A manifest source as it travels: this build may not know every field a newer peer signed. */
+export type OrcadMigrationWireSource = Readonly<Record<string, unknown>>
+
 /** Reads the wire discriminator; a source without one is the relay-era SSH source. */
-export function orcadMigrationManifestSourceKind(source: object): OrcadMigrationSourceKind {
-  if (!('kind' in source) || source.kind === undefined) {
+export function orcadMigrationManifestSourceKind(
+  source: OrcadMigrationWireSource
+): OrcadMigrationSourceKind {
+  if (source.kind === undefined) {
     return ORCAD_MIGRATION_SSH_RELAY_SOURCE_KIND
   }
   // An explicit 'ssh-relay' is refused too: SSH has exactly one encoding, so one digest.
@@ -39,7 +44,9 @@ function isNonSshSourceKind(kind: unknown): kind is OrcadMigrationNonSshSourceKi
 }
 
 /** The capability a destination must advertise before it may see this source; null for SSH. */
-export function requiredOrcadMigrationSourceCapability(source: object): string | null {
+export function requiredOrcadMigrationSourceCapability(
+  source: OrcadMigrationWireSource
+): string | null {
   const kind = orcadMigrationManifestSourceKind(source)
   return kind === ORCAD_MIGRATION_SSH_RELAY_SOURCE_KIND
     ? null
