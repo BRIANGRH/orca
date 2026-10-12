@@ -5,15 +5,23 @@ import {
 import { cloneNativeChatSessionOptionRecord } from './native-chat-session-option-state'
 import { seedOnListedModel } from './agent-session-unlisted-model'
 
-/** A Claude seed the host's loaded list lacks shows as the default the host create starts on. */
+/** A Claude seed the host's loaded list lacks shows as the default the host create starts on. As
+ *  on the host, a held model runs as picked; a list naming no default may not be this workspace's. */
 function seedOnHostListedModel(
   state: StructuredAgentSessionOptionState,
-  seed: Readonly<Record<string, string>> | undefined
+  seed: Readonly<Record<string, string>> | undefined,
+  held: Readonly<Record<string, string>>
 ): Readonly<Record<string, string>> | undefined {
-  if (!seed || state.catalogSource !== 'host' || state.record.agent !== 'claude') {
+  if (
+    !seed ||
+    held.model !== undefined ||
+    state.catalogSource !== 'host' ||
+    state.record.agent !== 'claude' ||
+    !state.catalog?.models.some((model) => model.isDefault)
+  ) {
     return seed
   }
-  const rows = (state.catalog?.models ?? []).map((model) => {
+  const rows = state.catalog.models.map((model) => {
     const effort = model.options.find((option) => option.id === 'effort')?.kind
     return { ...model, efforts: effort?.type === 'select' ? effort.choices : [] }
   })
@@ -39,7 +47,7 @@ export function structuredAgentSessionOptionView(
   launchSeed: Readonly<Record<string, string>> | undefined,
   held: Readonly<Record<string, string>>
 ): StructuredAgentSessionOptionState {
-  const seed = seedOnHostListedModel(state, launchSeed)
+  const seed = seedOnHostListedModel(state, launchSeed, held)
   const unconfirmedSeed = seed !== undefined && state.record.model === undefined
   const hasHeld = Object.keys(held).length > 0
   // A saved pick the host's list does not name would show its raw id or another model's label.

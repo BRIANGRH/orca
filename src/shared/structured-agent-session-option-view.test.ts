@@ -49,6 +49,27 @@ describe('a new Claude chat whose remembered model the host list no longer offer
     })
   })
 
+  it('derives nothing beside a held model, which the host runs as picked', () => {
+    expect(shown(listed, seed, { model: 'opus' })).toEqual({ model: 'opus', effort: undefined })
+  })
+
+  it('names nothing new from a list that marks no default for this workspace', () => {
+    const unmarked = applyStructuredAgentSessionModelCatalog(
+      cold,
+      CLAUDE_SESSION_OPTION_CATALOG,
+      {
+        origin: 'probe',
+        fetchedAt: 1,
+        models: [
+          { id: 'sonnet', label: 'Sonnet', isDefault: false, efforts: levels('low', 'high') },
+          { id: 'opus', label: 'Opus', isDefault: false, efforts: levels('low', 'high') }
+        ]
+      },
+      { newLaunch: true }
+    )
+    expect(shown(unmarked, seed, {}).model).toBeUndefined()
+  })
+
   it('names nothing new while the host list is loading or failed', () => {
     expect(shown(cold, seed, {}).model).toBeUndefined()
     expect(shown(settleStructuredAgentSessionBuiltinCatalog(cold), seed, {}).model).toBeUndefined()
