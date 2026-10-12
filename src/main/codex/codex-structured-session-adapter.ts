@@ -1,4 +1,5 @@
 import * as codexRewind from './codex-structured-rewind'
+import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { AgentSessionBackgroundTaskState } from '../../shared/agent-session-wire'
 import { isCodexAppServerRequestError } from './codex-app-server-connection'
 import type {
@@ -9,11 +10,8 @@ import type {
   StructuredAgentSessionSetOptionInput
 } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import type { CodexJournalTranslationAdmission } from './codex-structured-journal-translation'
-import {
-  dispatchCodexTurn,
-  isCodexTurnOptionKey,
-  prepareCodexDispatch
-} from './codex-structured-turn-start'
+import { dispatchCodexTurn, isCodexTurnOptionKey } from './codex-structured-turn-start'
+import { injectCodexStoppedMessages } from './codex-stopped-message-append'
 import { agentSessionFailureFact, providerDiagnosticOf } from '../../shared/agent-session-failure'
 import { supportsCodexStructuredLocation } from './codex-structured-location-support'
 import { CodexStructuredSessionTeardown } from './codex-structured-session-teardown'
@@ -212,9 +210,14 @@ export class CodexStructuredSessionAdapter implements StructuredAgentSessionAdap
         turnId
       )
 
-  async dispatch(
-    input: Parameters<StructuredAgentSessionAdapter['dispatch']>[0]
-  ): Promise<AgentSessionDispatchOutcome> {
+  async dispatch(input: {
+    sessionId: string
+    clientMessageId: string
+    body: AgentJournalMessageItem
+    fence: number
+    requestedAt?: number
+    beforeDispatch?: () => Promise<void>
+  }): Promise<AgentSessionDispatchOutcome> {
     const session = this.session(input.sessionId)
     session.dispatchPending = true
     try {
@@ -225,8 +228,9 @@ export class CodexStructuredSessionAdapter implements StructuredAgentSessionAdap
     }
   }
 
-  prepareDispatch: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']> = (input) =>
-    prepareCodexDispatch(input.body, input.owed)
+  appendStoppedMessages: NonNullable<StructuredAgentSessionAdapter['appendStoppedMessages']> = (
+    input
+  ) => injectCodexStoppedMessages(this.sessions.get(input.sessionId), input.messages)
 
   cancelTurn: StructuredAgentSessionAdapter['cancelTurn'] = (request) =>
     cancelCodexStructuredTurn({
