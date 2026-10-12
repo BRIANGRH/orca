@@ -110,14 +110,14 @@ const Block = openDiscriminatedUnion(
       groupId: z.string(),
       agents: z.array(SubagentEntry)
     }),
-    // `outcomeBasis` stays open for the same reason `state` does.
+    // `outcomeBasis` and `background` stay open for the same reason `state` does.
     SubagentEntry.extend({
       type: z.literal('subagent'),
       groupId: z.string(),
       parentId: z.string().optional(),
       run: z.string().optional(),
       outcomeBasis: z.string().optional(),
-      background: z.literal(true).optional()
+      background: z.boolean().optional()
     }),
     // `kind` and `state` stay open strings for the same reason a child's
     // lifecycle does: a vocabulary a newer build writes must not turn the row
