@@ -64,6 +64,7 @@ import {
   summarizeStateCollectionSizes
 } from '@/lib/renderer-memory-profile'
 import { estimateStateCollectionKB } from '@/lib/state-collection-byte-estimate'
+import { registerWindowsPathAccessEnvironments } from '@/lib/windows-path-access'
 
 // Why dev-only: nothing in the app arms the churn probe, so a shipped build would
 // pay its wrapper frame on every write for a diagnostic it can never read. The
@@ -134,6 +135,7 @@ export const useAppStore = create<AppState>()(
 )
 
 registerHttpLinkStoreAccessor(() => useAppStore.getState())
+registerWindowsPathAccessEnvironments(() => useAppStore.getState().runtimeEnvironments)
 registerWorkspaceHttpLinkBrowserOpener(async (request) => {
   const { openWorkspaceBrowserTab } = await import('@/lib/workspace-browser-tab-open')
   await openWorkspaceBrowserTab(request)

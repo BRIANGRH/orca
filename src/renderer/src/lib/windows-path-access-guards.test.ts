@@ -17,18 +17,22 @@ const mocks = vi.hoisted(() => ({
   },
   openInFileManager: vi.fn()
 }))
-vi.mock('@/store', () => ({ useAppStore: { getState: () => mocks.state } }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 
 import { isLocalPathOpenBlocked, isRevealOrEditorOpenBlocked } from './local-path-open-guard'
 import { getExternalEditorOpenCapability } from './external-editor-open-capability'
 import { revealInFileManager } from './reveal-in-file-manager'
-import { getWindowsPathAccess, listWslHostWindowsPathAccess } from './windows-path-access'
+import {
+  getWindowsPathAccess,
+  listWslHostWindowsPathAccess,
+  registerWindowsPathAccessEnvironments
+} from './windows-path-access'
 
 const WSL_OWNER = 'runtime:wsl%3AUbuntu'
 const WINDOWS_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 
 beforeEach(() => {
+  registerWindowsPathAccessEnvironments(() => mocks.state.runtimeEnvironments)
   vi.stubGlobal('navigator', { userAgent: WINDOWS_UA })
   vi.stubGlobal('window', { api: { shell: { openInFileManager: mocks.openInFileManager } } })
   mocks.openInFileManager.mockResolvedValue({ ok: true })

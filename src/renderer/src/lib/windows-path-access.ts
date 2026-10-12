@@ -1,10 +1,16 @@
-import { useAppStore } from '@/store'
 import { toRuntimeExecutionHostId } from '../../../shared/execution-host'
 import { windowsPathAccess, type WindowsPathAccess } from '../../../shared/windows-path-access'
 import type { PublicKnownRuntimeEnvironment } from '../../../shared/runtime-environments'
 import { isWebClientLocation } from './web-client-location'
 
 type WslEnvironmentSource = readonly Pick<PublicKnownRuntimeEnvironment, 'id' | 'orcadDeployment'>[]
+
+// Why an accessor, not an import of the store: path guards load from inside store slices.
+let readKnownEnvironments: () => WslEnvironmentSource = () => []
+
+export function registerWindowsPathAccessEnvironments(read: () => WslEnvironmentSource): void {
+  readKnownEnvironments = read
+}
 
 /** The desktop's own OS; a web client has no Windows shell to hand paths to. */
 function getDesktopPlatform(): NodeJS.Platform | null {
@@ -17,12 +23,14 @@ function getDesktopPlatform(): NodeJS.Platform | null {
 /** {@link windowsPathAccess} for the owner host, from the WSL hosts the renderer knows. */
 export function getWindowsPathAccess(
   ownerHostId: string | null | undefined,
-  environments: WslEnvironmentSource = useAppStore.getState().runtimeEnvironments
+  environments?: WslEnvironmentSource
 ): WindowsPathAccess | null {
   return windowsPathAccess(ownerHostId, {
     platform: getDesktopPlatform(),
     wslDistroForEnvironment: (environmentId) => {
-      const deployment = environments.find((entry) => entry.id === environmentId)?.orcadDeployment
+      const deployment = (environments ?? readKnownEnvironments()).find(
+        (entry) => entry.id === environmentId
+      )?.orcadDeployment
       return deployment?.kind === 'wsl' ? deployment.distro : null
     }
   })

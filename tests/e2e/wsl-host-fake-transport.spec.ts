@@ -121,6 +121,60 @@ function createGitProject(): string {
   return dir
 }
 
+/**
+ * C8: Add Project's Browse opens Windows' folder picker over the WSL host's distro. The renderer is
+ * told it runs on Windows; main's native dialog is stubbed, since there is no Explorer here.
+ */
+async function checkWindowsFolderPicker(
+  desktop: { app: ElectronApplication; page: Page },
+  projectPath: string,
+  testInfo: Parameters<typeof forwardElectronProcessLogs>[1]
+): Promise<void> {
+  const { app, page } = desktop
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setUserAgentOverride', {
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Electron'
+  })
+  const pickFolder = async (picked: string): Promise<string | undefined> => {
+    await app.evaluate(({ dialog }, filePath) => {
+      const state = globalThis as { c8PickerDefaultPath?: string }
+      dialog.showOpenDialog = async (...args: unknown[]) => {
+        const options = args.at(-1)
+        state.c8PickerDefaultPath =
+          typeof options === 'object' && options !== null && 'defaultPath' in options
+            ? String(options.defaultPath)
+            : undefined
+        return { canceled: false, filePaths: [filePath] }
+      }
+    }, picked)
+    await openSidebarProjectDialog(page)
+    const dialog = page.getByRole('dialog', { name: /Add a project/i })
+    await dialog.getByRole('combobox').click()
+    await page.locator('[cmdk-item]').filter({ hasText: WSL_HOST_LABEL }).click()
+    await dialog.getByRole('button', { name: /Browse folder|Browse host/i }).click()
+    return app.evaluate(() => (globalThis as { c8PickerDefaultPath?: string }).c8PickerDefaultPath)
+  }
+
+  // A pick through the lowercase share name lands as the host's Linux path.
+  const uncPick = `\\\\wsl.localhost\\ubuntu${projectPath.replace(/\//g, '\\')}`
+  expect(await pickFolder(uncPick)).toMatch(/^\\\\wsl\.localhost\\Ubuntu\\/)
+  const manual = page.getByRole('dialog', { name: /Open host project/i })
+  await expect(manual.locator('#server-project-path')).toHaveValue(projectPath)
+  await settleAnimations(page)
+  await page.screenshot({ path: testInfo.outputPath('wsl-windows-folder-picker-filled.png') })
+  await page.keyboard.press('Escape')
+  await expect(manual).toBeHidden()
+
+  // A drive folder is refused with copy that says it stays on this computer.
+  await pickFolder('C:\\Users\\me\\src')
+  await expect(page.getByText('Pick a folder inside Ubuntu.')).toBeVisible()
+  await settleAnimations(page)
+  await page.screenshot({ path: testInfo.outputPath('wsl-windows-folder-picker-drive.png') })
+  await page.keyboard.press('Escape')
+  await cdp.send('Emulation.setUserAgentOverride', { userAgent: '' })
+  await cdp.detach()
+}
+
 test('adds a WSL distro as a host, adds a project on it, and runs a terminal there', async ({
   orcaPage,
   electronApp
@@ -241,6 +295,8 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     await page.keyboard.press('Enter')
     await waitForTerminalOutput(page, 'WSL_HOST_TERMINAL_ready', 30_000)
     await page.screenshot({ path: testInfo.outputPath('wsl-host-terminal.png') })
+
+    await checkWindowsFolderPicker(desktop, projectPath, testInfo)
 
     // The "distro's orcad" is the HUB, so what it still runs is what a real distro would.
     const hubRuntime = new RuntimeClient(
