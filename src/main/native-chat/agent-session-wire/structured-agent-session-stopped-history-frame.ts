@@ -111,14 +111,16 @@ export function stoppedHistoryElementSpan(element: string): string {
 const LABEL_LINE = /^\n*User message(?: \(images? \d+(?:-\d+)?\))?:[ \t]*(?:\r?\n)?/
 
 /** `text` without a leading generated frame and its label, so titles and previews show the person's
- *  own words. The close is searched in all of `text`: escaping makes the first one the frame's. */
+ *  own words; unchanged when there is no close. The close is searched in all of `text`: escaping
+ *  makes the first one the frame's. */
 export function withoutStoppedHistoryFrame(text: string): string {
   if (!text.startsWith(`${OPEN}\n${HEADER.slice(0, HEADER.indexOf('\n'))}`)) {
     return text
   }
   const close = text.indexOf(`\n${CLOSE}`, OPEN.length)
+  // A real frame always closes; without one this is not Orca's frame, so hide nothing.
   if (close === -1) {
-    return ''
+    return text
   }
   const rest = text.slice(close + CLOSE.length + 1)
   const labelLine = LABEL_LINE.exec(rest)

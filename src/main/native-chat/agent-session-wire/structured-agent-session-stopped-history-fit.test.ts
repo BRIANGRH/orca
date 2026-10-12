@@ -304,4 +304,9 @@ describe('titles and previews hide the frame', () => {
     expect(withoutStoppedHistoryFrame('<stopped-history>\nmine')).toBe('<stopped-history>\nmine')
     expect(withoutStoppedHistoryFrame('hello')).toBe('hello')
   })
+
+  it('leaves text that opens like a frame but never closes it unchanged', () => {
+    const unclosed = `${HEADER}\n\nmy own pasted words, no close`
+    expect(withoutStoppedHistoryFrame(unclosed)).toBe(unclosed)
+  })
 })
