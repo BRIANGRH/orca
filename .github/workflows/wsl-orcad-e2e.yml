@@ -52,6 +52,8 @@ jobs:
         with:
           name: wsl-orcad-template
           path: out/orcad-template/
+          # The template carries dot-directories (`.claude-plugin`) its manifest checksums.
+          include-hidden-files: true
           retention-days: 1
           if-no-files-found: error
 
@@ -75,8 +77,9 @@ jobs:
           "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion"
           wsl.exe --version
           if ($LASTEXITCODE -ne 0) { throw 'wsl.exe --version failed' }
-      - name: Cache the pinned rootfs
-        uses: actions/cache@v5
+      - name: Restore the pinned rootfs
+        id: rootfs-cache
+        uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/wsl-rootfs
           key: wsl-orcad-rootfs-${{ env.ROOTFS_SHA256 }}
@@ -122,6 +125,13 @@ jobs:
           name: wsl-orcad-template
           path: ${{ runner.temp }}/orcad-template
       - wait: import
+      # Saved even when the lane fails; the import step verified its checksum.
+      - name: Save the pinned rootfs
+        if: steps.rootfs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/wsl-rootfs
+          key: wsl-orcad-rootfs-${{ env.ROOTFS_SHA256 }}
       - name: "Phase 1: deploy, RPC, kill orcad, terminate distro"
         timeout-minutes: 20
         env:
