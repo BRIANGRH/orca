@@ -63,10 +63,12 @@ describe('native chat skill editor', () => {
     expect(input.value).toBe(`See ${references} please`)
     expect(input.selectionStart).toBe(4 + references.length)
     expect(onChange).toHaveBeenCalled()
+    const edited = input.value.replace('letter.pdf', 'letter.pd')
     act(() => {
-      input.value = input.value.replace('letter.pdf', 'letter.pd')
+      input.value = edited
     })
     expect(container.querySelectorAll('[data-native-chat-file-reference]')).toHaveLength(1)
+    expect(input.value).toBe(edited)
   })
 
   it('keeps typed and restored invocations plain', () => {
