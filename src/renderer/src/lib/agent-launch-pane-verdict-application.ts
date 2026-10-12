@@ -9,6 +9,18 @@ import { collectLeafIdsInOrder } from '@/components/terminal-pane/terminal-layou
 import { useAppStore } from '@/store'
 import { forgetAgentLaunchPanePrompt } from './agent-launch-pane-prompt'
 
+/** The tab keeps a final outcome for this pane: its notice stays, and the pane never spawns. */
+export function isAgentLaunchPaneOver(
+  worktreeId: string | undefined,
+  tabId: string | undefined,
+  leafId: string | undefined
+): boolean {
+  const tab = worktreeId
+    ? useAppStore.getState().tabsByWorktree[worktreeId]?.find((candidate) => candidate.id === tabId)
+    : undefined
+  return tab?.agentLaunchPane?.leafId === leafId && tab.agentLaunchPane.outcome !== undefined
+}
+
 export function applyAgentLaunchPaneVerdict(event: AgentLaunchPaneVerdictEvent): void {
   const { worktreeId, tabId, leafId, verdict } = event
   const state = useAppStore.getState()

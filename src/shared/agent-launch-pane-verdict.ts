@@ -24,3 +24,12 @@ export type AgentLaunchPaneAddress = { worktreeId: string; tabId: string; leafId
 export type AgentLaunchPaneVerdictEvent = AgentLaunchPaneAddress & {
   verdict: AgentLaunchPaneVerdict
 }
+
+/** A launch pane as the window saves it: only a pending one, since its outcome is this session's. */
+export function pendingAgentLaunchPane<T extends { outcome?: unknown }>(
+  pane: T
+): Omit<T, 'outcome'> {
+  const { outcome: _outcome, ...pending } = pane
+  void _outcome
+  return pending
+}
