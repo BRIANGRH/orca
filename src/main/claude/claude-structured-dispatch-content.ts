@@ -14,9 +14,6 @@ import {
 } from '../../shared/agent-session-failure-words'
 import { TUI_AGENT_DISPLAY_NAMES } from '../../shared/tui-agent-display-names'
 import { claudeRecord } from './claude-structured-item-translation'
-import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
-import type { AgentSessionPreparedDispatch } from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
-import { fitStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
 
 /** Orca refused the message's content, as opposed to failing to read an attachment. */
 export class ClaudeDispatchContentError extends Error {
@@ -121,10 +118,9 @@ const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
   '.webp': 'image/webp'
 }
 
-async function imageContent(
-  block: Extract<NativeChatBlock, { type: 'image-ref' }>,
-  budget: ImageBudget
-): Promise<unknown> {
+type ImageRefBlock = Extract<NativeChatBlock, { type: 'image-ref' }>
+
+async function imageContent(block: ImageRefBlock, budget: ImageBudget): Promise<unknown> {
   budget.count += 1
   if (budget.count > MAX_IMAGE_COUNT) {
     throw attachmentError(`Claude messages support at most ${MAX_IMAGE_COUNT} images`, {
@@ -170,7 +166,7 @@ async function imageContent(
  */
 export async function claudeDispatchMessageContent(
   body: AgentJournalMessageItem,
-  imageBudget: ImageBudget = { count: 0, localBytes: 0 }
+  readImage: (block: ImageRefBlock, budget: ImageBudget) => Promise<unknown> = imageContent
 ): Promise<unknown[]> {
   if (body.role !== 'user') {
     // No Orca client sends one, so the fault is Orca's.
@@ -181,11 +177,15 @@ export async function claudeDispatchMessageContent(
   }
   const images: unknown[] = []
   const texts: string[] = []
+  const imageBudget: ImageBudget = { count: 0, localBytes: 0 }
   for (const block of body.blocks as NativeChatBlock[]) {
     if (block.type === 'text' && block.text.length > 0) {
       texts.push(block.text)
     } else if (block.type === 'image-ref') {
-      images.push(await imageContent(block, imageBudget))
+      const image = await readImage(block, imageBudget)
+      if (image !== null) {
+        images.push(image)
+      }
     }
   }
   // Join rather than append each block: only the trailing text is read as the prompt, so several
@@ -200,51 +200,14 @@ export async function claudeDispatchMessageContent(
   return content
 }
 
-/** A Claude send prepared with its stopped history: one user frame, written as is. */
-export class ClaudePreparedDispatch implements AgentSessionPreparedDispatch {
-  constructor(
-    readonly carries: readonly string[],
-    readonly content: readonly unknown[]
-  ) {}
-}
-
-/** The send with the owed stopped history that fits Claude's image limits, in one text block that
- *  ends with the send's own words, so they stay the prompt. Null when none fits or the send alone
- *  fails, whose own refusal dispatch then gives. */
-export async function prepareClaudeDispatch(
-  body: AgentJournalMessageItem,
-  owed: readonly OwedStoppedMessage[]
-): Promise<ClaudePreparedDispatch | null> {
-  const budget: ImageBudget = { count: 0, localBytes: 0 }
-  const content = await claudeDispatchMessageContent(body, budget).catch(() => null)
-  if (!content) {
-    return null
-  }
-  const words = claudeDispatchPrompt(content)
-  const sendImages = words === null ? content : content.slice(0, -1)
-  const fit = await fitStoppedHistory({
-    owed,
-    room: {
-      images: MAX_IMAGE_COUNT - budget.count,
-      bytes: MAX_TOTAL_IMAGE_BYTES - budget.localBytes
-    },
-    sendImages: sendImages.length,
-    textCost: () => ({}),
-    image: async (block) => {
-      const one: ImageBudget = { count: 0, localBytes: 0 }
-      const image = await imageContent(block, one)
-      return { content: image, cost: { images: 1, bytes: one.localBytes } }
-    }
-  })
-  if (!fit) {
-    return null
-  }
-  const text = words === null ? fit.frame : `${fit.frame}\n${words}`
-  return new ClaudePreparedDispatch(fit.carries, [
-    ...fit.images,
-    ...sendImages,
-    { type: 'text', text }
-  ])
+/** A stopped message's content as a send writes it, less any image that no longer reads; null
+ *  when nothing is left. */
+export async function claudeStoppedMessageContent(
+  body: AgentJournalMessageItem
+): Promise<unknown[] | null> {
+  return claudeDispatchMessageContent(body, (block, budget) =>
+    imageContent(block, budget).catch(() => null)
+  ).catch(() => null)
 }
 
 /** The prompt Claude recovers from a dispatch, or null when the turn carries no prompt. */

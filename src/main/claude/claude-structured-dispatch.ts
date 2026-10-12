@@ -7,10 +7,6 @@ import {
 } from './claude-structured-dispatch-waiters'
 import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { AgentSessionDispatchOutcome } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
-import {
-  preparedByAdapter,
-  type AgentSessionPreparedDispatch
-} from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
 import type { ClaudeDispatchWaiter, ClaudeSession } from './claude-structured-session-state'
 import type { ClaudeLateDispatchSettlement } from './claude-replay-turn-resolution'
 import {
@@ -18,9 +14,9 @@ import {
   claudeDispatchContentRejection,
   claudeDispatchInvokesSlashCommand,
   claudeDispatchMessageContent,
-  claudeDispatchRejection,
-  ClaudePreparedDispatch
+  claudeDispatchRejection
 } from './claude-structured-dispatch-content'
+import { endClaudeStoppedMessageAppend } from './claude-stopped-message-append'
 import { dispatchWriteOutcomeUnknownReason } from '../native-chat/agent-session-journal/journal-dispatch-doubt-reasons'
 import { DISPATCH_REJECTED_QUEUE_FULL } from '../../shared/structured-agent-session-dispatch-rejection'
 import {
@@ -105,6 +101,7 @@ export function releaseClaudeDispatchWaitersInDoubt(
  *  `MAX_RETIRED_DISPATCH_WAITERS`. */
 export function retireClaudeDispatchWaiters(session: ClaudeSession): void {
   failClaudeStartup(session, new Error('claude stream-json ended before startup completed'))
+  endClaudeStoppedMessageAppend(session)
   for (const waiter of session.dispatchWaiters.splice(0)) {
     retireWaiter(session, waiter)
     waiter.resolve(null)
@@ -125,15 +122,12 @@ export async function dispatchClaudeTurn(
     requestedAt?: number
     /** The frame's uuid, for a caller that correlates the provider's answer to it. */
     sentUuid?: string
-    /** The frame prepared with stopped history, written as is. */
-    prepared?: AgentSessionPreparedDispatch
   },
   beforeDispatch?: () => Promise<void>
 ): Promise<AgentSessionDispatchOutcome> {
-  const prepared = preparedByAdapter(input.prepared, ClaudePreparedDispatch)
-  let content: readonly unknown[]
+  let content: unknown[]
   try {
-    content = prepared ? prepared.content : await claudeDispatchMessageContent(input.body)
+    content = await claudeDispatchMessageContent(input.body)
   } catch (error) {
     return { state: 'rejected', ...claudeDispatchContentRejection(error) }
   }
@@ -142,11 +136,7 @@ export async function dispatchClaudeTurn(
   }
   const startupFailure = claudeStartupFailureFact(session)
   if (startupFailure) {
-    // Refused before the write, so the agent never saw it.
-    return {
-      state: 'rejected',
-      ...claudeDispatchRejection({ ...startupFailure, neverReachedAgent: true })
-    }
+    return { state: 'rejected', ...claudeDispatchRejection(startupFailure) }
   }
   // Read the sent content, not the journal blocks: only the mapped trailing prompt decides
   // whether Claude runs a command, so the two cannot disagree about which frame settles this.

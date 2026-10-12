@@ -16,18 +16,6 @@ function resolveClaudeReplayWaiter(...args: Parameters<typeof resolveClaudeRepla
 }
 
 describe('Claude structured dispatch admission', () => {
-  it('refuses a send to a failed start before writing it, as never reaching the agent', async () => {
-    const send = vi.fn().mockResolvedValue(undefined)
-    const session = sessionFor(send)
-    session.startup = { ...session.startup, state: 'failed', failure: new Error('init failed') }
-    const outcome = await dispatchClaudeTurn(session, {
-      clientMessageId: 'client-a',
-      body: userMessage([{ type: 'text', text: 'a' }])
-    })
-    expect(outcome).toMatchObject({ state: 'rejected', rejection: { neverReachedAgent: true } })
-    expect(send).not.toHaveBeenCalled()
-  })
-
   it('opens queued exact replays with the origin and the send owned by each send', async () => {
     const session = sessionFor()
     await dispatchClaudeTurn(session, {

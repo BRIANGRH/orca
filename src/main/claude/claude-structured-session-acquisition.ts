@@ -1,3 +1,4 @@
+import { claimClaudeStoppedMessageAppendFrame } from './claude-stopped-message-append'
 import type {
   AgentSessionAcquisition,
   StructuredAgentSessionAcquireInput
@@ -113,6 +114,10 @@ export async function acquireClaudeSession({
         settleClaudeTurnEndWaiters(liveSession)
         deps.onSessionIdle?.({ sessionId })
       }
+    }
+    // An append of stopped messages runs no turn, so no turn may read its frames.
+    if (liveSession && claimClaudeStoppedMessageAppendFrame(liveSession, message)) {
+      return
     }
     // Settled after the turn this echo opens is emitted: a send read as answered before its turn
     // lands reads as nothing running, and Stop and Working blink off in between.
