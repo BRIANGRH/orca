@@ -199,6 +199,16 @@ export async function runPairedTerminalParkingOracle(
     expect(after.bufferCells).toBeLessThanOrEqual(baseline.bufferCells * MAX_RETAINED_CELL_FRACTION)
     expect(after.mountedTargetManagers).toBe(1)
     expect(maxLagMs).toBeLessThan(MAX_EVICTION_LAG_MS)
+    {
+      const session = await page.context().newCDPSession(page)
+      for (let i = 0; i < 20; i += 1) {
+        await session.send('HeapProfiler.collectGarbage')
+        const used = (await session.send('Runtime.getHeapUsage')).usedSize
+        console.log(`[heap-settle] t=${i * 500}ms used=${used}`)
+        await page.waitForTimeout(500)
+      }
+      await session.detach()
+    }
     if (baseline.heapBytes !== null && after.heapBytes !== null) {
       expect(after.heapBytes).toBeLessThanOrEqual(baseline.heapBytes + MAX_HEAP_GROWTH_BYTES)
     }
