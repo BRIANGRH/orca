@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { collectRendererMemoryProfileCounts } from '@/lib/renderer-memory-profile'
+import { notifyRendererMemoryPressure } from '@/lib/renderer-memory-pressure'
 import {
   buildHiddenTerminalViews,
+  getHiddenTerminalViewCensus,
   registerMountedTerminalTabView,
   reportHiddenTerminalViews,
   resetHiddenTerminalViewBudgetForTest,
@@ -13,7 +16,7 @@ import { selectColdParkedTerminalTabs } from './terminal-hidden-view-parking'
 const MB = 1024 * 1024
 
 function view(tabId: string, hiddenSinceMs: number, bytes: number, parkable = true) {
-  return { tabId, hiddenSinceMs, bytes, parkable } satisfies HiddenTerminalView
+  return { tabId, hiddenSinceMs, bytes, parkable, restorable: true } satisfies HiddenTerminalView
 }
 
 describe('selectHiddenTerminalViewsOverBudget', () => {
@@ -67,6 +70,28 @@ describe('selectHiddenTerminalViewsOverBudget', () => {
       100 * MB
     )
     expect(over).toEqual(new Set(['unknown']))
+  })
+
+  it('keeps unrestorable views outside the budget', () => {
+    const over = selectHiddenTerminalViewsOverBudget(
+      [{ ...view('fail-open', 3, 90 * MB, false), restorable: false }, view('older', 2, 90 * MB)],
+      100 * MB
+    )
+    expect(over).toEqual(new Set())
+  })
+
+  it('parks every view hidden before a memory-pressure release, even ones that fit', () => {
+    const over = selectHiddenTerminalViewsOverBudget(
+      [
+        view('before', 5, 1 * MB),
+        view('in-delay', 6, 1 * MB, false),
+        { ...view('held', 4, 1 * MB), held: true },
+        view('after', 11, 1 * MB)
+      ],
+      100 * MB,
+      10
+    )
+    expect(over).toEqual(new Set(['before']))
   })
 
   it('breaks a hidden-time tie by the later activation', () => {
@@ -145,7 +170,7 @@ describe('buildHiddenTerminalViews', () => {
     }
   }
 
-  it('reports hidden restorable tabs and skips visible, portaled, clock-parked and unrestorable ones', () => {
+  it('reports hidden tabs, flags unrestorable ones, and skips visible, portaled and clock-parked ones', () => {
     const views = buildHiddenTerminalViews(
       {
         worktreeId: 'wt-1',
@@ -169,7 +194,16 @@ describe('buildHiddenTerminalViews', () => {
         activationSeq: 4,
         bytes: Number.POSITIVE_INFINITY,
         parkable: true,
-        held: false
+        held: false,
+        restorable: true
+      },
+      {
+        tabId: 'remote',
+        hiddenSinceMs: 10,
+        bytes: Number.POSITIVE_INFINITY,
+        parkable: false,
+        held: false,
+        restorable: false
       }
     ])
   })
@@ -256,5 +290,55 @@ describe('selectColdParkedTerminalTabs with the hidden-view budget', () => {
       hiddenViewBudget: budget
     })
     expect(budget).toHaveBeenCalledWith(null)
+  })
+})
+
+describe('memory pressure and the hidden-view census', () => {
+  beforeEach(() => {
+    resetHiddenTerminalViewBudgetForTest()
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    resetHiddenTerminalViewBudgetForTest()
+  })
+
+  it('releases every restorable hidden view when the renderer reports memory pressure', () => {
+    const listener = vi.fn()
+    subscribeHiddenTerminalViewBudget('wt-a', listener)
+    expect(reportHiddenTerminalViews('wt-a', [view('a-1', 1, 10 * MB)])).toEqual(new Set())
+
+    notifyRendererMemoryPressure()
+    vi.runAllTimers()
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(reportHiddenTerminalViews('wt-a', [view('a-1', 1, 10 * MB)])).toEqual(new Set(['a-1']))
+    // A view hidden after the release is budgeted normally.
+    expect(
+      reportHiddenTerminalViews('wt-a', [view('a-1', 1, 10 * MB), view('a-2', Date.now() + 1, MB)])
+    ).toEqual(new Set(['a-1']))
+  })
+
+  it('counts kept, over-budget and unrestorable views, so a report shows when the budget cannot hold', () => {
+    reportHiddenTerminalViews(
+      'wt-a',
+      [
+        view('kept', 3, 60 * MB),
+        view('over', 2, 60 * MB),
+        { ...view('fail-open', 4, 200 * MB, false), restorable: false }
+      ],
+      100 * MB
+    )
+    expect(getHiddenTerminalViewCensus()).toEqual({
+      budgetKB: 100 * 1024,
+      keptViews: 1,
+      keptKB: 60 * 1024,
+      overBudgetViews: 1,
+      unrestorableViews: 1,
+      unrestorableKB: 200 * 1024,
+      pressureReleases: 0
+    })
+    expect(collectRendererMemoryProfileCounts()['hiddenTerminalViews.unrestorableKB']).toBe(
+      200 * 1024
+    )
   })
 })

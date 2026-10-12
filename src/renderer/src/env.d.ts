@@ -95,6 +95,8 @@ declare global {
       resolveLeafScrollback: (tabId: string) => Record<string, string> | undefined
       retentionLimit: number | null
       worktreeVerdicts: () => TerminalWorktreeParkingDebugVerdict[]
+      hiddenViewCensus: () => Record<string, number>
+      releaseHiddenViewsForMemoryPressure: () => void
     }
     __monacoEditorE2E?: MonacoE2EProbe
     __e2ePtyAppliedSizeReadDelayMs?: number

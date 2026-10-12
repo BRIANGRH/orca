@@ -6,6 +6,10 @@ import {
 import { getParkedTerminalWatcherTabIds } from './terminal-parked-tab-watchers'
 import { resolveTabScrollbackBuffers } from './leaf-scrollback-resolution'
 import { useAppStore } from '@/store'
+import {
+  getHiddenTerminalViewCensus,
+  releaseHiddenTerminalViewsForMemoryPressure
+} from './terminal-hidden-view-budget'
 
 export type TerminalWorktreeParkingDebugVerdict = {
   worktreeId: string
@@ -57,7 +61,10 @@ export function registerTerminalParkingDebugHandle(): void {
     // whenever the bytes live in the other one.
     resolveLeafScrollback: (tabId) => resolveTabScrollbackBuffers(useAppStore.getState(), tabId),
     retentionLimit: getTerminalParkingPolicyOverrides().retentionLimit ?? null,
-    worktreeVerdicts: () => worktreeVerdicts
+    worktreeVerdicts: () => worktreeVerdicts,
+    hiddenViewCensus: getHiddenTerminalViewCensus,
+    // Why: the same release the memory sampler fires, without filling the machine's memory.
+    releaseHiddenViewsForMemoryPressure: () => releaseHiddenTerminalViewsForMemoryPressure()
   }
 }
 

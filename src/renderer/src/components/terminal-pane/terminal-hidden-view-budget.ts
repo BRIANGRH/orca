@@ -8,6 +8,8 @@
  * fit, the rest take the ordinary park path (watchers + snapshot restore).
  */
 
+import { registerRendererMemoryProfileContributor } from '@/lib/renderer-memory-profile'
+import { onRendererMemoryPressure } from '@/lib/renderer-memory-pressure'
 import {
   isParkRestorableTerminalPty,
   type TerminalParkRestorePolicy,
@@ -37,6 +39,8 @@ export type HiddenTerminalView = {
   parkable: boolean
   /** Kept mounted for another reason even if parked, so it always holds its memory. */
   held?: boolean
+  /** False when no park could restore it: held outside the budget and only counted. */
+  restorable: boolean
 }
 
 type RetainedBytesSource = { getRetainedBytes(): number }
@@ -73,11 +77,11 @@ export function readMountedTerminalTabViewBytes(tabId: string): number | null {
 export type HiddenViewSize = { hiddenSinceMs: number; bytes: number }
 
 /**
- * One worktree's hidden views that parking could release. Unrestorable views
- * stay out (no budget can release them), and so do views the hot-retain clock
- * already parks. Size is the largest measured in the current hidden episode
- * and is remembered after the view parks, so neither parking nor a remount
- * mid-restore makes a view look small and flip it back in.
+ * One worktree's hidden loaded views. Unrestorable ones are reported but kept
+ * outside the budget (no park can release them); views the hot-retain clock
+ * already parks are left out. Size is the largest measured in the current
+ * hidden episode and is remembered after the view parks, so neither parking
+ * nor a remount mid-restore makes a view look small and flip it back in.
  */
 export function buildHiddenTerminalViews(
   input: HiddenViewBudgetInput,
@@ -95,8 +99,7 @@ export function buildHiddenTerminalViews(
       tab.isVisible ||
       tab.hasActivityTerminalPortal ||
       tab.hiddenSinceMs === null ||
-      input.clockParkedTabIds.has(tab.id) ||
-      !isParkRestorableTerminalPty(tab.ptyId, input.worktreeId, input.restorePolicy)
+      input.clockParkedTabIds.has(tab.id)
     ) {
       continue
     }
@@ -115,7 +118,8 @@ export function buildHiddenTerminalViews(
       ...(tab.lastActivatedSeq !== undefined ? { activationSeq: tab.lastActivatedSeq } : {}),
       bytes: sizeByTabId.get(tab.id)?.bytes ?? Number.POSITIVE_INFINITY,
       parkable: input.parkableTabIds.has(tab.id),
-      held: input.isHeldMounted?.(tab) === true
+      held: input.isHeldMounted?.(tab) === true,
+      restorable: isParkRestorableTerminalPty(tab.ptyId, input.worktreeId, input.restorePolicy)
     })
   }
   return views
@@ -133,16 +137,25 @@ function compareHiddenViewRecencyDesc(a: HiddenTerminalView, b: HiddenTerminalVi
  * Most recently hidden first, each view stays loaded while it still fits; the
  * last-hidden view is spared only while it fits on its own. A held view always
  * uses budget. A view that does not fit but cannot park yet (cold-park delay)
- * uses none: it parks once it can, so older views stay put meanwhile.
+ * uses none: it parks once it can, so older views stay put meanwhile. Views
+ * hidden before a memory-pressure release park regardless of fit.
  */
 export function selectHiddenTerminalViewsOverBudget(
   views: readonly HiddenTerminalView[],
-  budgetBytes: number
+  budgetBytes: number,
+  pressureReleaseAtMs: number | null = null
 ): Set<string> {
   const overBudget = new Set<string>()
   let retainedBytes = 0
   for (const view of [...views].sort(compareHiddenViewRecencyDesc)) {
-    if (view.held || retainedBytes + view.bytes <= budgetBytes) {
+    if (!view.restorable) {
+      continue
+    }
+    if (!view.held && pressureReleaseAtMs !== null && view.hiddenSinceMs <= pressureReleaseAtMs) {
+      if (view.parkable) {
+        overBudget.add(view.tabId)
+      }
+    } else if (view.held || retainedBytes + view.bytes <= budgetBytes) {
       retainedBytes += Number.isFinite(view.bytes) ? view.bytes : 0
     } else if (view.parkable) {
       overBudget.add(view.tabId)
@@ -157,6 +170,11 @@ const overBudgetByOwner = new Map<string, ReadonlySet<string>>()
 const listenersByOwner = new Map<string, Set<() => void>>()
 const ownersToNotify = new Set<string>()
 let notifyTimer: ReturnType<typeof setTimeout> | null = null
+let budgetBytesInUse = TERMINAL_HIDDEN_VIEW_BUDGET_BYTES
+// Why a timestamp, not a set: a view revealed since then gets a new hidden
+// time and is budgeted normally again, so nothing has to clear it.
+let pressureReleaseAtMs: number | null = null
+let pressureReleases = 0
 
 function haveSameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) {
@@ -186,23 +204,11 @@ function scheduleNotify(ownerId: string): void {
   }, 0)
 }
 
-/**
- * Replaces one cold-park hook's hidden views and returns which of them are
- * over the shared budget. Other hooks whose verdict changed are woken.
- */
-export function reportHiddenTerminalViews(
-  ownerId: string,
-  views: readonly HiddenTerminalView[],
-  budgetBytes: number = TERMINAL_HIDDEN_VIEW_BUDGET_BYTES
-): ReadonlySet<string> {
-  if (views.length === 0) {
-    viewsByOwner.delete(ownerId)
-  } else {
-    viewsByOwner.set(ownerId, views)
-  }
+function recomputeOverBudget(reportingOwnerId: string | null): void {
   const overBudget = selectHiddenTerminalViewsOverBudget(
     Array.from(viewsByOwner.values()).flat(),
-    budgetBytes
+    budgetBytesInUse,
+    pressureReleaseAtMs
   )
   for (const owner of new Set([...viewsByOwner.keys(), ...overBudgetByOwner.keys()])) {
     const next = new Set(
@@ -219,12 +225,77 @@ export function reportHiddenTerminalViews(
     } else {
       overBudgetByOwner.set(owner, next)
     }
-    if (owner !== ownerId) {
+    if (owner !== reportingOwnerId) {
       scheduleNotify(owner)
     }
   }
+}
+
+/**
+ * Replaces one cold-park hook's hidden views and returns which of them are
+ * over the shared budget. Other hooks whose verdict changed are woken.
+ */
+export function reportHiddenTerminalViews(
+  ownerId: string,
+  views: readonly HiddenTerminalView[],
+  budgetBytes: number = TERMINAL_HIDDEN_VIEW_BUDGET_BYTES
+): ReadonlySet<string> {
+  if (views.length === 0) {
+    viewsByOwner.delete(ownerId)
+  } else {
+    viewsByOwner.set(ownerId, views)
+  }
+  budgetBytesInUse = budgetBytes
+  recomputeOverBudget(ownerId)
   return overBudgetByOwner.get(ownerId) ?? EMPTY_TAB_IDS
 }
+
+/** Parks every restorable hidden view (each after its cold-park delay). */
+export function releaseHiddenTerminalViewsForMemoryPressure(nowMs: number = Date.now()): void {
+  pressureReleaseAtMs = nowMs
+  pressureReleases += 1
+  recomputeOverBudget(null)
+}
+
+onRendererMemoryPressure(() => releaseHiddenTerminalViewsForMemoryPressure())
+
+/**
+ * Hidden views still loaded, including the ones no park can release, so a
+ * memory report shows when the budget could not hold instead of assuming it.
+ */
+export function getHiddenTerminalViewCensus(): Record<string, number> {
+  let keptViews = 0
+  let keptBytes = 0
+  let overBudgetViews = 0
+  let unrestorableViews = 0
+  let unrestorableBytes = 0
+  for (const [owner, views] of viewsByOwner) {
+    const overBudget = overBudgetByOwner.get(owner) ?? EMPTY_TAB_IDS
+    for (const view of views) {
+      const bytes = Number.isFinite(view.bytes) ? view.bytes : 0
+      if (!view.restorable) {
+        unrestorableViews += 1
+        unrestorableBytes += bytes
+      } else if (overBudget.has(view.tabId)) {
+        overBudgetViews += 1
+      } else {
+        keptViews += 1
+        keptBytes += bytes
+      }
+    }
+  }
+  return {
+    budgetKB: Math.round(budgetBytesInUse / 1024),
+    keptViews,
+    keptKB: Math.round(keptBytes / 1024),
+    overBudgetViews,
+    unrestorableViews,
+    unrestorableKB: Math.round(unrestorableBytes / 1024),
+    pressureReleases
+  }
+}
+
+registerRendererMemoryProfileContributor('hiddenTerminalViews', getHiddenTerminalViewCensus)
 
 export function subscribeHiddenTerminalViewBudget(
   ownerId: string,
@@ -250,6 +321,9 @@ export function resetHiddenTerminalViewBudgetForTest(): void {
   overBudgetByOwner.clear()
   listenersByOwner.clear()
   ownersToNotify.clear()
+  budgetBytesInUse = TERMINAL_HIDDEN_VIEW_BUDGET_BYTES
+  pressureReleaseAtMs = null
+  pressureReleases = 0
   if (notifyTimer !== null) {
     clearTimeout(notifyTimer)
     notifyTimer = null

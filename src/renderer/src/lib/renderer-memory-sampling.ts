@@ -12,6 +12,10 @@ import {
 import { recordRendererCrashBreadcrumb } from './crash-breadcrumb-recorder'
 import { compactBreadcrumbData, toMegabytes } from './crash-breadcrumb-data'
 import { collectRendererMemoryProfileCounts } from './renderer-memory-profile'
+import {
+  isRendererMemoryUnderPressure,
+  notifyRendererMemoryPressure
+} from './renderer-memory-pressure'
 
 const BYTES_PER_KILOBYTE = 1024
 // Why: one detailed breadcrumb per threshold names what grew before an OOM.
@@ -91,6 +95,25 @@ export function recordRendererMemorySample(reason: string): void {
     })
   )
   recordRendererMemoryHighwater(memory, browserWebviews, footprint)
+  // Why after the census: the high-water profile names what grew before anything is released.
+  if (isRendererMemoryUnderPressure(readPressureInputs(memory, footprint))) {
+    notifyRendererMemoryPressure()
+  }
+}
+
+function readPressureInputs(
+  memory: HeapMetrics,
+  footprint: RendererProcessMemory | null
+): { heapRatio: number | null; privateMB: number | null } {
+  const used = memory.usedJSHeapSize
+  const limit = memory.jsHeapSizeLimit
+  // Why: NaN would satisfy `ratio < threshold` for nothing, emitting both
+  // levels spuriously and disarming the one-shot for the session.
+  const heapRatio =
+    isFiniteHeapBytes(used) && isFiniteHeapBytes(limit) && limit > 0 ? used / limit : null
+  const privateMB =
+    footprint === null ? null : (toMegabytes(footprint.privateKB * BYTES_PER_KILOBYTE) ?? null)
+  return { heapRatio, privateMB }
 }
 
 /** Stays null on shells without the bridge, or when the runtime withholds it. */
@@ -153,12 +176,7 @@ function recordRendererMemoryHighwater(
 ): void {
   const used = memory.usedJSHeapSize
   const limit = memory.jsHeapSizeLimit
-  // Why: NaN would satisfy `ratio < threshold` for nothing, emitting both
-  // levels spuriously and disarming the one-shot for the session.
-  const ratio =
-    isFiniteHeapBytes(used) && isFiniteHeapBytes(limit) && limit > 0 ? used / limit : null
-  const privateMB =
-    footprint === null ? null : (toMegabytes(footprint.privateKB * BYTES_PER_KILOBYTE) ?? null)
+  const { heapRatio: ratio, privateMB } = readPressureInputs(memory, footprint)
   let crossedThreshold = false
   if (ratio !== null) {
     for (const threshold of RENDERER_MEMORY_HIGHWATER_RATIOS) {

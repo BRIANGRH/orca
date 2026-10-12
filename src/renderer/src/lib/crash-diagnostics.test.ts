@@ -429,6 +429,28 @@ describe('renderer crash diagnostics', () => {
       expect(highwaterCalls()[0].data).not.toHaveProperty('thresholdPct')
     })
 
+    it('signals memory pressure on every sample past the top footprint mark', async () => {
+      const { onRendererMemoryPressure } = await import('./renderer-memory-pressure')
+      const pressure = vi.fn()
+      const stopListening = onRendererMemoryPressure(pressure)
+      stubFootprint(999)
+      diagnostics.installRendererCrashDiagnostics()
+      await flush()
+      const tick = setIntervalMock.mock.calls[0][0] as () => void
+      tick()
+      await flush()
+      stubFootprint(1200)
+      tick()
+      await flush()
+      expect(pressure).not.toHaveBeenCalled()
+      tick()
+      await flush()
+      tick()
+      // Why unlike the one-shot census: each sample past the mark releases again.
+      expect(pressure).toHaveBeenCalledTimes(2)
+      stopListening()
+    })
+
     it('emits each footprint mark once and both when one sample clears them', async () => {
       stubFootprint(618)
       diagnostics.installRendererCrashDiagnostics()
