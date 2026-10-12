@@ -17,6 +17,11 @@ import {
   RuntimeEnvironmentStoreError,
   warnUnreadableEnvironmentState
 } from './runtime-environment-store-records'
+import {
+  overlayWslHostDeployments,
+  readWslHostDeployments,
+  WslHostDeploymentStoreInvalidError
+} from './wsl-host-deployment-store'
 
 export {
   getEnvironmentStorePath,
@@ -55,11 +60,16 @@ export function readEnvironmentStore(
 } {
   const store = readPersistedEnvironmentStore(userDataPath, options)
   let sidecar: ReturnType<typeof readRuntimeEnvironmentSidecar>
+  let wslDeployments: ReturnType<typeof readWslHostDeployments>
   try {
     sidecar = readRuntimeEnvironmentSidecar(userDataPath)
+    wslDeployments = readWslHostDeployments(userDataPath)
   } catch (error) {
     // Fail closed like the main file: a link we cannot read may pin a host key we must not drop.
-    if (error instanceof RuntimeEnvironmentSidecarInvalidError) {
+    if (
+      error instanceof RuntimeEnvironmentSidecarInvalidError ||
+      error instanceof WslHostDeploymentStoreInvalidError
+    ) {
       throw new RuntimeEnvironmentStoreError('runtime_error', error.message)
     }
     throw error
@@ -75,11 +85,14 @@ export function readEnvironmentStore(
   }
   return {
     version: 1,
-    environments: store.environments
-      .filter((environment) => !isHidden(environment.id))
-      .map((environment) =>
-        overlayRuntimeEnvironmentSidecar(environment, sidecar.entries[environment.id])
-      )
+    environments: overlayWslHostDeployments(
+      store.environments
+        .filter((environment) => !isHidden(environment.id))
+        .map((environment) =>
+          overlayRuntimeEnvironmentSidecar(environment, sidecar.entries[environment.id])
+        ),
+      wslDeployments
+    )
   }
 }
 

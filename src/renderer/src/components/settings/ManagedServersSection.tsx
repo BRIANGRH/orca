@@ -2,7 +2,10 @@ import { Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
 import type { OrcadManagedPendingMigrationRow } from '../../../../shared/orcad-managed-runtime'
-import type { PublicKnownRuntimeEnvironment } from '../../../../shared/runtime-environments'
+import {
+  getOrcadSshDeployment,
+  type PublicKnownRuntimeEnvironment
+} from '../../../../shared/runtime-environments'
 import type { SshTarget } from '../../../../shared/ssh-types'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import { translate } from '@/i18n/i18n'
@@ -61,7 +64,7 @@ export function ManagedServersSection({
   const paired = environments.filter((environment) => !environment.orcadDeployment)
   // Why: a host that already runs, or is moving to, a managed server can't take another.
   const busyTargetIds = new Set([
-    ...managed.map((environment) => environment.orcadDeployment?.sshTargetId),
+    ...managed.map((environment) => getOrcadSshDeployment(environment)?.sshTargetId),
     ...pending.map((row) => row.sshTargetId)
   ])
   const emptyTargets = targets.filter(

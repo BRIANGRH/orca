@@ -1,4 +1,5 @@
 import { resolveEnvironment } from '../../shared/runtime-environment-store'
+import { getOrcadSshDeployment } from '../../shared/runtime-environments'
 import type {
   SshManagedServerStatus,
   SshManagedServerUpdateNote,
@@ -32,7 +33,7 @@ export async function resolveManagedRuntimeEnvironment(
   const createDeps = () => ({
     ...managedServerUpdateDeps(userDataPath),
     target: () => {
-      const targetId = environment.orcadDeployment?.sshTargetId
+      const targetId = getOrcadSshDeployment(environment)?.sshTargetId
       return targetId ? (getSshTargetRegistryStore()?.getTarget(targetId) ?? null) : null
     },
     publish: publishRestoreUpdate
