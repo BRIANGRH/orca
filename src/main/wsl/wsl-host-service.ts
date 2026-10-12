@@ -41,6 +41,8 @@ export type WslHostConnector = {
   connect(distro: string): Promise<WslOrcadConnection>
   get(distro: string): WslOrcadConnection | null
   disconnect(distro: string): Promise<void>
+  /** Ends orcad in a running distro; never boots one. */
+  stopServer(distro: string, pid: number): Promise<void>
   releaseHolder(distro: string): Promise<void>
   adoptHolders(): Promise<void>
   dispose(): Promise<void>
@@ -143,8 +145,15 @@ export class WslHostService {
     }
     const connector = this.connector
     if (connector) {
+      const pid = connector.get(record.distro)?.pid ?? null
       await connector.disconnect(record.distro)
-      // The distro then idles out on WSL's own schedule, and orcad with it.
+      // Only a connected server is stopped now; booting a stopped distro to stop it would be absurd.
+      if (pid !== null) {
+        await connector.stopServer(record.distro, pid).catch((error: unknown) => {
+          console.warn(`[wsl-hosts] Could not stop the Orca server in ${record.distro}:`, error)
+        })
+      }
+      // Without its holder the distro idles out, and any server still in it with it.
       await connector.releaseHolder(record.distro)
     }
     removeWslHostEnvironment(this.deps.userDataPath(), environmentId)

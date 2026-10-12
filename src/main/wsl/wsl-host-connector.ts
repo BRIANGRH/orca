@@ -1,4 +1,6 @@
 /** The production WSL side of `WslHostService`: one holder, connection manager and supervisor. */
+import { execCommand } from '../ssh/ssh-relay-exec-command'
+import { isWslDistroRunning } from '../wsl-background-distro-gate'
 import { createWslDistroHolder } from './wsl-distro-holder'
 import { listWslHostDistros } from './wsl-host-distro-list'
 import type { WslHostConnector } from './wsl-host-service'
@@ -11,6 +13,12 @@ import { defaultWslOrcadEnvironmentId } from './wsl-orcad-deploy'
 import { createWslOrcadHostTransport } from './wsl-orcad-host-transport'
 import { createWslOrcadLivenessSupervisor } from './wsl-orcad-liveness-wiring'
 import type { WslOrcadLivenessSupervisor } from './wsl-orcad-liveness-supervisor'
+
+function transportFor(distro: string) {
+  return createWslOrcadHostTransport({
+    target: { kind: 'wsl', id: defaultWslOrcadEnvironmentId(distro), distro, label: distro }
+  })
+}
 
 export function createWslHostConnector(options: {
   userDataPath: string
@@ -32,15 +40,16 @@ export function createWslHostConnector(options: {
   supervisor = liveness
   return {
     listDistros: () => listWslHostDistros(),
-    readOrcadPublicKey: (distro) =>
-      readWslDistroOrcadPublicKey(
-        createWslOrcadHostTransport({
-          target: { kind: 'wsl', id: defaultWslOrcadEnvironmentId(distro), distro, label: distro }
-        })
-      ),
+    readOrcadPublicKey: (distro) => readWslDistroOrcadPublicKey(transportFor(distro)),
     connect: (distro) => liveness.connect(distro),
     get: (distro) => manager.get(distro),
     disconnect: (distro) => liveness.stop(distro),
+    stopServer: async (distro, pid) => {
+      if (!(await isWslDistroRunning(distro))) {
+        return
+      }
+      await execCommand(transportFor(distro), `kill ${Math.trunc(pid)} 2>/dev/null || true`)
+    },
     releaseHolder: async (distro) => {
       await holder.release(distro)
     },

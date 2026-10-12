@@ -48,6 +48,7 @@ function makeConnector(distros: WslHostDistroCandidate[]) {
     disconnect: vi.fn(async (distro: string) => {
       active.delete(distro.toLowerCase())
     }),
+    stopServer: vi.fn(async (_distro: string, _pid: number) => {}),
     releaseHolder: vi.fn(async (_distro: string) => {}),
     adoptHolders: vi.fn(async () => {}),
     dispose: vi.fn(async () => {})
@@ -245,7 +246,7 @@ describe('WslHostService', () => {
     expect(listEnvironments(userDataPath)).toEqual([])
   })
 
-  it('removes a host: closes its connection, releases the holder, drops both records', async () => {
+  it('removes a host: closes its connection, stops its server, releases the holder, drops both records', async () => {
     const connector = makeConnector([UBUNTU])
     const service = makeService(connector)
     await service.add({ distro: 'Ubuntu' })
@@ -253,6 +254,7 @@ describe('WslHostService', () => {
     await service.remove('wsl:ubuntu')
 
     expect(connector.disconnect).toHaveBeenCalledWith('Ubuntu')
+    expect(connector.stopServer).toHaveBeenCalledWith('Ubuntu', 10)
     expect(connector.releaseHolder).toHaveBeenCalledWith('Ubuntu')
     expect(listEnvironments(userDataPath)).toEqual([])
     expect(findWslHostDeployment(userDataPath, 'wsl:ubuntu')).toBeNull()
