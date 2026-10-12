@@ -48,14 +48,10 @@ export function agentLaunchOperationCallerKey(context: Pick<RpcContext, 'caller'
  * `agent.launch` raises its refusals as the thrown code, the way the method's own guards do, so a
  * refusal here carries whatever code the operation recorded rather than the closed `agentSession.*`
  * envelope. An `AgentSessionWireRefusal` still fits, which is how the shared replay resolver's
- * answers pass through unchanged.
+ * answers pass through unchanged. `said` is the words a failed launch was refused with, for its
+ * replay to repeat.
  */
-export type AgentLaunchRefusal = {
-  code: string
-  message: string
-  /** The words the failed launch was refused with, for its replay to repeat. */
-  said?: string
-}
+export type AgentLaunchRefusal = { code: string; message: string; said?: string }
 
 export type AgentLaunchAdmission =
   /** This caller owns the operation. It alone runs the effect, and it must settle the row. */

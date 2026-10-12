@@ -17,8 +17,8 @@ import { FolderWorkspaceCreateRefusedError } from '../../../project-groups/folde
 
 /** Long enough for every code this path raises, with room for one a later guard adds. */
 const LAUNCH_FAILURE_CODE_MAX_LENGTH = 128
-/** A path as long as Linux's PATH_MAX, after its code. */
-const FOLDER_CREATE_REFUSAL_MAX_LENGTH = 4096 + LAUNCH_FAILURE_CODE_MAX_LENGTH
+/** Refusal text that may name a path as long as Linux's PATH_MAX, after its code. */
+const REFUSAL_TEXT_MAX_LENGTH = 4096 + LAUNCH_FAILURE_CODE_MAX_LENGTH
 
 /**
  * This path raises its refusals as the thrown code, the way the method's own guards do — and the
@@ -39,7 +39,7 @@ export function agentLaunchFailureCode(error: unknown): string {
 /** A coded refusal's own words, kept beside its code so a replay says the same; bounded likewise. */
 export function agentLaunchFailureMessage(error: unknown): string | undefined {
   return error instanceof OrchestrationError
-    ? error.message.slice(0, FOLDER_CREATE_REFUSAL_MAX_LENGTH)
+    ? error.message.slice(0, REFUSAL_TEXT_MAX_LENGTH)
     : undefined
 }
 
@@ -51,7 +51,7 @@ export function agentLaunchFailureMessage(error: unknown): string | undefined {
 function folderCreateRefusalCode(error: FolderWorkspaceCreateRefusedError): string {
   const { message } = error
   const pathStart = message.indexOf(':')
-  return message.length <= FOLDER_CREATE_REFUSAL_MAX_LENGTH || pathStart === -1
+  return message.length <= REFUSAL_TEXT_MAX_LENGTH || pathStart === -1
     ? message
     : message.slice(0, pathStart)
 }
