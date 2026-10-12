@@ -135,15 +135,16 @@ async function checkWindowsFolderPicker(
   await cdp.send('Emulation.setUserAgentOverride', {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Electron'
   })
-  const pickFolder = async (picked: string): Promise<string | undefined> => {
+  const pickFolder = async (picked: string): Promise<void> => {
     await app.evaluate(({ dialog }, filePath) => {
-      const state = globalThis as { c8PickerDefaultPath?: string }
+      Reflect.set(globalThis, 'c8PickerDefaultPath', null)
       dialog.showOpenDialog = async (...args: unknown[]) => {
         const options = args.at(-1)
-        state.c8PickerDefaultPath =
+        const defaultPath =
           typeof options === 'object' && options !== null && 'defaultPath' in options
             ? String(options.defaultPath)
-            : undefined
+            : 'none'
+        Reflect.set(globalThis, 'c8PickerDefaultPath', defaultPath)
         return { canceled: false, filePaths: [filePath] }
       }
     }, picked)
@@ -152,14 +153,20 @@ async function checkWindowsFolderPicker(
     await dialog.getByRole('combobox').click()
     await page.locator('[cmdk-item]').filter({ hasText: WSL_HOST_LABEL }).click()
     await dialog.getByRole('button', { name: /Browse folder|Browse host/i }).click()
-    return app.evaluate(() => (globalThis as { c8PickerDefaultPath?: string }).c8PickerDefaultPath)
   }
+  const pickerDefaultPath = (): Promise<string | null> =>
+    app.evaluate((): string | null => {
+      const value: unknown = Reflect.get(globalThis, 'c8PickerDefaultPath')
+      return typeof value === 'string' ? value : null
+    })
 
   // A pick through the lowercase share name lands as the host's Linux path.
   const uncPick = `\\\\wsl.localhost\\ubuntu${projectPath.replace(/\//g, '\\')}`
-  expect(await pickFolder(uncPick)).toMatch(/^\\\\wsl\.localhost\\Ubuntu\\/)
+  await pickFolder(uncPick)
   const manual = page.getByRole('dialog', { name: /Open host project/i })
-  await expect(manual.locator('#server-project-path')).toHaveValue(projectPath)
+  await expect(manual.locator('#server-project-path')).toHaveValue(projectPath, { timeout: 30_000 })
+  // It opened at the host's home, spelled through the distro's canonical name.
+  expect(await pickerDefaultPath()).toMatch(/^\\\\wsl\.localhost\\Ubuntu\\/)
   await settleAnimations(page)
   await page.screenshot({ path: testInfo.outputPath('wsl-windows-folder-picker-filled.png') })
   await page.keyboard.press('Escape')
@@ -245,6 +252,9 @@ test('adds a WSL distro as a host, adds a project on it, and runs a terminal the
     await dialog.getByRole('button', { name: /Browse folder|Browse host/i }).click()
     const browse = page.getByRole('dialog', { name: /Browse host filesystem/i })
     await expect(browse).toBeVisible()
+    // Off Windows, Browse keeps the in-app browser; C8's Windows picker is checked further down.
+    await settleAnimations(page)
+    await page.screenshot({ path: testInfo.outputPath('wsl-browse-in-app.png') })
     await browse.getByRole('button', { name: /^Cancel$/i }).click()
     const manual = page.getByRole('dialog', { name: /Open host project/i })
     await manual.locator('#server-project-path').fill(projectPath)
