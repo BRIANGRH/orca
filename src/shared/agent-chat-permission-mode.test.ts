@@ -88,10 +88,14 @@ describe('the new-chat setting as loaded', () => {
     )
   })
 
-  it('seeds mixed Agent Permissions as Ask', () => {
-    const terminal = applyAgentPermissionMode({ mode: 'yolo' })
-    terminal.agentDefaultArgs.claude = ''
-    expect(loadedChatPermissionSetting(undefined, terminal)).toBe('ask')
+  // The Yolo/Manual toggle shows Yolo for mixed, so the chat default follows what it shows.
+  it('seeds mixed Agent Permissions as Full access', () => {
+    const oneManual = applyAgentPermissionMode({ mode: 'yolo' })
+    oneManual.agentDefaultArgs.claude = ''
+    expect(loadedChatPermissionSetting(undefined, oneManual)).toBe('full-access')
+    const extraFlag = applyAgentPermissionMode({ mode: 'yolo' })
+    extraFlag.agentDefaultArgs.claude = '--dangerously-skip-permissions --model opus'
+    expect(loadedChatPermissionSetting(undefined, extraFlag)).toBe('full-access')
   })
 
   it('seeds a fresh profile from the shipped Yolo defaults', () => {

@@ -112,5 +112,6 @@ export function loadedChatPermissionSetting(
   if (saved !== undefined) {
     return isAgentChatPermissionMode(saved) ? saved : 'ask'
   }
-  return resolveAgentPermissionModeSummary(terminal) === 'yolo' ? 'full-access' : 'ask'
+  // As the Yolo/Manual toggle shows it: agents set differently ("mixed") still show Yolo.
+  return resolveAgentPermissionModeSummary(terminal) === 'manual' ? 'ask' : 'full-access'
 }
