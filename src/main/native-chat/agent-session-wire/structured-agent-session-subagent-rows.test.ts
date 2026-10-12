@@ -4,12 +4,14 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_JOURNAL_THREAD_SCOPE } from '../../../shared/agent-session-journal-types'
 import { agentJournalTurnBody } from '../../../shared/agent-session-turn-record'
-import type { AgentChildWorkRowView } from '../../../shared/agent-status-child-work-view'
 import { isSubagentBlock } from '../../../shared/native-chat-types'
 import { claudeProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import { createTrackedJournalOpener } from '../agent-session-journal/journal-host-database-test-support'
-import { StructuredAgentSessionSubagentRows } from './structured-agent-session-subagent-rows'
+import {
+  StructuredAgentSessionSubagentRows,
+  type AgentChildWorkRowView
+} from './structured-agent-session-subagent-rows'
 
 const journals = createTrackedJournalOpener()
 let root: string

@@ -17,10 +17,8 @@ import type {
   AgentSessionStatusSummary
 } from '../../../shared/agent-session-wire'
 import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
-import type {
-  AgentChildWorkRowView,
-  AgentChildWorkView
-} from '../../../shared/agent-status-child-work-view'
+import type { AgentChildWorkRecord } from '../../../shared/agent-status-child-work'
+import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { StructuredAgentSessionProviderChild } from './structured-agent-session-host-types'
 import { structuredAgentSessionStatusSummary } from './structured-agent-session-status-summary'
@@ -333,10 +331,10 @@ export class StructuredAgentSessionStatusFeed {
   childWorkIncomplete = (sessionId: string): boolean =>
     this.ownership.childWorkIncomplete(sessionId)
 
-  /** The same records with what a subagent's saved row also keeps. Read only from the child-work
-   *  observer, which already reports a failure. */
-  readChildWorkRows = (sessionId: string): AgentChildWorkRowView[] | undefined =>
-    this.ownership.readChildWorkRows(sessionId)
+  /** The records the views project. Read only from the child-work observer, which already
+   *  reports a failure. */
+  readChildWorkRecords = (sessionId: string): AgentChildWorkRecord[] | undefined =>
+    this.ownership.readChildWorkRecords(sessionId)
 
   private admitChildWork(
     sessionId: string,

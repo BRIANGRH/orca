@@ -145,23 +145,3 @@ export function projectAgentChildWorkViews(
     }
   })
 }
-
-/** A view plus the host-only facts a subagent's saved row also keeps: how its ending was learned,
- *  and whether it was told to outlive its turn. Read on the host only, never sent to a client. */
-export type AgentChildWorkRowView = AgentChildWorkView &
-  Pick<AgentChildWorkInput, 'outcomeBasis' | 'residency'>
-
-export function projectAgentChildWorkRowViews(
-  records: readonly AgentChildWorkInput[],
-  aliases: readonly AgentChildWorkViewAlias[]
-): AgentChildWorkRowView[] {
-  const byId = new Map(records.map((record) => [record.childWorkId, record]))
-  return projectAgentChildWorkViews(records, aliases).map((view) => {
-    const record = byId.get(view.id)
-    return {
-      ...view,
-      ...(record?.outcomeBasis !== undefined ? { outcomeBasis: record.outcomeBasis } : {}),
-      ...(record?.residency !== undefined ? { residency: record.residency } : {})
-    }
-  })
-}

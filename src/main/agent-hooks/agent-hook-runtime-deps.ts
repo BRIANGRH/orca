@@ -34,7 +34,7 @@ export function agentHookRuntimeDeps(
       publishChildWork: (subject, evidence, provider) =>
         server.ingestStructuredChildWork(subject, evidence, provider),
       readChildWork: (subject) => server.getStructuredChildWorkViews(subject),
-      readChildWorkRows: (subject) => server.getStructuredChildWorkRows(subject)
+      readChildWorkRecords: (subject) => server.getStructuredChildWork(subject)
     },
     checkHookAgentPresence: (paneKey) => server.checkAgentPresence(paneKey),
     reconcileAgentStatusForEndedProcess: (paneKeys) =>

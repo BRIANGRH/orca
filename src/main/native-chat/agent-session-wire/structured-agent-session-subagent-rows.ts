@@ -12,7 +12,8 @@ import {
   AGENT_JOURNAL_THREAD_SCOPE,
   type AgentJournalTurnScope
 } from '../../../shared/agent-session-journal-types'
-import type { AgentChildWorkRowView } from '../../../shared/agent-status-child-work-view'
+import type { AgentChildWorkInput } from '../../../shared/agent-status-child-work'
+import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import type {
   NativeChatSubagentBlock,
   NativeChatSubagentState
@@ -26,6 +27,10 @@ import {
 
 const UNNAMED = 'subagent'
 const THREAD_GROUP = 'thread'
+
+/** A child's view, with the host-only facts its saved row also keeps. */
+export type AgentChildWorkRowView = AgentChildWorkView &
+  Pick<AgentChildWorkInput, 'outcomeBasis' | 'residency'>
 
 type Row = { block: NativeChatSubagentBlock; turnScope: AgentJournalTurnScope }
 

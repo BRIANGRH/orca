@@ -18,7 +18,7 @@ export function acpChildWorkStatusSink() {
     publishChildWork: (subject, evidence, provider) =>
       server.ingestStructuredChildWork(subject, evidence, provider),
     readChildWork: (subject) => server.getStructuredChildWorkViews(subject),
-    readChildWorkRows: (subject) => server.getStructuredChildWorkRows(subject)
+    readChildWorkRecords: (subject) => server.getStructuredChildWork(subject)
   }
   return { sink, views: () => (parent ? server.getStructuredChildWorkViews(parent) : []) }
 }

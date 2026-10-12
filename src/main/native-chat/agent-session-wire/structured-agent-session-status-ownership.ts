@@ -5,10 +5,8 @@ import type {
 import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
 import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
 import type { AgentChildWorkReconcileOutcome } from '../../../shared/agent-status-child-work-evidence-admission'
-import type {
-  AgentChildWorkRowView,
-  AgentChildWorkView
-} from '../../../shared/agent-status-child-work-view'
+import type { AgentChildWorkRecord } from '../../../shared/agent-status-child-work'
+import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import {
   parseAgentStatusSubject,
   serializeAgentStatusSubject,
@@ -29,8 +27,8 @@ export type StructuredAgentSessionStatusSink = {
   ) => AgentChildWorkReconcileOutcome | null | void
   /** The child records the sink holds for that subject, as the views every surface reads. */
   readChildWork?: (subject: AgentStatusStructuredSessionSubject) => AgentChildWorkView[]
-  /** The same, with what a subagent's saved row also keeps. */
-  readChildWorkRows?: (subject: AgentStatusStructuredSessionSubject) => AgentChildWorkRowView[]
+  /** The records those views project, with the host-only facts no view carries. */
+  readChildWorkRecords?: (subject: AgentStatusStructuredSessionSubject) => AgentChildWorkRecord[]
 }
 
 /** The store's limits refusing a record: the per-session one, and the store's own. */
@@ -153,10 +151,10 @@ export class StructuredAgentSessionStatusOwnership {
     return subject && this.landed.has(sessionId) ? this.sink()?.readChildWork?.(subject) : undefined
   }
 
-  readChildWorkRows(sessionId: string): AgentChildWorkRowView[] | undefined {
+  readChildWorkRecords(sessionId: string): AgentChildWorkRecord[] | undefined {
     const subject = this.subjects.get(sessionId)
     return subject && this.landed.has(sessionId)
-      ? this.sink()?.readChildWorkRows?.(subject)
+      ? this.sink()?.readChildWorkRecords?.(subject)
       : undefined
   }
 

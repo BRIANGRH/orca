@@ -30,7 +30,20 @@ export function createStructuredAgentSessionHostStatusFeed(args: {
   const subagentRows = new StructuredAgentSessionSubagentRows({
     journal: (sessionId) => args.sessions.get(sessionId)?.journal,
     fence: (sessionId) => structuredAgentSessionConversationFence(args.deps().store, sessionId),
-    readChildWork: (sessionId) => feed.readChildWorkRows(sessionId),
+    // The views, with the two host-only facts a saved row also keeps from their records.
+    readChildWork: (sessionId) => {
+      const records = new Map(
+        feed.readChildWorkRecords(sessionId)?.map((record) => [record.childWorkId, record])
+      )
+      return feed.readChildWork(sessionId)?.map((view) => {
+        const { residency, outcomeBasis } = records.get(view.id) ?? {}
+        return {
+          ...view,
+          ...(residency ? { residency } : {}),
+          ...(outcomeBasis ? { outcomeBasis } : {})
+        }
+      })
+    },
     onWriteFailed: (sessionId, error) =>
       args.deps().logger.warn('writing a subagent row failed', {
         scope: 'subagent-rows',
