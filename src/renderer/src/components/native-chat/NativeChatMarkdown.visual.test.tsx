@@ -386,6 +386,23 @@ describe('NativeChatMarkdown visuals', () => {
       expect(frameDocument(container)).toContain('<p>v</p>')
     })
 
+    it('keeps the hover toolbar shown while its Share popover is open', async () => {
+      const { container } = render(
+        withOwner(<NativeChatMarkdown content={LINE} visualMessageId="m1" />)
+      )
+      await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+      const toolbar = screen.getByRole('button', SHARE).parentElement
+      expect(toolbar).toHaveClass('data-[share-open=true]:opacity-100')
+      expect(toolbar).toHaveAttribute('data-share-open', 'false')
+
+      fireEvent.click(screen.getByRole('button', SHARE))
+      await screen.findByRole('button', { name: 'Generate link' })
+      expect(toolbar).toHaveAttribute('data-share-open', 'true')
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+      await waitFor(() => expect(toolbar).toHaveAttribute('data-share-open', 'false'))
+    })
+
     it('is not offered for an unavailable visual or before a floating chat is pinned', async () => {
       fileLink.hostResolved = false
       const { container } = render(

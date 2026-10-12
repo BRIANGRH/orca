@@ -44,6 +44,8 @@ export function NativeChatInlineVisual({
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [near, setNear] = useState(false)
   const [retired, setRetired] = useState(false)
+  // Share's popover is portalled and takes focus, so hover and focus-within can't hold the toolbar.
+  const [shareOpen, setShareOpen] = useState(false)
   // Null until a floating chat's folder is pinned: the placeholder shows and nothing is read.
   const fileLinkContext = useNativeChatFileLinkContext(owner.tabId)
   // Why the connection too: an SSH workspace's host can resolve after its context does.
@@ -91,7 +93,10 @@ export function NativeChatInlineVisual({
             onRetired={() => setRetired(true)}
           />
           {fileLinkContext ? (
-            <div className="absolute top-2 right-2 flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5 shadow-xs transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100">
+            <div
+              data-share-open={shareOpen}
+              className="absolute top-2 right-2 flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5 shadow-xs transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100 data-[share-open=true]:opacity-100"
+            >
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -111,6 +116,8 @@ export function NativeChatInlineVisual({
                 <ArtifactPublishButton
                   sourceKey={nativeChatVisualArtifactSourceKey(file)}
                   createRequest={() => readNativeChatVisualArtifactRequest(file, showDocument)}
+                  open={shareOpen}
+                  onOpenChange={setShareOpen}
                 />
               ) : null}
             </div>
