@@ -58,3 +58,23 @@ export function useResumeRunHostStatus(
     return owner.getSessionObservation(sessionId) === 'live' ? snapshot.get(sessionId) : undefined
   }
 }
+
+/** Missing inventory is unknown; a lost status stream does not close an open tab. */
+export function useResumeRunInventory(
+  run: ResumeRun | null
+): (sessionId: string) => 'open' | 'closed' | 'unknown' {
+  const tabs = useAppStore((state) => state.unifiedTabsByWorktree)
+  const entries = new Map(run?.entries.map((entry) => [entry.candidate.sessionId, entry.candidate]))
+  return (sessionId) => {
+    const candidate = entries.get(sessionId)
+    const workspaceTabs = candidate ? tabs[candidate.workspaceId] : undefined
+    if (!workspaceTabs) {
+      return 'unknown'
+    }
+    return workspaceTabs.some(
+      (tab) => tab.contentType === 'agent-session' && tab.entityId === sessionId
+    )
+      ? 'open'
+      : 'closed'
+  }
+}

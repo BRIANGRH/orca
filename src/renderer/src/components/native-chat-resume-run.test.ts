@@ -7,6 +7,7 @@ import {
   resumeRunPendingIds,
   type ResumeRunHostStatus
 } from './native-chat-resume-run'
+import type { AgentJournalSubmission } from '../../../shared/agent-session-journal-types'
 import { resumeRunView } from './native-chat-resume-run-view'
 
 const row = (sessionId: string): ResumeCandidate => ({
@@ -118,22 +119,27 @@ describe('the dialog over a bulk action', () => {
     expect(view.statusBySession.get('a')?.kind).toBe('in-flight')
   })
 
-  it('withdrawn and dismissed failures leave Need you after the reply', () => {
+  it('keeps absent unknown rows in attention until inventory explicitly says closed', () => {
     const finished = {
       ...run,
       inFlight: false,
       continued: [{ sessionId: 'a', outcome: 'unknown' as const }]
     }
-    const failed = resumeRunView(
+    expect(resumeRunView(finished, [], () => undefined, 'attention').rows).toEqual([
+      row('a'),
+      row('b')
+    ])
+    const closed = resumeRunView(
       finished,
-      [failure],
-      (id) => (id === 'a' ? failure : undefined),
-      'attention'
+      [],
+      () => undefined,
+      'attention',
+      undefined,
+      true,
+      () => 'closed'
     )
-    expect(failed.rows).toEqual([failure])
-    const withdrawn = resumeRunView(finished, [], () => undefined, 'attention')
-    expect(withdrawn.rows).toEqual([])
-    expect(withdrawn.counts.attention).toBe(0)
+    expect(closed.rows).toEqual([])
+    expect(closed.counts.attention).toBe(0)
   })
 
   it('retains successful history but always shows current host failures', () => {
@@ -145,18 +151,34 @@ describe('the dialog over a bulk action', () => {
         { sessionId: 'b', outcome: 'refused' as const }
       ]
     }
+    const submission: AgentJournalSubmission = {
+      clientMessageId: 'manual',
+      fence: 2,
+      payloadFingerprint: 'payload',
+      dispatchState: 'accepted',
+      providerItemId: 'provider',
+      reason: null,
+      submittedAt: 1,
+      resolvedAt: 2,
+      submittedSequence: 2,
+      source: { kind: 'user' }
+    }
     const recovered = resumeRunView(
       {
         ...finished,
         entries: finished.entries.map((entry) => ({
           ...entry,
-          observedStatus: { latestPrompt: '' }
+          sourceCursor: { epoch: 'epoch', sequence: 1 },
+          userRequest: {
+            epoch: 'epoch',
+            submission,
+            offer: { listedAt: 3 }
+          }
         }))
       },
       [],
       () => undefined,
-      'resumed',
-      () => ({ latestPrompt: 'Continue', turnOutcome: 'success' })
+      'resumed'
     )
     expect(recovered.rows).toEqual([row('a'), row('b')])
     expect(recovered.statusBySession.get('b')).toEqual({ kind: 'resumed-by-user' })
@@ -164,7 +186,10 @@ describe('the dialog over a bulk action', () => {
       finished,
       [failure],
       (id) => (id === 'a' ? failure : undefined),
-      'attention'
+      'attention',
+      undefined,
+      true,
+      (id) => (id === 'b' ? 'closed' : 'open')
     )
     expect(failed.rows).toEqual([failure])
     expect(failed.statusBySession.has('a')).toBe(false)

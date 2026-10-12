@@ -1,3 +1,8 @@
+import {
+  createResumeOfferRead,
+  restartOfferFailures,
+  type HostOfferPayload
+} from './native-chat-resume-offer-read'
 import { useEffect, useSyncExternalStore } from 'react'
 import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
 import { getStructuredAgentSessionStatusFeed } from '@/runtime/structured-agent-session-status-feed'
@@ -16,7 +21,6 @@ import {
 import {
   beginResumeRun,
   finishResumeRun,
-  markResumeRunDismissed,
   resumeRunInFlight,
   resumeRunPendingIds,
   type ResumeRun,
@@ -32,6 +36,11 @@ import {
   requestNativeChatResumeOnRestartDialog
 } from './native-chat-resume-on-restart-dialog'
 import { createOfferedChatWatch } from './native-chat-resume-offered-chat-watch'
+import { watchResumeRunSource } from './native-chat-resume-run-source'
+import {
+  captureResumeRunSource,
+  captureResumeRunDismissal
+} from './native-chat-resume-run-source-cursor'
 import { watchResumeRunStatus } from './native-chat-resume-run-status-watch'
 
 /**
@@ -69,6 +78,7 @@ let actionsBegun = 0
 let actionsSettled = 0
 /** Memory-only history: retires after viewing and closing its finished summary, or on replacement. */
 let run: ResumeRun | null = null
+let sourceWatch: ReturnType<typeof watchResumeRunSource> | undefined
 let releaseRunStatus: (() => void) | undefined
 let resuming: readonly string[] = resumeRunPendingIds(null)
 const listeners = new Set<() => void>()
@@ -94,6 +104,7 @@ function publish(next: NativeChatRestartOffer): void {
 function publishAnswer(answer: Omit<NativeChatRestartOffer, 'available'>): void {
   const next = withUnsentResumes({ ...answer, available: true })
   publish(next)
+  sourceWatch?.offerChanged()
   if (next.candidates.length === 0 && next.failed.length === 0 && run === null) {
     consumeNativeChatResumeOnRestartDialogRequest()
   }
@@ -101,6 +112,10 @@ function publishAnswer(answer: Omit<NativeChatRestartOffer, 'available'>): void 
 
 function setRun(next: ResumeRun | null): void {
   run = next
+  if (!next) {
+    sourceWatch?.release()
+    sourceWatch = undefined
+  }
   const pending = resumeRunPendingIds(next)
   // Same ids, same array, so readers of `resuming` re-render only when it changes.
   resuming = pending.join('\0') === resuming.join('\0') ? resuming : pending
@@ -113,25 +128,21 @@ const offeredChatWatch = createOfferedChatWatch({
   feed: () => getStructuredAgentSessionStatusFeed(LOCAL),
   offeredIds: () => new Set([...offer.candidates, ...offer.failed].map((entry) => entry.sessionId)),
   listedAt: () => offer.listedAt,
-  refresh: () => {
-    if (actionsBegun === actionsSettled) {
-      const issued = actionsBegun
-      void readNativeChatRestartOffer(() => actionsBegun === issued)
-    }
-  }
+  refresh: refreshCurrentNativeChatRestartOffer
 })
 
-export function getNativeChatRestartOffer(): NativeChatRestartOffer {
-  return offer
+async function refreshCurrentNativeChatRestartOffer(): Promise<void> {
+  if (actionsBegun === actionsSettled) {
+    const issued = actionsBegun
+    await readNativeChatRestartOffer(() => actionsBegun === issued)
+  }
 }
 
-export function getNativeChatRestartResuming(): readonly string[] {
-  return resuming
-}
+export const getNativeChatRestartOffer = (): NativeChatRestartOffer => offer
 
-export function getNativeChatRestartRun(): ResumeRun | null {
-  return run
-}
+export const getNativeChatRestartResuming = (): readonly string[] => resuming
+
+export const getNativeChatRestartRun = (): ResumeRun | null => run
 
 /** A finished summary must be shown before closing can retire it. */
 export function markFinishedNativeChatRestartRunShown(shown: ResumeRun): void {
@@ -158,46 +169,9 @@ function subscribe(listener: () => void): () => void {
  *
  * Called before the dialog is reopened, so a count can never name a chat the host would now refuse.
  */
-type HostOfferRead = {
-  candidates: readonly ResumeCandidate[]
-  failed: readonly ResumeFailure[]
-  available: boolean
-}
-
-/** The host's answer as this side understands it. `failed` is optional on the wire: an older host
- *  never sends it, and its absence means nothing to show, not an invalid answer. */
-type HostOfferPayload = { sessions?: unknown; failed?: unknown }
-
-function failedFrom(payload: HostOfferPayload): ResumeFailure[] {
-  // SAFETY: the host is the single writer of this shape; a malformed row is a host bug, not input.
-  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: see above.
-  return Array.isArray(payload.failed) ? (payload.failed as ResumeFailure[]) : []
-}
-
-async function readNativeChatRestartOffer(current = () => true): Promise<HostOfferRead> {
-  try {
-    const offered = await callStructuredAgentSession<HostOfferPayload>(
-      LOCAL,
-      'agentSession.restartResumable'
-    )
-    if (!Array.isArray(offered.sessions)) {
-      throw new Error('agent_session_restart_offer_invalid')
-    }
-    const failed = failedFrom(offered)
-    if (current()) {
-      publishAnswer({ candidates: offered.sessions, failed, listedAt: Date.now() })
-    }
-    return { candidates: offered.sessions, failed, available: true }
-  } catch {
-    // A failed read is not an answer. Hide the last snapshot so a modal can never present a
-    // candidate the host has not confirmed; the durable record remains and a later refresh can
-    // restore it.
-    if (current()) {
-      publish({ ...EMPTY, listedAt: Date.now() })
-    }
-    return { candidates: [], failed: [], available: false }
-  }
-}
+const readNativeChatRestartOffer = createResumeOfferRead(LOCAL, publishAnswer, () =>
+  publish({ ...EMPTY, listedAt: Date.now() })
+)
 
 export async function refreshNativeChatRestartOffer(): Promise<void> {
   await readNativeChatRestartOffer()
@@ -224,13 +198,17 @@ export async function continueNativeChatRestartOffer(
   if (requested.length === 0) {
     return
   }
+  sourceWatch?.release()
+  sourceWatch = undefined
   actionsBegun += 1
   forgetUnsentResumes(requested)
   const rows = new Map([...offer.candidates, ...offer.failed].map((row) => [row.sessionId, row]))
-  let actionRun = beginResumeRun(
-    requested.flatMap((sessionId) => rows.get(sessionId) ?? []),
-    Date.now(),
-    startedBy
+  let actionRun = captureResumeRunSource(
+    beginResumeRun(
+      requested.flatMap((sessionId) => rows.get(sessionId) ?? []),
+      Date.now(),
+      startedBy
+    )
   )
   setRun(actionRun)
   releaseRunStatus?.()
@@ -250,7 +228,7 @@ export async function continueNativeChatRestartOffer(
     const result = await callStructuredAgentSession<
       HostOfferPayload & { continued?: RestartContinuationOutcome[]; skipped?: string[] }
     >(LOCAL, 'agentSession.restartContinue', { sessionIds: requested })
-    const listed = Array.isArray(result.failed) ? failedFrom(result) : undefined
+    const listed = Array.isArray(result.failed) ? restartOfferFailures(result) : undefined
     if (Array.isArray(result.sessions)) {
       publishAnswer({ candidates: result.sessions, failed: listed ?? [], listedAt: Date.now() })
     } else {
@@ -279,7 +257,21 @@ export async function continueNativeChatRestartOffer(
     actionsSettled += 1
     // Publish the offer first: reopening must never expose the old selection as actionable.
     if (run === actionRun) {
-      setRun(finishResumeRun(actionRun, skipped, continued, (id) => settledStatuses.get(id)))
+      setRun(
+        finishResumeRun(
+          actionRun,
+          skipped,
+          continued,
+          (id) => settledStatuses.get(id),
+          (id) => offer.failed.find((failure) => failure.sessionId === id)
+        )
+      )
+      sourceWatch = watchResumeRunSource({
+        current: () => run,
+        publish: setRun,
+        offer: getNativeChatRestartOffer,
+        refresh: refreshCurrentNativeChatRestartOffer
+      })
     }
   }
   announceRestartResults(...outcome)
@@ -293,6 +285,9 @@ export async function continueNativeChatRestartOffer(
  */
 export async function dismissNativeChatRestartOffer(sessionIds?: readonly string[]): Promise<void> {
   actionsBegun += 1
+  if (run && !run.inFlight) {
+    setRun(captureResumeRunDismissal(run, sessionIds, actionsBegun, () => run, setRun))
+  }
   try {
     const result = await callStructuredAgentSession<HostOfferPayload>(
       LOCAL,
@@ -307,7 +302,7 @@ export async function dismissNativeChatRestartOffer(sessionIds?: readonly string
     if (Array.isArray(result.sessions)) {
       publishAnswer({
         candidates: result.sessions,
-        failed: failedFrom(result),
+        failed: restartOfferFailures(result),
         listedAt: Date.now()
       })
     } else {
@@ -317,15 +312,6 @@ export async function dismissNativeChatRestartOffer(sessionIds?: readonly string
     await refreshNativeChatRestartOffer()
   } finally {
     actionsSettled += 1
-    if (offer.available && run && !run.inFlight) {
-      setRun(
-        markResumeRunDismissed(
-          run,
-          sessionIds,
-          [...offer.candidates, ...offer.failed].map((row) => row.sessionId)
-        )
-      )
-    }
   }
 }
 
@@ -392,6 +378,8 @@ export function useNativeChatRestartRun(): ResumeRun | null {
 
 /** @internal - tests need a clean module between cases. */
 export function _resetNativeChatRestartOffer(): void {
+  sourceWatch?.release()
+  sourceWatch = undefined
   releaseRunStatus?.()
   releaseRunStatus = undefined
   offeredChatWatch.release()

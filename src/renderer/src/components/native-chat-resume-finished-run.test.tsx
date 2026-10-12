@@ -1,8 +1,16 @@
 // @vitest-environment happy-dom
 import { act } from 'react'
-import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
+import {
+  getStructuredAgentSessionReadOwner,
+  retireStructuredAgentSessionReadOwner,
+  resetStructuredAgentSessionReadOwnersForTests
+} from './native-chat/structured-agent-session-read-owner'
+import type {
+  AgentSessionHistoryPage,
+  AgentSessionStatusSummary
+} from '../../../shared/agent-session-wire'
 import type { Tab } from '../../../shared/tab-types'
-import { expect, it, vi, type Mock } from 'vitest'
+import { expect, it, vi, beforeEach, afterEach, type Mock } from 'vitest'
 import { NativeChatResumeOnRestartModal } from './NativeChatResumeOnRestartModal'
 import { NativeChatResumeStatusSegment } from './status-bar/NativeChatResumeStatusSegment'
 import {
@@ -47,7 +55,16 @@ vi.mock('sonner', () => ({ toast: vi.fn() }))
 const { mount, button, fakeHost, runStatus, toasts } = createResumeModalFixture(rpc, statusStream)
 const dialog = () => document.querySelector('[role="dialog"]')?.textContent
 
-function manualActivity(changes: Partial<AgentSessionStatusSummary> = {}): void {
+const sourceSequences = new Map<string, number>()
+beforeEach(() => {
+  sourceSequences.clear()
+  resetStructuredAgentSessionReadOwnersForTests()
+})
+afterEach(() => resetStructuredAgentSessionReadOwnersForTests())
+function manualActivity(
+  changes: Partial<AgentSessionStatusSummary> = {},
+  proveSource = true
+): void {
   const tab: Tab = {
     id: 'tab-b',
     entityId: 'b',
@@ -75,6 +92,40 @@ function manualActivity(changes: Partial<AgentSessionStatusSummary> = {}): void 
   }
   statusStream.snapshot.set('b', session)
   statusStream.emit({ type: 'status', session })
+  if (proveSource) {
+    const sequence = (sourceSequences.get('b') ?? 0) + 1
+    sourceSequences.set('b', sequence)
+    const cursor = { epoch: 'resume-b', sequence }
+    const page: AgentSessionHistoryPage = {
+      sessionId: 'b',
+      epoch: cursor.epoch,
+      direction: 'tail',
+      items: [],
+      removedItemIds: [],
+      hasOlder: false,
+      hasNewer: false,
+      fence: 2,
+      liveCursor: cursor,
+      window: { oldest: null, newest: null, nextCursor: cursor },
+      submissions: [
+        {
+          clientMessageId: `user-${sequence}`,
+          fence: 2,
+          payloadFingerprint: 'payload',
+          dispatchState: session.turnOutcome === 'failure' ? 'rejected' : 'accepted',
+          providerItemId: `provider-${sequence}`,
+          reason: null,
+          submittedAt: 1,
+          resolvedAt: 2,
+          submittedSequence: sequence,
+          origin: 'client',
+          source: { kind: 'user' }
+        }
+      ]
+    }
+    retireStructuredAgentSessionReadOwner('b', { kind: 'local' })
+    getStructuredAgentSessionReadOwner('b', { kind: 'local' }).publishCreated(page)
+  }
 }
 
 async function mountSurfaces(): Promise<void> {
@@ -337,13 +388,16 @@ it('keeps older-host withdrawal without positive activity unconfirmed', async ()
   await mountSurfaces()
   await act(async () => button('Resume 2 chats').click())
   await act(async () =>
-    manualActivity({
-      latestPrompt: '',
-      status: 'idle',
-      statusStartedAt: undefined,
-      hostExecutionOwned: undefined,
-      hostExecutionPhase: undefined
-    })
+    manualActivity(
+      {
+        latestPrompt: '',
+        status: 'idle',
+        statusStartedAt: undefined,
+        hostExecutionOwned: undefined,
+        hostExecutionPhase: undefined
+      },
+      false
+    )
   )
   host.state.failed = []
   await act(async () => lastToastShow()?.())
@@ -359,7 +413,7 @@ it('keeps a closed chat visible without attributing its cached activity to a res
   const host = fakeHost({}, (sessionId) => (sessionId === 'a' ? 'continued' : 'refused'))
   await mountSurfaces()
   await act(async () => button('Resume 2 chats').click())
-  await act(async () => manualActivity())
+  await act(async () => manualActivity({}, false))
   await act(async () => useAppStore.setState({ unifiedTabsByWorktree: { workspace: [] } }))
   host.state.failed = []
   await act(async () => lastToastShow()?.())
@@ -367,6 +421,123 @@ it('keeps a closed chat visible without attributing its cached activity to a res
   expect(runStatus('Prompt b')).toBe('Prompt b: Couldn’t confirm the chat was resumed')
   expect(dialog()).toContain('Resumed 1 of 2 chats')
   expect(dialog()).toContain('Need you0')
+  await act(async () => button('Done').click())
+  expect(getNativeChatRestartRun()).toBeNull()
+})
+
+it.each(['later failure', 'closure'] as const)(
+  'keeps a proven manual recovery in the unseen result after %s',
+  async (later) => {
+    const host = fakeHost({}, (id) => (id === 'a' ? 'continued' : 'refused'))
+    await mountSurfaces()
+    await act(async () => button('Resume 2 chats').click())
+    await act(async () => manualActivity())
+    host.state.failed = []
+    await act(async () => refreshNativeChatRestartOffer())
+    expect(button('2 chats resumed')).toBeTruthy()
+    await act(async () =>
+      later === 'closure'
+        ? useAppStore.setState({ unifiedTabsByWorktree: { workspace: [] } })
+        : manualActivity({
+            status: 'idle',
+            turnOutcome: 'failure',
+            hostExecutionOwned: undefined,
+            hostExecutionPhase: undefined,
+            statusStartedAt: 3
+          })
+    )
+    expect(button('2 chats resumed')).toBeTruthy()
+    await act(async () => button('2 chats resumed').click())
+    expect(runStatus('Prompt b')).toBe('Prompt b: Resumed by you')
+    expect(dialog()).toContain('Resumed 2 of 2 chats')
+    expect(dialog()).toContain('Need you0')
+  }
+)
+
+it('keeps an open unknown row in attention when the status feed ends', async () => {
+  const host = fakeHost({}, (id) => (id === 'a' ? 'continued' : 'refused'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => manualActivity({}, false))
+  await act(async () => statusStream.emit({ type: 'end' }))
+  host.state.failed = []
+  await act(async () => refreshNativeChatRestartOffer())
+  expect(button('1 chat to check')).toBeTruthy()
+  await act(async () => lastToastShow()?.())
+  expect(dialog()).toContain('Need you1')
+})
+
+it('keeps dismissal provenance after losing both the reply and immediate reread', async () => {
+  const host = fakeHost({}, (id) => (id === 'a' ? 'continued' : 'unknown'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => manualActivity())
+  await act(async () => lastToastShow()?.())
+  rpc
+    .mockImplementationOnce(async () => {
+      host.state.failed = []
+      throw new Error('lost dismiss reply')
+    })
+    .mockImplementationOnce(async () => {
+      throw new Error('failed reread')
+    })
+  await act(async () => button('Dismiss "Prompt b" in workspace').click())
+  await act(async () => refreshNativeChatRestartOffer())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Couldn’t confirm the chat was resumed')
+  expect(dialog()).toContain('Resumed 1 of 2 chats')
+})
+
+it('uses a new user request identity for the same text after an already-ready unconfirmed run', async () => {
+  const host = fakeHost(
+    {},
+    (id) => (id === 'a' ? 'continued' : 'unknown'),
+    'unknown',
+    (id) =>
+      id === 'b' ? { hostExecutionOwned: true, hostExecutionPhase: 'ready', latestPrompt: '' } : {}
+  )
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () =>
+    manualActivity({ latestPrompt: '', statusStartedAt: 2, turnOutcome: 'success' })
+  )
+  host.state.failed = []
+  await act(async () => refreshNativeChatRestartOffer())
+  expect(button('2 chats resumed')).toBeTruthy()
+  await act(async () => lastToastShow()?.())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Resumed by you')
+})
+
+it('lets a genuinely later same-text user request supersede dismissal', async () => {
+  const host = fakeHost({}, (id) => (id === 'a' ? 'continued' : 'unknown'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => manualActivity())
+  await act(async () => lastToastShow()?.())
+  await act(async () => button('Dismiss "Prompt b" in workspace').click())
+  expect(dialog()).toContain('Resumed 1 of 2 chats')
+  await act(async () => manualActivity({ latestPrompt: '' }))
+  host.state.failed = []
+  await act(async () => refreshNativeChatRestartOffer())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Resumed by you')
+  expect(dialog()).toContain('Resumed 2 of 2 chats')
+})
+
+it('preserves established recovery through a failed reread without retiring the unseen result', async () => {
+  const host = fakeHost({}, (id) => (id === 'a' ? 'continued' : 'refused'))
+  await mountSurfaces()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => manualActivity())
+  host.state.failed = []
+  await act(async () => refreshNativeChatRestartOffer())
+  rpc.mockImplementationOnce(async () => {
+    throw new Error('unavailable reread')
+  })
+  await act(async () => lastToastShow()?.())
+  expect(runStatus('Prompt b')).toBe('Prompt b: Resumed by you')
+  expect(getNativeChatRestartRun()?.finishedViewShown).toBeUndefined()
+  await act(async () => button('Done').click())
+  expect(getNativeChatRestartRun()).not.toBeNull()
+  await act(async () => lastToastShow()?.())
   await act(async () => button('Done').click())
   expect(getNativeChatRestartRun()).toBeNull()
 })

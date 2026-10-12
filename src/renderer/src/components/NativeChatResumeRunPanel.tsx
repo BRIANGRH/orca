@@ -5,7 +5,7 @@ import { useNow } from '@/hooks/use-now'
 import type { ResumeCandidate, ResumeFailure } from './native-chat-resume-on-restart-grouping'
 import { resumeRunInFlight, type ResumeRun, type ResumeRunStarter } from './native-chat-resume-run'
 import { resumeRunView, type ResumeRunFilter } from './native-chat-resume-run-view'
-import { useResumeRunHostStatus } from './native-chat-resume-run-host-status'
+import { useResumeRunHostStatus, useResumeRunInventory } from './native-chat-resume-run-host-status'
 import { ResumeRunStatusIcon } from './NativeChatResumeRunStatusIcon'
 import { ResumeRunSummary } from './NativeChatResumeRunSummary'
 
@@ -112,8 +112,9 @@ export function useResumeRunPanel({
   // Ticks only while a visible run is moving: the row timers and the running clock read it.
   const now = useNow(1000, open && inFlight)
   const hostStatusFor = useResumeRunHostStatus(run)
+  const inventoryFor = useResumeRunInventory(run)
   const view = run
-    ? resumeRunView(run, rows, failureFor, filter.value, hostStatusFor, available)
+    ? resumeRunView(run, rows, failureFor, filter.value, hostStatusFor, available, inventoryFor)
     : null
   const inFlightIds = view
     ? [...view.statusBySession].flatMap(([sessionId, status]) =>

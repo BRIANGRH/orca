@@ -4,6 +4,7 @@ import type {
   ResumeRunHostStatus,
   ResumeRunRecoveryStatus
 } from './native-chat-resume-run'
+import { resumeRunUserRequestConfirmed } from './native-chat-resume-run'
 
 /** Finished outcomes derive from run history and a confirmed host observation. */
 
@@ -46,7 +47,8 @@ export function resumeRunView(
   hostStatusFor: (
     sessionId: string
   ) => (ResumeRunHostStatus & Partial<ResumeRunRecoveryStatus>) | undefined = () => undefined,
-  available = true
+  available = true,
+  inventoryFor: (sessionId: string) => 'open' | 'closed' | 'unknown' = () => 'unknown'
 ): ResumeRunView {
   const listedById = new Map(listed.map((row) => [row.sessionId, row]))
   const continuedBySession = new Map(
@@ -81,6 +83,9 @@ export function resumeRunView(
     ) {
       statusBySession.set(sessionId, { kind: 'resumed' })
       placed.push({ row, category: 'resumed', index: placed.length })
+    } else if (!run.inFlight && resumeRunUserRequestConfirmed(entry)) {
+      statusBySession.set(sessionId, { kind: 'resumed-by-user' })
+      placed.push({ row, category: 'resumed', index: placed.length })
     } else if (run.inFlight && (phase === 'refused' || phase === 'unconfirmed')) {
       statusBySession.set(sessionId, { kind: phase })
       placed.push({ row, category: 'attention', index: placed.length })
@@ -89,43 +94,24 @@ export function resumeRunView(
     } else if (listedById.has(sessionId)) {
       placed.push({ row, category: 'other', index: placed.length })
     } else if (!run.inFlight) {
-      const current = hostStatusFor(sessionId)
-      const before = entry.observedStatus
-      const newPrompt =
-        before?.latestPrompt !== undefined &&
-        current?.latestPrompt !== undefined &&
-        current.latestPrompt !== before.latestPrompt
-      const newTurn =
-        before?.statusStartedAt !== undefined &&
-        current?.statusStartedAt !== undefined &&
-        current.statusStartedAt > before.statusStartedAt &&
-        (before.hostExecutionPhase !== 'ready' || newPrompt)
-      const newStart =
-        before?.latestPrompt !== undefined &&
-        before.hostExecutionPhase !== 'ready' &&
-        current?.hostExecutionOwned === true &&
-        current.hostExecutionPhase === 'ready'
-      const carriedOn =
-        current?.turnOutcome !== 'failure' &&
-        ((current?.hostExecutionOwned === true && current.hostExecutionPhase === 'ready') ||
-          current?.turnOutcome === 'success')
-      if (available && !entry.dismissed && carriedOn && (newPrompt || newTurn || newStart)) {
-        statusBySession.set(sessionId, { kind: 'resumed-by-user' })
-        placed.push({ row, category: 'resumed', index: placed.length })
-      } else {
-        const outcome = continuedBySession.get(sessionId)
-        const observed = entry.observedStatus?.restartResume?.phase
-        const kind =
-          !available && (outcome === 'refused' || observed === 'refused')
-            ? 'refused'
-            : 'unconfirmed'
-        statusBySession.set(sessionId, { kind })
-        placed.push({
-          row,
-          category: available && (!current || entry.dismissed) ? 'other' : 'attention',
-          index: placed.length
-        })
-      }
+      const outcome = continuedBySession.get(sessionId)
+      const observed = entry.observedStatus?.restartResume?.phase
+      const kind =
+        !available &&
+        (outcome === 'refused' ||
+          observed === 'refused' ||
+          entry.originalFailure?.outcome === 'refused')
+          ? 'refused'
+          : 'unconfirmed'
+      statusBySession.set(sessionId, { kind })
+      placed.push({
+        row,
+        category:
+          available && (inventoryFor(sessionId) === 'closed' || entry.dismissal)
+            ? 'other'
+            : 'attention',
+        index: placed.length
+      })
     }
   }
   for (const row of listed) {

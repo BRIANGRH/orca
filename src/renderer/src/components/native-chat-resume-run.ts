@@ -1,5 +1,9 @@
-import type { ResumeCandidate } from './native-chat-resume-on-restart-grouping'
+import type { ResumeCandidate, ResumeFailure } from './native-chat-resume-on-restart-grouping'
 import type { RestartContinuationOutcome } from './native-chat-restart-action-notifications'
+import type {
+  AgentJournalCursor,
+  AgentJournalSubmission
+} from '../../../shared/agent-session-journal-types'
 import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
 
 export type ResumeRunHostStatus = Pick<
@@ -24,7 +28,15 @@ export type ResumeRun = Readonly<{
     candidate: ResumeCandidate
     /** Host observation from this run, before any later user recovery. */
     observedStatus?: ResumeRunHostStatus
-    dismissed?: true
+    sourceCursor?: AgentJournalCursor
+    originalFailure?: ResumeFailure
+    userRequest?: {
+      epoch: string
+      submission: AgentJournalSubmission
+      /** The per-chat rows of the confirmed host answer, kept as source history. */
+      offer?: { listedAt: number; candidate?: ResumeCandidate; failure?: ResumeFailure }
+    }
+    dismissal?: { operation: number; cursor?: AgentJournalCursor; previousRequestId?: string }
   }>[]
   inFlight: boolean
   continued?: readonly RestartContinuationOutcome[]
@@ -80,7 +92,8 @@ export function finishResumeRun(
   run: ResumeRun,
   skipped: ReadonlySet<string>,
   continued: ResumeRun['continued'],
-  statusFor: (sessionId: string) => ResumeRunHostStatus | undefined
+  statusFor: (sessionId: string) => ResumeRunHostStatus | undefined,
+  failureFor: (sessionId: string) => ResumeFailure | undefined = () => undefined
 ): ResumeRun {
   return {
     ...run,
@@ -88,6 +101,7 @@ export function finishResumeRun(
       .filter((entry) => !skipped.has(entry.candidate.sessionId))
       .map((entry) => ({
         ...entry,
+        originalFailure: failureFor(entry.candidate.sessionId),
         observedStatus:
           entry.observedStatus?.latestPrompt !== undefined
             ? entry.observedStatus
@@ -98,22 +112,39 @@ export function finishResumeRun(
   }
 }
 
-/** Dismissal is user action history: the same host removal can otherwise also mean recovery. */
-export function markResumeRunDismissed(
-  run: ResumeRun,
-  dismissed: readonly string[] | undefined,
-  remaining: readonly string[]
-): ResumeRun {
-  const remainingIds = new Set(remaining)
-  return {
-    ...run,
-    entries: run.entries.map((entry) =>
-      (dismissed === undefined || dismissed.includes(entry.candidate.sessionId)) &&
-      !remainingIds.has(entry.candidate.sessionId)
-        ? { ...entry, dismissed: true }
-        : entry
-    )
-  }
+/** Sequence and source distinguish later user requests from delayed host continuations. */
+export function resumeRunOrderedUserRequest(
+  entry: ResumeRun['entries'][number],
+  epoch: string,
+  submission: AgentJournalSubmission
+): boolean {
+  const source = entry.sourceCursor
+  const cut = entry.dismissal?.cursor ?? source
+  return !!(
+    source &&
+    cut &&
+    epoch === source.epoch &&
+    epoch === cut.epoch &&
+    (!entry.dismissal || entry.dismissal.cursor) &&
+    submission.submittedSequence !== undefined &&
+    submission.submittedSequence > Math.max(source.sequence, cut.sequence) &&
+    submission.clientMessageId !== entry.dismissal?.previousRequestId &&
+    submission.source?.kind === 'user'
+  )
+}
+
+/** A raw provider acceptance and confirmed per-chat host answer establish historical recovery. */
+export function resumeRunUserRequestConfirmed(entry: ResumeRun['entries'][number]): boolean {
+  const witness = entry.userRequest
+  return !!(
+    witness &&
+    resumeRunOrderedUserRequest(entry, witness.epoch, witness.submission) &&
+    witness.submission.dispatchState === 'accepted' &&
+    witness.submission.providerItemId &&
+    witness.offer &&
+    !witness.offer.candidate &&
+    !witness.offer.failure
+  )
 }
 
 export function resumeRunInFlight(run: ResumeRun | null): boolean {

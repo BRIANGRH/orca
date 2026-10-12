@@ -422,8 +422,11 @@ it.each([
     await act(async () => button('Resume 2 chats').click())
     expect(button(label)).toBeTruthy()
     expect(toasts()).toEqual([[said]])
-    // One offer read and one bulk action.
-    expect(rpc).toHaveBeenCalledTimes(2)
+    // Background source checkpoints do not send another continuation.
+    expect(calls().filter(([method]) => method !== 'agentSession.history')).toEqual([
+      ['agentSession.restartResumable', undefined],
+      ['agentSession.restartContinue', { sessionIds: ['a', 'b'] }]
+    ])
   }
 )
 
@@ -475,7 +478,7 @@ it('reports the chats a lost resume request named once, as failed, until it is r
   const show = lastToastShow()
   expect(show).toBeDefined()
   // A lost action response is followed by a read-only reconciliation, never a retry.
-  expect(calls()).toEqual([
+  expect(calls().filter(([method]) => method !== 'agentSession.history')).toEqual([
     ['agentSession.restartResumable', undefined],
     ['agentSession.restartContinue', { sessionIds: ['a', 'b'] }],
     ['agentSession.restartResumable', undefined]

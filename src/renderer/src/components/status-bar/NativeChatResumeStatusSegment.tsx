@@ -8,7 +8,10 @@ import {
   useNativeChatRestartRun
 } from '../native-chat-resume-on-restart-store'
 import { resumeRunInFlight } from '../native-chat-resume-run'
-import { useResumeRunHostStatus } from '../native-chat-resume-run-host-status'
+import {
+  useResumeRunHostStatus,
+  useResumeRunInventory
+} from '../native-chat-resume-run-host-status'
 import { resumeRunView } from '../native-chat-resume-run-view'
 
 // Why: closing the resume dialog is a snooze, not a decline — the host keeps the offer. This is
@@ -178,6 +181,7 @@ export function NativeChatResumeStatusSegment({
   const { candidates, failed, available } = useNativeChatRestartOffer(offerEnabled)
   const run = useNativeChatRestartRun()
   const hostStatusFor = useResumeRunHostStatus(run)
+  const inventoryFor = useResumeRunInventory(run)
   const failureBySession = new Map(failed.map((entry) => [entry.sessionId, entry]))
   const view = run
     ? resumeRunView(
@@ -186,7 +190,8 @@ export function NativeChatResumeStatusSegment({
         (id) => failureBySession.get(id),
         'all',
         hostStatusFor,
-        available
+        available,
+        inventoryFor
       )
     : null
   if (!offerEnabled) {

@@ -33,6 +33,7 @@ export type StructuredAgentSessionReadSnapshot = {
 export type StructuredAgentSessionReadOwner = {
   publishCreated: (page: AgentSessionHistoryPage) => void
   activate: () => () => void
+  hasActiveReaders: () => boolean
   dispose: () => void
   getSnapshot: () => StructuredAgentSessionReadSnapshot
   loadOlder: () => Promise<NativeChatOlderPageResult>
@@ -226,6 +227,7 @@ function createReadOwner(
         apply({ type: 'history-page', page })
       }
     },
+    hasActiveReaders: () => activations.size > 0,
     activate: () => {
       // Remounts and StrictMode re-run setup on an owner whose cleanup just forgot it.
       adoptStructuredReadOwner(key, owner)

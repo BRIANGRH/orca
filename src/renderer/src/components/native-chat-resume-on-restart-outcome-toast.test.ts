@@ -145,7 +145,9 @@ it('opens the retained summary from Show after the host withdraws a failure', as
   failed = []
   lastToastShow()?.()
   await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(rpc.mock.calls.at(-1)?.[1]).toBe('agentSession.restartResumable')
+  expect(rpc.mock.calls.findLast(([, method]) => method !== 'agentSession.history')?.[1]).toBe(
+    'agentSession.restartResumable'
+  )
   expect(getNativeChatRestartOffer().failed).toEqual([])
   expect(getNativeChatResumeOnRestartDialogRequest()).toBe(true)
 })

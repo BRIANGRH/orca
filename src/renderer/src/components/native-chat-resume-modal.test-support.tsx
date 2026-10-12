@@ -45,7 +45,7 @@ export function failure(
 export type RestartRpc = (
   target: unknown,
   method: string,
-  params?: { sessionIds?: string[] }
+  params?: { sessionIds?: string[]; sessionId?: string; direction?: string; limit?: number }
 ) => Promise<unknown>
 export type ResumeStatusStream = {
   emit: (event: AgentSessionStatusEvent) => void
@@ -98,12 +98,37 @@ export function createResumeModalFixture(rpc: Mock<RestartRpc>, statusStream: Re
   function fakeHost(
     init: { sessions?: ResumeCandidate[]; failed?: ResumeFailure[] } = {},
     verdictFor: (sessionId: string) => Verdict = () => 'continued',
-    reason = 'agent_session_restart_work_superseded'
+    reason = 'agent_session_restart_work_superseded',
+    terminalFor: (sessionId: string) => Partial<AgentSessionStatusSummary> = () => ({})
   ) {
     const state = { sessions: [...(init.sessions ?? offered)], failed: [...(init.failed ?? [])] }
     const held = new Map<string, PromiseWithResolvers<void>>()
     rpc.mockImplementation(
-      async (_target, method, params: { sessionIds?: string[] } | undefined) => {
+      async (
+        _target,
+        method,
+        params: { sessionIds?: string[]; sessionId?: string } | undefined
+      ) => {
+        if (method === 'agentSession.history') {
+          const sessionId = params?.sessionId ?? ''
+          const cursor = { epoch: `resume-${sessionId}`, sequence: 0 }
+          return {
+            ok: true,
+            page: {
+              sessionId,
+              epoch: cursor.epoch,
+              direction: 'tail',
+              fence: 1,
+              items: [],
+              submissions: [],
+              removedItemIds: [],
+              hasOlder: false,
+              hasNewer: false,
+              liveCursor: cursor,
+              window: { oldest: null, newest: null, nextCursor: cursor }
+            }
+          }
+        }
         if (method === 'agentSession.restartResumable') {
           return { sessions: state.sessions, failed: state.failed }
         }
@@ -151,6 +176,7 @@ export function createResumeModalFixture(rpc: Mock<RestartRpc>, statusStream: Re
               latestPrompt: '',
               updatedAt: 1,
               statusStartedAt: 1,
+              ...terminalFor(sessionId),
               restartResume: { phase }
             }
             statusStream.snapshot.set(sessionId, summary)
