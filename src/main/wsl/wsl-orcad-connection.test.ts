@@ -150,7 +150,11 @@ describe('WslOrcadConnectionManager', () => {
       publicKeyB64: 'public-key',
       pairedDeviceId: 'device-1'
     })
-    expect(onChange).toHaveBeenCalledWith('Ubuntu', connection)
+    expect(onChange.mock.calls).toEqual([
+      ['Ubuntu', null, { state: 'connecting' }],
+      ['Ubuntu', connection, { state: 'ready', census: null }]
+    ])
+    expect(connection.pid).toBe(42)
     expect(await roundTrip(connection, 'hello')).toBe('hello')
   })
 
@@ -171,7 +175,8 @@ describe('WslOrcadConnectionManager', () => {
     launches.push(ready(first.port))
     expect(await manager.ensure('Ubuntu')).toBe(connection)
     expect(children.commands).toHaveLength(1)
-    expect(onChange).toHaveBeenCalledTimes(1)
+    // A refresh that changed nothing stays quiet: connecting, ready, and no more.
+    expect(onChange).toHaveBeenCalledTimes(2)
   })
 
   it('reports a changed pairing offer without rebuilding the bridge', async () => {
@@ -181,7 +186,7 @@ describe('WslOrcadConnectionManager', () => {
     const refreshed = await manager.ensure('Ubuntu')
     expect(refreshed.localPort).toBe(connection.localPort)
     expect(parsePairingCode(refreshed.pairingOffer)?.deviceToken).toBe('rotated-token')
-    expect(onChange).toHaveBeenLastCalledWith('Ubuntu', refreshed)
+    expect(onChange).toHaveBeenLastCalledWith('Ubuntu', refreshed, { state: 'ready', census: null })
   })
 
   it('moves the bridge to the new port after a relaunch, on the same local port', async () => {
@@ -218,12 +223,41 @@ describe('WslOrcadConnectionManager', () => {
   })
 
   it('refuses a foreign server behind the port and closes its bridge', async () => {
-    const { manager, children } = setup({
+    const { manager, children, onChange } = setup({
       verifyIdentity: async () => ({ verdict: 'foreign', detail: 'another runtime' })
     })
     await expect(manager.ensure('Ubuntu')).rejects.toBeInstanceOf(OrcadManagedIdentityError)
     expect(manager.get('Ubuntu')).toBeNull()
+    expect(onChange).toHaveBeenLastCalledWith(
+      'Ubuntu',
+      null,
+      expect.objectContaining({ state: 'failed', terminals: 'unverifiable' })
+    )
     await until(() => children.live() === 0)
+  })
+
+  it('reports the caller-supplied statuses for a liveness reconnect, even when nothing changed', async () => {
+    const { manager, launches, onChange } = setup()
+    const connection = await manager.ensure('Ubuntu')
+    launches.push(ready(first.port))
+    const pending = {
+      state: 'reconnecting',
+      reason: 'orcad-exited',
+      attempt: 1,
+      retryInMs: null,
+      terminals: 'unverifiable'
+    } as const
+    const census = { ...pending, reason: 'census' } as const
+    await manager.ensure('Ubuntu', { status: { pending, ready: census } })
+    expect(onChange.mock.calls.slice(-2)).toEqual([
+      ['Ubuntu', connection, pending],
+      ['Ubuntu', connection, census]
+    ])
+    manager.publish('Ubuntu', { state: 'ready', census: null })
+    expect(onChange).toHaveBeenLastCalledWith('Ubuntu', connection, {
+      state: 'ready',
+      census: null
+    })
   })
 
   it('drops a connect that a close overtook', async () => {
@@ -254,7 +288,7 @@ describe('WslOrcadConnectionManager', () => {
     await connection.close()
     await until(() => children.live() === 0)
     expect(manager.get('Ubuntu')).toBeNull()
-    expect(onChange).toHaveBeenLastCalledWith('Ubuntu', null)
+    expect(onChange).toHaveBeenLastCalledWith('Ubuntu', null, { state: 'closed' })
     await expect(dial(connection.localPort)).rejects.toThrow()
   })
 })
