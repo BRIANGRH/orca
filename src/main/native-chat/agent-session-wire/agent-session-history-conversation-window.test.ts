@@ -150,6 +150,28 @@ describe('a history page over a session with a subagent', () => {
     expect(tail.hasOlder).toBe(false)
   })
 
+  it("carries a fan-out's subagent rows without counting them as conversation", async () => {
+    await append(named('own-', 1, 5))
+    for (const id of named('task-', 1, 300)) {
+      await journal.appendItem(
+        subagentJournalItemIdentity(id),
+        subagentJournalBody({ type: 'subagent', id, label: id, state: 'working', groupId: 't' }),
+        { fence: 1, turnScope: AGENT_JOURNAL_THREAD_SCOPE }
+      )
+    }
+    await append(['own-6'])
+
+    const tail = read({ direction: 'tail', limit: 3 })
+
+    expect(textsOf(tail)).toEqual([
+      'own-4',
+      'own-5',
+      ...named('Kicked off subagent task-', 1, 300),
+      'own-6'
+    ])
+    expect(tail.hasOlder).toBe(true)
+  })
+
   it('still bounds a page by bytes, and paging back still reaches every row', async () => {
     const large = 'x'.repeat(250 * 1024)
     await append(['own-1'])

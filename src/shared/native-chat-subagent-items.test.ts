@@ -81,6 +81,8 @@ describe('a turn’s subagents drawn as one row', () => {
       ['b'],
       ['c']
     ])
+    // The phone keys a group's open state by groupId, so a helper's helpers get their own.
+    expect(new Set(rows.map((row) => groupOf(row).groupId)).size).toBe(3)
   })
 
   it('tells same-named siblings apart without taking a name a sibling already has', () => {

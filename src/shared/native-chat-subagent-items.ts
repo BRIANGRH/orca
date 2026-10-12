@@ -88,7 +88,9 @@ export function foldSubagentItems(
       continue
     }
     any = true
-    const key = JSON.stringify([block.groupId, block.parentId ?? null])
+    // Also the folded row's groupId: a helper's own helpers keep open state apart from the turn's.
+    const key =
+      block.parentId === undefined ? block.groupId : JSON.stringify([block.groupId, block.parentId])
     const siblings = groups.get(key)
     if (siblings) {
       siblings.push(message)
@@ -100,9 +102,9 @@ export function foldSubagentItems(
     return messages
   }
   const rows = new Map<NativeChatMessage, NativeChatMessage | null>()
-  for (const members of groups.values()) {
+  for (const [groupId, members] of groups) {
     const [first, ...rest] = members
-    rows.set(first!, groupRow(members))
+    rows.set(first!, groupRow(groupId, members))
     for (const member of rest) {
       rows.set(member, null)
     }
@@ -119,7 +121,7 @@ export function foldSubagentItems(
   return folded
 }
 
-function groupRow(members: readonly NativeChatMessage[]): NativeChatMessage {
+function groupRow(groupId: string, members: readonly NativeChatMessage[]): NativeChatMessage {
   const first = members[0]!
   const held = foldedGroups.get(first)
   if (
@@ -132,7 +134,7 @@ function groupRow(members: readonly NativeChatMessage[]): NativeChatMessage {
   const blocks = members.map((member) => subagentItemBlock(member)!)
   const group: NativeChatSubagentGroupBlock = {
     type: 'subagent-group',
-    groupId: blocks[0]!.groupId,
+    groupId,
     agents: labelledEntries(blocks)
   }
   const row: NativeChatMessage = { ...first, blocks: [group] }
