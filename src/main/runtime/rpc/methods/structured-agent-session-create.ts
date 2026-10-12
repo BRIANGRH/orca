@@ -24,6 +24,7 @@ import {
   resolveUncommittedStructuredCreate,
   type StructuredCreateRefused
 } from './structured-agent-session-precommit-refusal'
+import { seedOnListedModel } from '../../../../shared/agent-session-unlisted-model'
 
 export type PreparedStructuredAgentSessionCreate = {
   host: StructuredAgentSessionHost
@@ -57,6 +58,33 @@ export function structuredAgentSessionCreateIntentFingerprint(params: {
       options: params.options
     }
   })
+}
+
+/** The remembered new-chat selection, moved off a Claude model the host's saved list no longer
+ *  offers. An explicit model (`--model`, a held pick) runs as given; with no saved list, so does the
+ *  selection. */
+async function listedSeedOptions(
+  args: {
+    runtime: OrcaRuntimeService
+    worktree: string
+    agent: StructuredAgentId
+    options?: Readonly<Record<string, string>>
+  },
+  host: StructuredAgentSessionHost,
+  seed: Readonly<Record<string, string>> | undefined
+): Promise<Readonly<Record<string, string>> | undefined> {
+  const catalog = host.deps.modelCatalog
+  if (args.agent !== 'claude' || !seed?.model || args.options?.model !== undefined || !catalog) {
+    return seed
+  }
+  // The same folder the picker's catalog read names, so both pick the same default.
+  const workspacePath = await args.runtime
+    .resolveStructuredAgentSessionLocalWorkspacePath(args.worktree)
+    .catch(() => null)
+  const listed = await catalog
+    .read({ agent: args.agent, workspacePath, savedOnly: true })
+    .catch(() => null)
+  return listed && listed.origin !== 'unknown' ? seedOnListedModel(seed, listed.models) : seed
 }
 
 /** The pre-commit half. Throws; the caller is expected to run it inside
@@ -93,6 +121,7 @@ export async function prepareStructuredAgentSessionCreateForWorktree(args: {
     fields: attachFingerprintFields({ ...resolved, envelope: args.envelope })
   })
   host ??= await args.ensureHost()
+  const seedOptions = await listedSeedOptions(args, host, resolved.options)
   const priorOperation =
     args.atRest === undefined
       ? null
@@ -128,9 +157,10 @@ export async function prepareStructuredAgentSessionCreateForWorktree(args: {
     ...(hostLaunchDirectory ? { hostLaunchDirectory } : {}),
     attachParams: {
       ...resolvedAttach,
+      ...(seedOptions ? { options: seedOptions } : {}),
       // The ledger covers explicit overrides, never defaults that settings can change on replay.
       ...(args.options
-        ? { options: atRest ? { ...resolved.options, ...args.options } : args.options }
+        ? { options: atRest ? { ...seedOptions, ...args.options } : args.options }
         : {}),
       ...(args.tabId ? { surfaceTabId: args.tabId } : {}),
       provider: resolved.provider,
