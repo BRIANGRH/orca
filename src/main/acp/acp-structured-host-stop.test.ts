@@ -167,7 +167,9 @@ describe('a Grok chat Stop naming a turn that has ended', () => {
     await host.close(SESSION, 'user-close')
   })
 
-  it('ends Grok in the gap before it echoes the next prompt, as a Claude Stop does', async () => {
+  // A late Stop is an accepted no-op, as a Claude Stop is: the follow-up handed over but not yet
+  // echoed is left alone.
+  it('leaves Grok and the next prompt alone in the gap before Grok echoes it', async () => {
     const { rig, host } = await openAttachedHostRig()
     const { agent } = rig.child()
     await send(host, 'old')
@@ -177,12 +179,13 @@ describe('a Grok chat Stop naming a turn that has ended', () => {
     await rig.settle()
     await send(host, 'new')
     const next = await rig.frame('session/prompt', 1)
-    agent.on('session/cancel', () => agent.reply(next, { stopReason: 'cancelled' }))
     await host.flushStreamedEvents(SESSION)
     const stopped = await stop(host, providerTurnId(promptIdOf(old), PROVIDER_SESSION))
-    expect(stopped).toMatchObject({ ok: true, value: { cancelled: true } })
-    await waitFor(() => expect(rig.child().exited).toBe(true))
-    expect(framesOf(rig.child(), 'session/cancel')).toHaveLength(1)
+    expect(stopped).toMatchObject({ ok: true, value: { cancelled: false } })
+    await rig.settle()
+    expect(framesOf(rig.child(), 'session/cancel')).toHaveLength(0)
+    expect(rig.child().exited).toBe(false)
+    agent.on('session/cancel', () => agent.reply(next, { stopReason: 'cancelled' }))
     await host.close(SESSION, 'user-close')
   })
 })
