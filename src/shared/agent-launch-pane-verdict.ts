@@ -4,9 +4,12 @@
  * only fails with `AGENT_LAUNCH_PANE_REFUSED_CODE`, so nothing is parsed out of error text.
  */
 
-/** Why a launch pane shows no agent: the launch failed before its agent ran; `code` is the reason,
- *  for the window to word. Kept on the tab for this session only. */
-export type AgentLaunchPaneOutcome = { kind: 'not-started'; code: string }
+/** Why a launch pane shows no agent, kept on the tab for this session only. */
+export type AgentLaunchPaneOutcome =
+  /** The launch failed before its agent ran; `code` is the reason, for the window to word. */
+  | { kind: 'not-started'; code: string }
+  /** The launch may have started its agent and nothing can tell. */
+  | { kind: 'unconfirmed' }
 
 export type AgentLaunchPaneVerdict =
   /** No launch owns the pane, or its agent runs or ran there: the pane's own spawn decides. */

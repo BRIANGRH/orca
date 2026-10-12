@@ -86,6 +86,14 @@ describe("a launch pane's verdict in the window", () => {
     expect(isAgentLaunchPaneOver(WT, tabId, 'another-leaf')).toBe(false)
   })
 
+  it('unconfirmed: the notice stays, and the pane still asks main, so a late agent attaches', () => {
+    apply({ kind: 'unconfirmed' })
+    expect(launchTab()?.agentLaunchPane?.outcome).toEqual({ kind: 'unconfirmed' })
+    expect(isAgentLaunchPaneOver(WT, tabId, LEAF)).toBe(false)
+    apply({ kind: 'proceed' })
+    expect(launchTab()?.agentLaunchPane).toBeUndefined()
+  })
+
   it('final, for a launch pane the user already closed out of a split: nothing is kept', () => {
     store.getState().setTabLayout(tabId, {
       root: { type: 'leaf', leafId: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d' },

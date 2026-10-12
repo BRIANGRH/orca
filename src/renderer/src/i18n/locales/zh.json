@@ -3347,6 +3347,7 @@
             "copyPrompt": "复制提示",
             "exitedDuringStart": "它在启动时退出了。",
             "notStarted": "智能体无法启动。",
+            "unconfirmed": "无法确认智能体已启动。",
             "workspaceGone": "其工作区已不可用。"
           }
         }

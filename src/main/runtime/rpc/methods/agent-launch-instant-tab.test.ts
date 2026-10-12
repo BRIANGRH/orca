@@ -374,7 +374,7 @@ describe('the pane after its launch', () => {
     await expect(paneVerdict(hostWithWindow())).resolves.toBe('unowned')
   })
 
-  it('leaves an ordinary pane, never "couldn\'t confirm", when a spawn\'s outcome is unknown', async () => {
+  it('says it cannot confirm a spawn whose outcome is unknown, and attaches if the agent turns up', async () => {
     const runtime = hostWithWindow()
     failAfterDispatch(runtime, 'daemon create timed out')
 
@@ -382,13 +382,23 @@ describe('the pane after its launch', () => {
       'agent_session_operation_unknown'
     )
 
-    await vi.waitFor(() =>
-      expect(runtime.reportAgentLaunchPaneVerdict).toHaveBeenCalledWith(
-        { worktreeId: 'wt-7', tabId: TAB_ID, leafId: LEAF_ID },
-        { kind: 'proceed' }
-      )
-    )
+    await expect(paneVerdict(runtime)).resolves.toEqual({ kind: 'unconfirmed' })
+    runtime.hasLiveTerminalForPaneKey.mockReturnValue(true)
+    await expect(paneVerdict(runtime)).resolves.toEqual({ kind: 'proceed' })
+    // Once its agent has bound, the pane is an ordinary one.
+    runtime.hasLiveTerminalForPaneKey.mockReturnValue(false)
     await expect(paneVerdict(runtime)).resolves.toBe('unowned')
+  })
+
+  it('after a restart, a pane whose outcome was unknown is an ordinary one', async () => {
+    const runtime = hostWithWindow()
+    failAfterDispatch(runtime, 'daemon create timed out')
+    await expect(replayLaunch(runtime, { paneKey: PANE_KEY }, CLI)).rejects.toThrow(
+      'agent_session_operation_unknown'
+    )
+
+    resetAgentLaunchPanesForTests()
+    await expect(paneVerdict(hostWithWindow())).resolves.toBe('unowned')
   })
 
   it("never touches a running agent's pane when a second launch names it", async () => {

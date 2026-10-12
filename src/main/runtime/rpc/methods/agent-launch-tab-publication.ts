@@ -93,10 +93,10 @@ export type EarlyAgentLaunchTab = {
   windowOwnsPresentation(): boolean
   /** The user closed the tab or pane: the launch must not start its agent, or must stop it. */
   closedByUser(): boolean
-  /** The launch is over; `failureCode` when it failed. A tab this request made goes when nothing
-   *  will ever run in it: never admitted, or its surface landed elsewhere. A failed launch's tab
-   *  stays to say why. */
-  finish(failureCode?: string): void
+  /** The launch is over; `failureCode` when it failed, null when its outcome is unknown. A tab this
+   *  request made goes when nothing will ever run in it: never admitted, or its surface landed
+   *  elsewhere. A failed launch's tab stays to say why. */
+  finish(failureCode?: string | null): void
   /** Where the window placed the tab, once it has said. */
   placement(): AgentLaunchPlacementReceipt | undefined
 }
@@ -275,9 +275,11 @@ function trackEarlyAgentLaunchTab(args: {
         const verdict: AgentLaunchPaneVerdict =
           takeBack || (ranHere === false && !live)
             ? { kind: 'withdrawn' }
-            : failureCode !== undefined && !live
-              ? { kind: 'not-started', code: failureCode }
-              : { kind: 'proceed' }
+            : failureCode === undefined || live
+              ? { kind: 'proceed' }
+              : failureCode === null
+                ? { kind: 'unconfirmed' }
+                : { kind: 'not-started', code: failureCode }
         args.finishRunning(verdict)
         args.report(verdict)
       })

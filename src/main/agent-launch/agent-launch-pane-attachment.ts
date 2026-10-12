@@ -2,10 +2,11 @@
  * What a pane may do when an `agent.launch` showed it before its agent existed.
  *
  * Derived on every spawn, from this process alone: a launch still running here for the pane says
- * how it ended, and whether a process holds the pane says the rest. With no launch running for the
- * pane (after a restart, or once it ended) the pane is an ordinary pane: its spawn reattaches a live
- * process, starts a fresh shell for an exited or absent one, or shows the terminal host's own
- * unavailable state, exactly as any tab does. The launch record is never read for it. A user's close
+ * how it ended, and whether a process holds the pane says the rest. A launch whose outcome is
+ * unknown leaves the pane waiting for its agent until this process exits. Otherwise, with no launch
+ * running for the pane (after a restart, or once it ended) the pane is an ordinary pane: its spawn
+ * reattaches a live process, starts a fresh shell for an exited or absent one, or shows the terminal
+ * host's own unavailable state, exactly as any tab does. The launch record is never read for it. A user's close
  * of its tab or pane, committed to main, stops a running launch.
  */
 
@@ -29,6 +30,8 @@ type RunningLaunch = {
 }
 
 const runningLaunchesByPane = new Map<string, RunningLaunch>()
+/** Panes whose launch may have started its agent: each attaches if it turns up, else says so. */
+const unconfirmedPanes = new Set<string>()
 
 function paneKeyOf(pane: AgentLaunchPane): string {
   return JSON.stringify([pane.worktreeId, pane.paneKey])
@@ -60,6 +63,7 @@ export function trackRunningAgentLaunchPane(pane: AgentLaunchPane): RunningAgent
     closedByUser: false
   }
   runningLaunchesByPane.set(key, running)
+  unconfirmedPanes.delete(key)
   let finished = false
   return {
     agentBound: () => settle(PROCEED),
@@ -70,6 +74,9 @@ export function trackRunningAgentLaunchPane(pane: AgentLaunchPane): RunningAgent
       finished = true
       if (runningLaunchesByPane.get(key) === running) {
         runningLaunchesByPane.delete(key)
+        if (verdict.kind === 'unconfirmed') {
+          unconfirmedPanes.add(key)
+        }
       }
       settle(verdict)
       resolve(verdict)
@@ -113,7 +120,9 @@ async function settleVerdict(
   pane: AgentLaunchPane,
   isPaneLive: IsAgentLaunchPaneLive
 ): Promise<AgentLaunchPaneVerdict> {
-  let verdict = PROCEED
+  let verdict: AgentLaunchPaneVerdict = unconfirmedPanes.has(paneKeyOf(pane))
+    ? { kind: 'unconfirmed' }
+    : PROCEED
   // A retry can start another launch into the same pane once the first is over.
   for (
     let running = runningLaunchesByPane.get(paneKeyOf(pane));
@@ -131,7 +140,11 @@ async function settleVerdict(
       return verdict
     }
   }
-  return isPaneLive(pane.paneKey) ? PROCEED : verdict
+  if (!isPaneLive(pane.paneKey)) {
+    return verdict
+  }
+  unconfirmedPanes.delete(paneKeyOf(pane))
+  return PROCEED
 }
 
 /**
@@ -142,9 +155,13 @@ export function resolveAgentLaunchPaneVerdict(
   pane: AgentLaunchPane,
   isPaneLive: IsAgentLaunchPaneLive
 ): Promise<AgentLaunchPaneVerdict> | null {
-  return runningLaunchesByPane.has(paneKeyOf(pane)) ? settleVerdict(pane, isPaneLive) : null
+  const key = paneKeyOf(pane)
+  return runningLaunchesByPane.has(key) || unconfirmedPanes.has(key)
+    ? settleVerdict(pane, isPaneLive)
+    : null
 }
 
 export function resetAgentLaunchPanesForTests(): void {
   runningLaunchesByPane.clear()
+  unconfirmedPanes.clear()
 }

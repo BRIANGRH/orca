@@ -9,7 +9,8 @@ import { collectLeafIdsInOrder } from '@/components/terminal-pane/terminal-layou
 import { useAppStore } from '@/store'
 import { forgetAgentLaunchPanePrompt } from './agent-launch-pane-prompt'
 
-/** The tab keeps a final outcome for this pane: its notice stays, and the pane never spawns. */
+/** The pane's launch failed before its agent ran: its notice stays, and the pane never spawns. An
+ *  unconfirmed one still asks main, which attaches the agent if it turned up. */
 export function isAgentLaunchPaneOver(
   worktreeId: string | undefined,
   tabId: string | undefined,
@@ -19,7 +20,7 @@ export function isAgentLaunchPaneOver(
     ? useAppStore.getState().tabsByWorktree[worktreeId]?.find((candidate) => candidate.id === tabId)
     : undefined
   const pane = tab?.agentLaunchPane
-  return pane !== undefined && pane.leafId === leafId && pane.outcome !== undefined
+  return pane !== undefined && pane.leafId === leafId && pane.outcome?.kind === 'not-started'
 }
 
 export function applyAgentLaunchPaneVerdict(event: AgentLaunchPaneVerdictEvent): void {
@@ -36,7 +37,8 @@ export function applyAgentLaunchPaneVerdict(event: AgentLaunchPaneVerdictEvent):
       forgetAgentLaunchPanePrompt(tabId)
       state.setTabAgentLaunchPane(tabId, undefined)
       return
-    case 'not-started': {
+    case 'not-started':
+    case 'unconfirmed': {
       const root = state.terminalLayoutsByTabId[tabId]?.root
       if (root && !collectLeafIdsInOrder(root).includes(leafId)) {
         // The user closed that pane: nothing is left for the outcome to describe.

@@ -46,9 +46,7 @@ export async function withEarlyTab<T>(
     return result
   } catch (error) {
     early?.finish(
-      error instanceof AgentLaunchExecutionError
-        ? (error.failureCode ?? undefined)
-        : agentLaunchFailureCode(error)
+      error instanceof AgentLaunchExecutionError ? error.failureCode : agentLaunchFailureCode(error)
     )
     throw error
   }

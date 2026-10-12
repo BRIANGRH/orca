@@ -3452,6 +3452,7 @@
             "copyPrompt": "Copier le prompt",
             "exitedDuringStart": "Il s'est arrêté pendant le démarrage.",
             "notStarted": "L'agent n'a pas pu démarrer.",
+            "unconfirmed": "Impossible de confirmer que l'agent a démarré.",
             "workspaceGone": "Son espace de travail n'est plus disponible."
           }
         }

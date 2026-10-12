@@ -73,7 +73,7 @@ describe('an AI button launched through the host', () => {
   })
 
   it('never pastes for a launch refused before the agent ran, and says so once', async () => {
-    deferredOutcome()({ kind: 'not-started', code: 'worktree_not_found' })
+    deferredOutcome()({ kind: 'not-started', unconfirmed: false, code: 'worktree_not_found' })
 
     await expect(launch().promptDeliveryResult).resolves.toEqual({
       delivered: false,

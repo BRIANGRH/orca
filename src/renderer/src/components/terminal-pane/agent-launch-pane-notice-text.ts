@@ -35,6 +35,12 @@ function notStartedReason(code: string): string | null {
 }
 
 export function agentLaunchPaneNoticeText(refusal: AgentLaunchPaneOutcome): string {
+  if (refusal.kind === 'unconfirmed') {
+    return translate(
+      'auto.components.terminal.pane.AgentLaunchPaneNotice.unconfirmed',
+      "Couldn't confirm the agent started."
+    )
+  }
   const lead = translate(
     'auto.components.terminal.pane.AgentLaunchPaneNotice.notStarted',
     "The agent couldn't start."

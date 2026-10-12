@@ -167,6 +167,7 @@ describe('a desktop launch through the host', () => {
 
     await expect(outcome).resolves.toEqual({
       kind: 'not-started',
+      unconfirmed: false,
       code: 'agent_session_operation_conflict'
     })
     expect(launchTab(tabId)).toBeUndefined()
@@ -193,6 +194,7 @@ describe('a desktop launch through the host', () => {
 
     await expect(outcome).resolves.toEqual({
       kind: 'not-started',
+      unconfirmed: false,
       code: 'worktree_not_found'
     })
     expect(launchTab(tabId)).toBeUndefined()

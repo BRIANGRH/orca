@@ -29,15 +29,22 @@ function showLaunchNotStartedNotice(outcome: HostAgentLaunchOutcome, prompt: str
   if (outcome.kind !== 'not-started') {
     return
   }
-  toast.error(agentLaunchPaneNoticeText({ kind: 'not-started', code: outcome.code ?? '' }), {
-    action: {
-      label: translate(
-        'auto.components.terminal.pane.AgentLaunchPaneNotice.copyPrompt',
-        'Copy prompt'
-      ),
-      onClick: () => void window.api.ui.writeClipboardText(prompt)
+  toast.error(
+    agentLaunchPaneNoticeText(
+      outcome.unconfirmed
+        ? { kind: 'unconfirmed' }
+        : { kind: 'not-started', code: outcome.code ?? '' }
+    ),
+    {
+      action: {
+        label: translate(
+          'auto.components.terminal.pane.AgentLaunchPaneNotice.copyPrompt',
+          'Copy prompt'
+        ),
+        onClick: () => void window.api.ui.writeClipboardText(prompt)
+      }
     }
-  })
+  )
 }
 
 /**
