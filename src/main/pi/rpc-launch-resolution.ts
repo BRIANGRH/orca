@@ -99,6 +99,28 @@ async function sameDirectory(left: string, right: string): Promise<boolean> {
   return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
 }
 
+/** The binary and environment a Pi child runs under for the account directory `accountDir`: a
+ *  chat's launch and a catalog listing both resolve here, rereading the environment once when Pi
+ *  is missing from it. */
+export function resolvePiRpcInvocation(deps: {
+  accountDir: string
+  resolveEnvironment: () => Promise<NodeJS.ProcessEnv>
+  commandSettings?: StructuredAgentCommandSettings
+  resolveCommand?: typeof resolveCliCommand
+  refreshEnvironmentAfterMiss?: (askedAt: number) => Promise<void>
+}): Promise<{ command: string; env: Record<string, string> }> {
+  return resolveAgainAfterRefreshOnMissingProgram(async () => {
+    const env: Record<string, string> = {}
+    for (const [key, value] of Object.entries(await deps.resolveEnvironment())) {
+      if (value !== undefined) {
+        env[key] = value
+      }
+    }
+    env.PI_CODING_AGENT_DIR = deps.accountDir
+    return { env, command: resolvePiRpcCommand(env, deps.commandSettings, deps.resolveCommand) }
+  }, deps.refreshEnvironmentAfterMiss)
+}
+
 /** Pi's part of a launch: its account directory, session file or fork, binary and release check. */
 export function piRpcLaunchPart(
   deps: PiRpcLaunchPartDeps
@@ -110,13 +132,15 @@ export function piRpcLaunchPart(
     }
     const accountHome = requireLegacyAgentSessionAccountHome(record.accountHome)
     const cwd = await basis.launchDirectory()
-    const { env, command } = await resolveAgainAfterRefreshOnMissingProgram(async () => {
-      const env = { ...(await basis.environment()), PI_CODING_AGENT_DIR: accountHome.path }
-      return {
-        env,
-        command: resolvePiRpcCommand(env, basis.commandSettings(), deps.resolveCommand)
-      }
-    }, basis.refreshAfterMissingProgram)
+    const { env, command } = await resolvePiRpcInvocation({
+      accountDir: accountHome.path,
+      resolveEnvironment: basis.environment,
+      commandSettings: basis.commandSettings(),
+      ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
+      ...(basis.refreshAfterMissingProgram
+        ? { refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram }
+        : {})
+    })
     const previous = agentSessionProviderHandleChainHead(record.providerHandleChain)
     let sessionFile: string | undefined
     let forkFile: string | undefined

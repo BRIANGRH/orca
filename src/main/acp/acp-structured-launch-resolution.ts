@@ -82,6 +82,8 @@ export type AcpLaunchInvocationDeps = {
   resolveLaunchEnv?: (agent: string) => Record<string, string>
   /** The user's per-agent Command setting, re-read per acquisition; none runs the stock binary. */
   resolveCommandSettings?: () => StructuredAgentCommandSettings
+  /** Rereads that env when the agent's program is not found in it; absent never retries. */
+  refreshEnvironmentAfterMiss?: (askedAt: number) => Promise<void>
 } & Pick<AcpStructuredLaunchPartDeps, 'resolveCommand' | 'homePath' | 'inheritedEnv'>
 
 /** The binary a launch with `env` spawns: the user's Command setting when set, else the stock
@@ -145,8 +147,20 @@ export async function acpLaunchVersionSupported(
 }
 
 /** The binary and environment any child of this agent runs under for `accountHome`: a session's
- *  launch and a catalog probe both resolve here, so neither can reach another account or install. */
-export async function resolveAcpLaunchInvocation(
+ *  launch and a catalog probe both resolve here, so neither can reach another account or install,
+ *  and both reread the environment once when the program is missing from it. */
+export function resolveAcpLaunchInvocation(
+  spec: AcpLaunchSpec,
+  accountHome: AgentSessionAccountHome,
+  deps: AcpLaunchInvocationDeps
+): Promise<{ command: string; env: Record<string, string>; envToDelete: string[] }> {
+  return resolveAgainAfterRefreshOnMissingProgram(
+    () => readAcpLaunchInvocation(spec, accountHome, deps),
+    deps.refreshEnvironmentAfterMiss
+  )
+}
+
+async function readAcpLaunchInvocation(
   spec: AcpLaunchSpec,
   accountHome: AgentSessionAccountHome,
   deps: AcpLaunchInvocationDeps
@@ -173,17 +187,20 @@ export function acpStructuredLaunchPart(
 ): StructuredAgentLaunchPartResolver<AcpStructuredLaunch> {
   return async (basis, identity) => {
     const { record } = basis
-    const { env, envToDelete, command } = await resolveAgainAfterRefreshOnMissingProgram(
-      () =>
-        resolveAcpLaunchInvocation(spec, record.accountHome, {
-          resolveEnvironment: basis.baseEnvironment,
-          resolveLaunchEnv: () => basis.launchEnv(),
-          resolveCommandSettings: basis.commandSettings,
-          ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
-          ...(deps.homePath ? { homePath: deps.homePath } : {}),
-          ...(deps.inheritedEnv ? { inheritedEnv: deps.inheritedEnv } : {})
-        }),
-      basis.refreshAfterMissingProgram
+    const { env, envToDelete, command } = await resolveAcpLaunchInvocation(
+      spec,
+      record.accountHome,
+      {
+        resolveEnvironment: basis.baseEnvironment,
+        resolveLaunchEnv: () => basis.launchEnv(),
+        resolveCommandSettings: basis.commandSettings,
+        ...(basis.refreshAfterMissingProgram
+          ? { refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram }
+          : {}),
+        ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
+        ...(deps.homePath ? { homePath: deps.homePath } : {}),
+        ...(deps.inheritedEnv ? { inheritedEnv: deps.inheritedEnv } : {})
+      }
     )
     const cwd = await basis.launchDirectory()
     const visuals = spec.visualsSkill ? await basis.visuals() : null

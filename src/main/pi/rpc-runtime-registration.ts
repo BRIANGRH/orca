@@ -56,6 +56,7 @@ export const PI_RPC_RUNTIME_REGISTRATION: StructuredAgentRuntimeRegistration = {
     probe: createPiModelCatalogProbe({
       // The environment a chat's launch starts from too.
       resolveEnvironment: () => context.environment.resolveAgentEnvironment('pi'),
+      refreshEnvironmentAfterMiss: context.environment.refreshAfterMissingProgram,
       ...(context.deps.resolveAgentCommandSettings
         ? { resolveCommandSettings: context.deps.resolveAgentCommandSettings }
         : {})

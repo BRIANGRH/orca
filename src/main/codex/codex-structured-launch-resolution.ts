@@ -36,6 +36,8 @@ export type CodexStructuredInvocationDeps = Pick<
 > & {
   /** Fresh shell/configured environment for this spawn; never written to the session record. */
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
+  /** Rereads that environment when Codex is not found in it; absent never retries. */
+  refreshEnvironmentAfterMiss?: (askedAt: number) => Promise<void>
 }
 
 export type CodexStructuredInvocation = {
@@ -50,7 +52,16 @@ export type CodexStructuredInvocation = {
  * session it stands in for. Env VALUES stay out of the catalog fingerprint:
  * drift there heals on the next refresh.
  */
-export async function resolveCodexStructuredInvocation(
+export function resolveCodexStructuredInvocation(
+  deps: CodexStructuredInvocationDeps
+): Promise<CodexStructuredInvocation> {
+  return resolveAgainAfterRefreshOnMissingProgram(
+    () => readCodexStructuredInvocation(deps),
+    deps.refreshEnvironmentAfterMiss
+  )
+}
+
+async function readCodexStructuredInvocation(
   deps: CodexStructuredInvocationDeps
 ): Promise<CodexStructuredInvocation> {
   const environment = await deps.resolveEnvironment?.()
@@ -70,14 +81,13 @@ export function codexStructuredLaunchPart(
   return async (basis) => {
     const { record } = basis
     const accountHome = requireLegacyAgentSessionAccountHome(record.accountHome)
-    const { command } = await resolveAgainAfterRefreshOnMissingProgram(
-      () =>
-        resolveCodexStructuredInvocation({
-          ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
-          resolveEnvironment: basis.environment
-        }),
-      basis.refreshAfterMissingProgram
-    )
+    const { command } = await resolveCodexStructuredInvocation({
+      ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
+      ...(basis.refreshAfterMissingProgram
+        ? { refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram }
+        : {}),
+      resolveEnvironment: basis.environment
+    })
     const environment = await basis.environment()
     const args = codexStructuredLaunchArgs(await deps.resolveLaunchArgs())
     const permissionPolicy = deps.resolvePermissionPolicy?.()

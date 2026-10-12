@@ -99,10 +99,10 @@ export type StructuredAgentAccountHomeServices = {
 }
 
 /** What a catalog probe is built from: the same runtime resolvers its sessions launch through. */
-export type StructuredAgentModelCatalogContext = Pick<StructuredAgentAdapterContext, 'deps'> & {
-  /** A listing never retries a missing program; only a launch does. */
-  environment: Omit<StructuredAgentAdapterContext['environment'], 'refreshAfterMissingProgram'>
-}
+export type StructuredAgentModelCatalogContext = Pick<
+  StructuredAgentAdapterContext,
+  'deps' | 'environment'
+>
 
 export type StructuredAgentLaunchCheck = {
   /** The binary and env a launch from `env` runs; throws the launch's own pre-spawn refusal. */
