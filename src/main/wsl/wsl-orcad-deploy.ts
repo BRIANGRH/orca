@@ -32,7 +32,7 @@ import { createWslDistroHolder, type WslDistroHolder } from './wsl-distro-holder
 import { wslDistroHolderKey } from './wsl-distro-holder-record'
 import { readWslDistroRegistryId } from './wsl-distro-registry-id'
 import type { WslOrcadHostTarget } from './wsl-orcad-host-target'
-import { createWslOrcadHostTransport } from './wsl-orcad-host-transport'
+import { createWslOrcadHostTransport, type WslOrcadHostTransport } from './wsl-orcad-host-transport'
 import { adoptUnrecordedWslOrcad } from './wsl-orcad-instance-adoption'
 
 export type WslOrcadLaunch =
@@ -67,7 +67,7 @@ export type WslOrcadDeployOptions = {
   signal?: AbortSignal
   /** Defaults to one created over `userData`; the app should pass its shared instance. */
   holder?: WslDistroHolder
-  createTransport?: (target: WslOrcadHostTarget) => OrcadHostTransport
+  createTransport?: (target: WslOrcadHostTarget) => OrcadHostTransport & { dispose?(): void }
   readRegistryId?: (distro: string) => Promise<string | null>
 }
 
@@ -91,6 +91,19 @@ export async function deployAndLaunchWslOrcad(
     label: options.label ?? name
   }
   const conn = (options.createTransport ?? defaultTransport)(target)
+  try {
+    return await launchOverTransport(name, target, conn, options)
+  } finally {
+    conn.dispose?.()
+  }
+}
+
+async function launchOverTransport(
+  name: string,
+  target: WslOrcadHostTarget,
+  conn: OrcadHostTransport,
+  options: WslOrcadDeployOptions
+): Promise<WslOrcadLaunch> {
   const { signal } = options
   const kernel = await execCommand(conn, 'uname -r', { signal })
   if (isWsl1KernelRelease(kernel)) {
@@ -184,7 +197,7 @@ export async function deployAndLaunchWslOrcad(
   }
 }
 
-function defaultTransport(target: WslOrcadHostTarget): OrcadHostTransport {
+function defaultTransport(target: WslOrcadHostTarget): WslOrcadHostTransport {
   return createWslOrcadHostTransport({ target })
 }
 

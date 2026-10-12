@@ -9,12 +9,16 @@ import { createSshOperationAbortError, type SshExecOptions } from '../ssh/ssh-co
 import { writeStringViaExecStdin } from '../ssh/ssh-exec-stdin-file-transfer'
 import { resolveWslInteropSpawnCwd } from '../wsl-interop-spawn-directory'
 import { wrapWslCommandProcess } from './wsl-command-channel'
+import { WSL_COMMAND_LOOP_ARGV0, WSL_COMMAND_LOOP_SCRIPT } from './wsl-command-loop'
+import { createWslCommandLoopPool } from './wsl-command-loop-pool'
 import { uploadDirectoryIntoWsl, wslGuestSourcePath } from './wsl-directory-upload'
 import { resolveWslExecutablePath } from './wsl-executable-path'
 import type { WslOrcadHostTarget } from './wsl-orcad-host-target'
 
 export type WslOrcadHostTransport = OrcadHostTransport & {
   getTarget(): WslOrcadHostTarget
+  /** Ends the idle command loops now instead of after their idle timeout. */
+  dispose(): void
 }
 
 type WslOrcadHostTransportOptions = {
@@ -26,10 +30,13 @@ type WslOrcadHostTransportOptions = {
    * 20 MB). `guest-mount` copies from `/mnt/<drive>` when the guest can see the source.
    */
   uploadSource?: 'tar' | 'guest-mount'
+  /** Test seam: false runs every command on its own wsl.exe. */
+  commandLoops?: boolean
 }
 
 /**
- * orcad's host connection to a WSL distro: every exec is its own `wsl.exe --exec sh -c` child.
+ * orcad's host connection to a WSL distro: an exec that may write stdin is its own
+ * `wsl.exe --exec sh -c` child; a stdin-free one reuses a pooled command loop when it can.
  * The distro is never a Windows host and has no SFTP, so every transfer runs over exec.
  */
 export function createWslOrcadHostTransport(
@@ -37,24 +44,34 @@ export function createWslOrcadHostTransport(
 ): WslOrcadHostTransport {
   const spawn = options.spawn ?? spawnProcess
   const { target } = options
+  const spawnWsl = (shellArgs: string[]) => {
+    const program = resolveWslExecutablePath()
+    const args = buildWslExecArgs(target.distro, shellArgs)
+    if (commandLineLength([program, ...args]) > MAX_COMMAND_LINE_CHARS) {
+      throw new Error('WSL command exceeds the Windows command-line limit')
+    }
+    return spawn({
+      program,
+      args,
+      cwd: resolveWslInteropSpawnCwd(),
+      // Why WSL_UTF8: otherwise wsl.exe writes its own errors as UTF-16LE.
+      env: { ...process.env, WSL_UTF8: '1' }
+    })
+  }
+  const loops =
+    options.commandLoops === false
+      ? null
+      : createWslCommandLoopPool({
+          spawnLoop: (marker) =>
+            spawnWsl(['sh', '-c', WSL_COMMAND_LOOP_SCRIPT, WSL_COMMAND_LOOP_ARGV0, marker])
+        })
   const transport: WslOrcadHostTransport = {
     // `wrapCommand` is SSH-only: there is no login shell between wsl.exe and `sh -c`.
     async exec(command: string, execOptions?: SshExecOptions): Promise<RemoteCommandChannel> {
       if (execOptions?.signal?.aborted) {
         throw createSshOperationAbortError()
       }
-      const program = resolveWslExecutablePath()
-      const args = buildWslExecArgs(target.distro, ['sh', '-c', command])
-      if (commandLineLength([program, ...args]) > MAX_COMMAND_LINE_CHARS) {
-        throw new Error('WSL command exceeds the Windows command-line limit')
-      }
-      const child = spawn({
-        program,
-        args,
-        cwd: resolveWslInteropSpawnCwd(),
-        // Why WSL_UTF8: otherwise wsl.exe writes its own errors as UTF-16LE.
-        env: { ...process.env, WSL_UTF8: '1' }
-      })
+      const child = spawnWsl(['sh', '-c', command])
       const channel = wrapWslCommandProcess(child)
       // Like an SSH channel open: a child that never started rejects here, not as a stream error.
       const spawnError = (error: Error): void => {
@@ -68,6 +85,12 @@ export function createWslOrcadHostTransport(
       }
       return channel
     },
+    async execWithClosedStdin(command, execOptions) {
+      return (
+        (await loops?.run(command, execOptions?.signal)) ?? transport.exec(command, execOptions)
+      )
+    },
+    dispose: () => loops?.dispose(),
     // MEASURED: `nohup … &` dies when its `wsl.exe --exec` exits on a distro without systemd.
     orcadLaunchDetach: 'setsid',
     usesSystemSshTransport: () => false,
