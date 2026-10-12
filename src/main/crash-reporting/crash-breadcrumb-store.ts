@@ -8,6 +8,7 @@ import {
 const MAX_BREADCRUMBS = 30
 // Two threshold ladders, two marks each, across both renderer surfaces.
 const MAX_RETAINED_BREADCRUMBS = 8
+export const RENDERER_HEAP_ALLOCATION_PROFILE_BREADCRUMB = 'renderer_heap_allocation_profile'
 // Why: coalesceKey embeds an open-string agentType (length-trimmed only, never
 // enum-checked), so the key space is unbounded over a long multi-agent/SSH session.
 // Bound the coalesce map the same way ProcessGoneDedupe bounds its key map.
@@ -38,6 +39,10 @@ let retainedBreadcrumbs = new Map<string, CrashReportBreadcrumb>()
 let coalescedBreadcrumbs = new Map<string, CoalescedBreadcrumbState>()
 
 function retainedBreadcrumbKey(breadcrumb: CrashReportBreadcrumb): string | null {
+  if (breadcrumb.name === RENDERER_HEAP_ALLOCATION_PROFILE_BREADCRUMB) {
+    // Why retained: it is recorded once, hours before an OOM, and the ring would rotate it out.
+    return `${breadcrumb.name}:${String(breadcrumb.data?.rendererSurface)}:${breadcrumb.origin ?? 'global'}`
+  }
   if (breadcrumb.name !== 'renderer_memory_highwater') {
     return null
   }
