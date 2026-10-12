@@ -11,7 +11,7 @@ import type { JournalReplacementItem } from './journal-epoch-replacement'
 import type { JournalReducerState } from './journal-reducer'
 import { buildJournalItemRow, buildJournalTombstoneRow } from './journal-row-builders'
 import type { JournalRowWriter, JournalOperationReceipt } from './journal-row-writer'
-import { journalRestatedSendRows } from './journal-rewind-restated-send'
+import { journalRestatedSendRows } from './journal-rewind-restated-send-rows'
 import {
   buildJournalQueueClearRow,
   buildJournalQueueReopenRow,

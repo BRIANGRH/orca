@@ -7,7 +7,7 @@ import {
   agentJournalSubmissionKey
 } from '../../../shared/agent-session-journal-item-key'
 import type { JournalReplacementItem } from '../agent-session-journal/journal-epoch-replacement'
-import type { JournalRestatedSend } from '../agent-session-journal/journal-rewind-restated-send'
+import type { JournalRestatedSend } from '../agent-session-journal/journal-rewind-restated-send-rows'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 
 /** Keyed by the id a rewind's retained row has: an accepted send's provider item, else its own. */

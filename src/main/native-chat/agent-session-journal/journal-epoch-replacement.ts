@@ -15,7 +15,10 @@ import type { JournalHostDatabase } from './journal-host-database'
 import type { JournalLoad } from './journal-open'
 import { applyJournalRow, createJournalReducerState } from './journal-reducer'
 import { buildJournalItemRow, journalRowBase } from './journal-row-builders'
-import { journalRestatedSendRows, type JournalRestatedSend } from './journal-rewind-restated-send'
+import {
+  journalRestatedSendRows,
+  type JournalRestatedSend
+} from './journal-rewind-restated-send-rows'
 import {
   buildJournalQueueReopenRow,
   buildJournalQueueClearRow,
