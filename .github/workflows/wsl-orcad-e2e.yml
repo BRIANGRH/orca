@@ -26,6 +26,8 @@ env:
   WSL_UTF8: "1"
   ROOTFS_URL: https://releases.ubuntu.com/24.04.4/ubuntu-24.04.4-wsl-amd64.wsl
   ROOTFS_SHA256: 9b2f7730dc68227dd04a9f3e5eab86ad85caf556b8606ad94f1f29ff5c4fd3f5
+  WSL_MSI_URL: https://github.com/microsoft/WSL/releases/download/3.0.1/wsl.3.0.1.0.x64.msi
+  WSL_MSI_SHA256: 28b1a0d013640a2ac95898ea705fa186e5b4ff767a1c1b49257161bc106599c6
   PLAIN_DISTRO: orca-lane-plain
   SYSTEMD_DISTRO: orca-lane-systemd
 
@@ -73,24 +75,38 @@ jobs:
         with:
           persist-credentials: false
       # The image ships WSL 2.7.14, where stopping a systemd distro drops the VM-wide WSLInterop
-      # entry (microsoft/WSL#13885, fixed in 3.0.1). The lane asserts the fixed behavior.
-      - name: Update WSL to at least 3.0.1
+      # entry (microsoft/WSL#13885, fixed in 3.0.1). The lane asserts the fixed behavior, so it
+      # installs a pinned 3.0.1 MSI; `wsl --update` asks the GitHub API and gets rate-limited (403).
+      - name: Restore the pinned WSL package
+        id: wsl-msi-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/wsl-msi
+          key: wsl-orcad-msi-${{ env.WSL_MSI_SHA256 }}
+      - name: Install WSL 3.0.1
         timeout-minutes: 8
         run: |
           "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion"
-          function WslVersion { [version](((wsl.exe --version) -join "`n") -replace '(?s)^\D*?(\d+\.\d+\.\d+).*$', '$1') }
-          $before = WslVersion
-          "WSL before: $before"
-          # Stable first; the pre-release channel only if stable is still older.
-          foreach ($channel in @(@(), @('--pre-release'))) {
-            if ((WslVersion) -ge [version]'3.0.1') { break }
-            wsl.exe --update --web-download @channel
-            if ($LASTEXITCODE -ne 0) { throw "wsl --update $channel failed: $LASTEXITCODE" }
-            wsl.exe --shutdown
-          }
           wsl.exe --version
-          $after = WslVersion
-          if ($after -lt [version]'3.0.1') { throw "WSL $after is older than 3.0.1" }
+          $dir = Join-Path $env:RUNNER_TEMP 'wsl-msi'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $msi = Join-Path $dir 'wsl.msi'
+          if (-not (Test-Path $msi)) { & "$env:WINDIR\System32\curl.exe" --fail --location --silent --show-error --output $msi $env:WSL_MSI_URL }
+          if ((Get-FileHash $msi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:WSL_MSI_SHA256) {
+            Remove-Item $msi; throw 'WSL package checksum mismatch'
+          }
+          $install = Start-Process msiexec.exe -ArgumentList @('/i', $msi, '/qn', '/norestart', '/l*v', (Join-Path $env:RUNNER_TEMP 'wsl-msi.log')) -Wait -PassThru
+          if ($install.ExitCode -notin 0, 3010) { throw "WSL install failed: $($install.ExitCode)" }
+          wsl.exe --shutdown
+          $version = [version](((wsl.exe --version) -join "`n") -replace '(?s)^\D*?(\d+\.\d+\.\d+).*$', '$1')
+          wsl.exe --version
+          if ($version -lt [version]'3.0.1') { throw "WSL $version is older than 3.0.1" }
+      - name: Save the pinned WSL package
+        if: steps.wsl-msi-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/wsl-msi
+          key: wsl-orcad-msi-${{ env.WSL_MSI_SHA256 }}
       - name: Restore the pinned rootfs
         id: rootfs-cache
         uses: actions/cache/restore@v5
