@@ -351,4 +351,29 @@ describe('WslOrcadLivenessSupervisor', () => {
     await h.advance(0)
     expect(h.statuses[0]).toMatchObject({ state: 'distro-stopped', terminals: 'exited' })
   })
+
+  it('lets a user connect supersede the deferred re-check of a stopped distro', async () => {
+    const h = harness({ visible: false })
+    await h.supervisor.connect('Ubuntu')
+    h.state.running = { status: 'confirmed', distros: [] }
+    h.lastWatch().exit(1)
+    await h.advance(1_000)
+    h.state.running = { status: 'confirmed', distros: ['Ubuntu'] }
+    h.state.identity = { distroInstance: 'boot:2', orcad: 'orcad:101' }
+    await h.supervisor.connect('Ubuntu')
+    h.deferred[0]()
+    await h.advance(5_000)
+    expect(h.ensure).toHaveBeenCalledTimes(2)
+    expect(h.statuses.map((status) => status.state)).toEqual(['distro-stopped'])
+  })
+
+  it('reports a stop once when both the holder and the watch exit', async () => {
+    const h = harness({ visible: false })
+    await h.supervisor.connect('Ubuntu')
+    h.state.running = { status: 'confirmed', distros: [] }
+    h.supervisor.noteHolderExit('Ubuntu', { code: 1 })
+    h.lastWatch().exit(1)
+    await h.advance(1_000)
+    expect(h.statuses.map((status) => status.state)).toEqual(['distro-stopped'])
+  })
 })
