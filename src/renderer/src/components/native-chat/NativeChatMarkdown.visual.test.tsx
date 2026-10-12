@@ -329,7 +329,12 @@ describe('NativeChatMarkdown visuals', () => {
 
     beforeEach(() => {
       useAppStore.setState({
-        orcaProfileAuthStatus: { configured: true, state: 'connected' },
+        orcaProfileAuthStatus: {
+          activeProfileId: 'p1',
+          configured: true,
+          state: 'connected',
+          persistence: 'none'
+        },
         settings: { ...getDefaultSettings('/tmp'), artifactSharingEnabled: true }
       })
       callRuntimeRpc.mockReset()
