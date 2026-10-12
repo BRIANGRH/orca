@@ -11,14 +11,20 @@ export async function readPairedRetentionSample(
   page: Page,
   tabIds: string[]
 ): Promise<PairedRetentionSample> {
+  let heapBytes: number | null = null
   try {
     const session = await page.context().newCDPSession(page)
+    // Why twice: right after parking, one pass leaves the disposed terminals' garbage (~20 MB)
+    // for the next; the second frees it.
     await session.send('HeapProfiler.collectGarbage')
+    await session.send('HeapProfiler.collectGarbage')
+    // Why not performance.memory: it is a cached, rounded figure that can predate the GC above.
+    heapBytes = (await session.send('Runtime.getHeapUsage')).usedSize
     await session.detach()
   } catch {
     // GC only improves measurement fidelity.
   }
-  return page.evaluate((targets) => {
+  const sample = await page.evaluate((targets) => {
     let bufferCells = 0
     let mountedTargetManagers = 0
     let targetPanes = 0
@@ -37,14 +43,9 @@ export async function readPairedRetentionSample(
         bufferCells += buffer.length * pane.terminal.cols
       }
     }
-    const memory = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory
-    return {
-      bufferCells,
-      heapBytes: memory?.usedJSHeapSize ?? null,
-      mountedTargetManagers,
-      targetPanes
-    }
+    return { bufferCells, mountedTargetManagers, targetPanes }
   }, tabIds)
+  return { ...sample, heapBytes }
 }
 
 export async function startRendererLagProbe(page: Page): Promise<JSHandle<{ stop: () => number }>> {
