@@ -1,5 +1,5 @@
-import type { ChildProcess } from 'node:child_process'
 import type { AiVaultServicePendingCall } from './session-scanner-service-client-state'
+import type { AiVaultServiceRequest } from './session-scanner-service-protocol'
 
 /** No-progress window: a scan whose work keeps advancing re-arms it, however long it runs. */
 export const AI_VAULT_SERVICE_SCAN_TIMEOUT_MS = 130_000
@@ -26,7 +26,8 @@ function armAiVaultServiceRequestDeadline(
 
 /** Starts the request deadline only once the child is ready to receive it. */
 export function sendAiVaultServiceCall(
-  child: ChildProcess,
+  // Only the send this needs, so the module stays off the direct child_process import list.
+  child: { send(request: AiVaultServiceRequest): unknown },
   call: AiVaultServicePendingCall,
   isActive: () => boolean,
   onTimeout: (error: Error) => void
