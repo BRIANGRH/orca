@@ -393,8 +393,17 @@ async function survivePhase(): Promise<void> {
   for (const { name } of DISTROS) {
     await expectNoGuestBridges(name)
   }
+  const released: Receipt = {}
+  receipt.released = released
   for (const { name } of DISTROS) {
-    expect(await holder.release(name)).toBe('exited')
+    // A holder caught mid-exit can read `unverifiable` (no command line yet no exit); it must settle.
+    released[name] = await holder.release(name)
+    await waitFor(
+      `the ${name} holder to exit`,
+      async () => ((await holder.holderState(name)) === 'exited' ? true : null),
+      10_000,
+      250
+    )
   }
   // The systemd distro stops while the plain one still runs, so the interop entry is shared.
   expect((await wslExe(['--terminate', SYSTEMD])).code).toBe(0)
