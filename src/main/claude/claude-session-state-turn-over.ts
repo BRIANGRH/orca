@@ -19,5 +19,10 @@ function isClaudeSessionStateFrame(message: Record<string, unknown>): boolean {
 
 /** Whether this frame reports the CLI has no work in flight. */
 export function claudeSessionStateEndsTurn(message: Record<string, unknown>): boolean {
-  return isClaudeSessionStateFrame(message) && claudeText(message.state) === 'idle'
+  return readClaudeSessionState(message) === 'idle'
+}
+
+/** The state a `session_state_changed` frame reports, or null for any other frame. */
+export function readClaudeSessionState(message: Record<string, unknown>): string | null {
+  return isClaudeSessionStateFrame(message) ? claudeText(message.state) : null
 }

@@ -78,6 +78,10 @@ export function createQueuedRigProvider(
   const appendStoppedMessages: Mock<
     NonNullable<StructuredAgentSessionAdapter['appendStoppedMessages']>
   > = vi.fn(async () => ({ outcome: 'accepted' as const }))
+  // `none` while the agent is busy, as Claude and Codex answer it.
+  const stoppedMessageDelivery: Mock<
+    NonNullable<StructuredAgentSessionAdapter['stoppedMessageDelivery']>
+  > = vi.fn(() => (options.carriesStoppedHistory ? 'carry' : 'append'))
   let events: StructuredAgentSessionEventSink | undefined
 
   const adapter: StructuredAgentSessionAdapter = {
@@ -131,10 +135,10 @@ export function createQueuedRigProvider(
     ...(options.recoverRewind ? { recoverRewind: options.recoverRewind } : {}),
     ...(options.carriesStoppedHistory
       ? {
-          stoppedMessageDelivery: () => 'carry' as const,
+          stoppedMessageDelivery,
           prepareDispatch: options.prepareDispatch ?? prepareAll
         }
-      : { stoppedMessageDelivery: () => 'append' as const, appendStoppedMessages })
+      : { stoppedMessageDelivery, appendStoppedMessages })
   }
 
   /** What the provider's translator writes when a /compact's turn ends, as a success. */
@@ -178,6 +182,7 @@ export function createQueuedRigProvider(
     adapter,
     dispatch,
     appendStoppedMessages,
+    stoppedMessageDelivery,
     starts,
     holdNextStart,
     failNextStart,

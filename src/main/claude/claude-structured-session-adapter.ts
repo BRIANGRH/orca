@@ -7,7 +7,10 @@ import type {
 } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { stopCurrentClaudeBackgroundTasks } from './claude-structured-control-actions'
 import { dispatchClaudeTurn } from './claude-structured-dispatch'
-import { appendClaudeStoppedMessages } from './claude-stopped-message-append'
+import {
+  appendClaudeStoppedMessages,
+  claudeStoppedMessageAppendBusy
+} from './claude-stopped-message-append'
 import { claudeHoldsDispatch } from './claude-command-lifecycle'
 import { releaseClaudeAcquisition } from './claude-structured-acquisition-release'
 import { acquireClaudeSession } from './claude-structured-session-acquisition'
@@ -167,7 +170,9 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
   dispatch: StructuredAgentSessionAdapter['dispatch'] = (input) =>
     dispatchClaudeTurn(this.session(input.sessionId), input, input.beforeDispatch)
 
-  stoppedMessageDelivery = (): 'append' => 'append'
+  stoppedMessageDelivery: NonNullable<StructuredAgentSessionAdapter['stoppedMessageDelivery']> = (
+    sessionId
+  ) => (claudeStoppedMessageAppendBusy(this.sessions.get(sessionId)) ? 'none' : 'append')
 
   appendStoppedMessages: NonNullable<StructuredAgentSessionAdapter['appendStoppedMessages']> = (
     input

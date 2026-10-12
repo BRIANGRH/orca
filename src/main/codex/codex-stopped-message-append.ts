@@ -12,7 +12,10 @@ import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-hist
 import { IMAGE_FILE_MIME_TYPES } from '../../shared/image-file-extensions'
 import type { NativeChatBlock } from '../../shared/native-chat-types'
 import { withTimeout } from '../../shared/promise-timeout-fallback'
-import type { AgentSessionStoppedMessageAppendOutcome } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-adapter'
+import type {
+  AgentSessionStoppedMessageAppendOutcome,
+  AgentSessionStoppedMessageDelivery
+} from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-adapter'
 import { readClaudeImage } from '../claude/claude-structured-dispatch-content'
 import type { CodexSession } from './codex-structured-session-state'
 
@@ -89,11 +92,26 @@ export async function codexStoppedMessageItems(
 }
 
 /** The session state an inject reads. */
-type CodexInjectHost = Pick<
+export type CodexInjectHost = Pick<
   CodexSession,
   'ended' | 'fence' | 'threadId' | 'activeTurnIds' | 'dispatchPending'
 > & {
   connection: Pick<CodexSession['connection'], 'closed' | 'request'>
+}
+
+/** Why Codex cannot take an inject now, or null: gone, or a turn running by its own account. */
+export function codexStoppedMessageAppendBusy(session: CodexInjectHost | undefined): string | null {
+  if (!session || session.ended || session.connection.closed) {
+    return 'Codex ended before the append'
+  }
+  return session.activeTurnIds?.size || session.dispatchPending ? 'Codex is running a turn' : null
+}
+
+/** How a Codex session takes stopped messages now: appended, or none while it is busy. */
+export function codexAppendDelivery(
+  session: CodexInjectHost | undefined
+): AgentSessionStoppedMessageDelivery {
+  return codexStoppedMessageAppendBusy(session) ? 'none' : 'append'
 }
 
 /** Why the inject may not go in now, or null when it may: the same live child, connection and
@@ -106,15 +124,13 @@ function notIdle(
   if (
     session !== entry.session ||
     session.connection !== entry.connection ||
-    session.ended ||
-    session.connection.closed ||
     session.fence !== input.fence
   ) {
     return 'Codex ended before the append'
   }
-  return session.activeTurnIds?.size || session.dispatchPending || input.turnLive()
-    ? 'Codex is running a turn'
-    : null
+  return (
+    codexStoppedMessageAppendBusy(session) ?? (input.turnLive() ? 'Codex is running a turn' : null)
+  )
 }
 
 export async function injectCodexStoppedMessages(

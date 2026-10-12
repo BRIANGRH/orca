@@ -12,11 +12,13 @@ export type AgentSessionStoppedMessageAppendOutcome =
   | { outcome: 'accepted' | 'unreadable' }
   | { outcome: 'refused' | 'unknown'; reason: string }
 
-/** `append`: `appendStoppedMessages`; `carry`: `prepareDispatch`; `none`: neither. */
+/** `append`: `appendStoppedMessages`; `carry`: `prepareDispatch`; `none`: neither, or not now. */
 export type AgentSessionStoppedMessageDelivery = 'append' | 'carry' | 'none'
 
 export type StructuredAgentSessionStoppedHistoryAdapter = {
-  /** How this session's agent takes the stopped messages owed to it; absent: `none`. */
+  /** How this session's agent takes the stopped messages owed to it now; absent: `none`. An agent
+   *  that appends answers `none` while it cannot take one, read cheaply before anything is
+   *  recorded, so a busy agent leaves them owed with no row written. */
   stoppedMessageDelivery?(sessionId: string): AgentSessionStoppedMessageDelivery
   /** Prepares a person's send once with the stopped messages it can carry within this agent's
    *  limits, before the handover is recorded. Null when none rides or the send alone fails to

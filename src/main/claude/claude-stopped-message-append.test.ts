@@ -352,6 +352,30 @@ describe('appending stopped messages to Claude', () => {
     })
   })
 
+  it('waits out a background wake: refused while Claude runs a cycle Orca opened no turn for, then goes once idle', async () => {
+    const { adapter, connection, frame } = await acquired()
+    // Fresh: Claude reports no state until its first command, which reads as idle.
+    expect(adapter.stoppedMessageDelivery('session-1')).toBe('append')
+    // A background task woke Claude: a cycle runs, with no output yet and no turn in Orca.
+    frame(running)
+    frame(init)
+    expect(adapter.stoppedMessageDelivery('session-1')).toBe('none')
+    expect(await append(adapter, [stopped('a', 'delete the build')])).toEqual({
+      outcome: 'refused',
+      reason: 'Claude is not idle'
+    })
+    expect(connection.sent).toHaveLength(0)
+
+    frame(idle)
+    expect(adapter.stoppedMessageDelivery('session-1')).toBe('append')
+    const outcome = append(adapter, [stopped('a', 'delete the build')])
+    await vi.waitFor(() => expect(connection.sent).toHaveLength(2))
+    for (const message of connection.sent) {
+      frame(result(String(message.uuid)))
+    }
+    expect(await outcome).toEqual({ outcome: 'accepted' })
+  })
+
   it('is unknown when a frame may have been written and the rest failed', async () => {
     const { adapter, connection } = await acquired()
     vi.spyOn(connection, 'send')

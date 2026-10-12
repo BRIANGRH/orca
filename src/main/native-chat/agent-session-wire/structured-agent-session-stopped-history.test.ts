@@ -237,6 +237,23 @@ describe("stopped messages go into the agent's own log ahead of the next send", 
     expect(journal().stoppedHistory.appended().size).toBe(1)
   })
 
+  it('writes no row while the agent answers it cannot take them, and appends them once it can', async () => {
+    await start()
+    await stopWhileStarting('first')
+    // As Codex mid-turn or Claude woken by a background task answers.
+    rig.stoppedMessageDelivery.mockReturnValueOnce('none')
+    const recordAppend = vi.spyOn(journal().stoppedHistory, 'recordAppend')
+    const busy = await nextSend('busy')
+    await rig.settleAccepted(busy, 'busy')
+
+    expect(recordAppend).not.toHaveBeenCalled()
+    expect(appended()).toEqual([])
+    await nextSend('after')
+    expect(appended()).toEqual([['first']])
+    expect(recordAppend).toHaveBeenCalledTimes(1)
+    expect(dispatched()).toEqual(['busy', 'after'])
+  })
+
   it('never appends them again when the outcome is unknown, or the append threw', async () => {
     for (const fails of [
       () =>

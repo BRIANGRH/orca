@@ -15,6 +15,7 @@ import { CodexAppServerRequestError } from './codex-app-server-request-error'
 import { CodexAppServerUnsupportedError } from './codex-app-server-session'
 import {
   CODEX_TURN_ABORTED_MARKER,
+  codexStoppedMessageAppendBusy,
   injectCodexStoppedMessages
 } from './codex-stopped-message-append'
 
@@ -240,6 +241,21 @@ describe('appending stopped messages to Codex', () => {
       await inject(host, [stopped('a', [{ type: 'text', text: 'a' }])], () => true)
     ).toMatchObject({ outcome: 'refused', reason: 'Codex is running a turn' })
     expect(request).not.toHaveBeenCalled()
+  })
+
+  it('answers busy, cheaply and before anything is recorded, while a turn runs or Codex is gone', () => {
+    const { host } = session()
+    expect(codexStoppedMessageAppendBusy(host)).toBeNull()
+    expect(codexStoppedMessageAppendBusy({ ...host, activeTurnIds: new Set(['turn-1']) })).toBe(
+      'Codex is running a turn'
+    )
+    expect(codexStoppedMessageAppendBusy({ ...host, dispatchPending: true })).toBe(
+      'Codex is running a turn'
+    )
+    expect(codexStoppedMessageAppendBusy({ ...host, ended: true })).toBe(
+      'Codex ended before the append'
+    )
+    expect(codexStoppedMessageAppendBusy(undefined)).toBe('Codex ended before the append')
   })
 
   it('checks again right before the write: a turn that started while it prepared refuses it', async () => {

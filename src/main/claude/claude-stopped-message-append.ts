@@ -61,15 +61,30 @@ function writeProof(
   return failed.length > 0 ? { outcome: 'unknown', reason: String(failed[0]) } : null
 }
 
+/** Why Claude cannot take an append now, or null: gone, or running a command of its own, such as
+ *  a background task's wake, which opens no turn in Orca. No state yet is idle: Claude reports
+ *  none until its first command (measured). */
+export function claudeStoppedMessageAppendBusy(session: ClaudeSession | undefined): string | null {
+  if (!session || session.connection.closed) {
+    return 'Claude ended before the append'
+  }
+  return session.providerState === undefined || session.providerState === 'idle'
+    ? null
+    : 'Claude is not idle'
+}
+
 /** Why the append may not go in now, or null when it may. */
 function notReady(
   session: ClaudeSession | undefined,
   input: { fence: number; turnLive: () => boolean }
 ): string | null {
-  if (!session || session.connection.closed || session.fence !== input.fence) {
+  if (session && session.fence !== input.fence) {
     return 'Claude ended before the append'
   }
-  return input.turnLive() ? 'Claude is running a turn' : null
+  return (
+    claudeStoppedMessageAppendBusy(session) ??
+    (input.turnLive() ? 'Claude is running a turn' : null)
+  )
 }
 
 export async function appendClaudeStoppedMessages(
