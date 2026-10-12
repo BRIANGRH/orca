@@ -27,7 +27,10 @@ import { acpSessionAcceptsImages } from './acp-structured-options'
 import type { ContentBlock } from './generated/acp-protocol.generated'
 import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
 import type { AgentSessionPreparedDispatch } from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
-import { fitStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
+import {
+  fitStoppedHistory,
+  withStoppedHistoryText
+} from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
 
 const ACP_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 /** A prompt is one JSON-RPC line; this leaves room for the request around its blocks. */
@@ -191,9 +194,23 @@ function jsonTextBytes(text: string): number {
   return Buffer.byteLength(JSON.stringify(text)) - 2
 }
 
-/** The prompt led by the owed stopped history that fits its one line, the request around it
- *  reserved, and the agent's image limits: their images, the frame as one text block, then the
- *  send's own blocks. Null when none fits or the send alone fails, whose refusal dispatch gives. */
+/** The send's blocks with the carried words leading its first text, or after its images when it
+ *  has none. */
+function withCarriedText(blocks: readonly ContentBlock[], text: string): ContentBlock[] {
+  const first = blocks.findIndex((block) => block.type === 'text')
+  if (first === -1) {
+    return [...blocks, { type: 'text', text: withStoppedHistoryText(text, '') }]
+  }
+  return blocks.map((block, index) =>
+    index === first && block.type === 'text'
+      ? { ...block, text: withStoppedHistoryText(text, block.text) }
+      : block
+  )
+}
+
+/** The prompt with the owed stopped messages that fit its one line, the request around it reserved,
+ *  and the agent's image limits: their images first, their words leading the send's. Null when none
+ *  fits or the send alone fails, whose refusal dispatch gives. */
 export async function prepareAcpDispatch(
   body: AgentJournalMessageItem,
   owed: readonly OwedStoppedMessage[],
@@ -204,16 +221,17 @@ export async function prepareAcpDispatch(
   if (!own) {
     return null
   }
-  // The frame's own block around its text, and the comma before the next block.
-  const frameBlock = Buffer.byteLength(JSON.stringify({ type: 'text', text: '' })) + 1
+  // A send with no words gets a text block of its own, and the comma before it.
+  const textBlock = own.blocks.some((block) => block.type === 'text')
+    ? 0
+    : Buffer.byteLength(JSON.stringify({ type: 'text', text: '' })) + 1
   const fit = await fitStoppedHistory({
     owed,
     room: {
-      line: ACP_PROMPT_LINE_BUDGET - own.lineBytes - frameBlock,
+      line: ACP_PROMPT_LINE_BUDGET - own.lineBytes - textBlock,
       images: MAX_IMAGE_COUNT - own.images,
       bytes: ACP_PROMPT_IMAGE_MAX_BYTES - own.imageBytes
     },
-    sendImages: own.images,
     textCost: (text) => ({ line: jsonTextBytes(text) }),
     image: async (block) => {
       if (!acceptsImages) {
@@ -232,8 +250,7 @@ export async function prepareAcpDispatch(
   return fit
     ? new AcpPreparedDispatch(fit.carries, [
         ...fit.images,
-        { type: 'text', text: fit.frame },
-        ...own.blocks
+        ...withCarriedText(own.blocks, fit.text)
       ])
     : null
 }

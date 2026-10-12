@@ -1,4 +1,5 @@
-// A Pi send carrying stopped history writes exactly the prompt it was prepared with.
+// A Pi send carrying stopped messages writes exactly the prompt it was prepared with: each one's
+// words and the interruption Claude records for its own Stop, ahead of the send's own words.
 
 import { describe, expect, it, vi } from 'vitest'
 import { agentSessionFailureFact } from '../../shared/agent-session-failure'
@@ -40,7 +41,7 @@ function owed(id: string, text: string, acceptedSequence = 1): OwedStoppedMessag
 }
 
 describe('Pi stopped history', () => {
-  it('writes exactly the prepared prompt, its frame holding what the row will list', async () => {
+  it('writes exactly the prepared prompt: each stopped message and its interruption, then the send', async () => {
     const h = await setup()
     const body = message('what did I send?')
     const prepared = await h.adapter.prepareDispatch({
@@ -62,25 +63,31 @@ describe('Pi stopped history', () => {
 
     const [written] = h.connection.sent
     expect(written).toMatchObject({ type: 'prompt', images: [] })
-    const text = String(written?.message)
-    expect(text.match(/<stopped-message number=/g)).toHaveLength(2)
-    expect(text.indexOf('delete the build folder')).toBeLessThan(text.indexOf('then rebuild'))
-    expect(text.endsWith('\n\nUser message:\nwhat did I send?')).toBe(true)
+    expect(written?.message).toBe(
+      'delete the build folder\n\n[Request interrupted by user]\n\n' +
+        'then rebuild\n\n[Request interrupted by user]\n\n' +
+        'what did I send?'
+    )
   })
 
-  it('fits the history beside the frame Pi is written, which the line encoder admits', async () => {
+  it('carries only whole messages that fit the line Pi is written; the rest wait', async () => {
     const h = await setup()
     const maxLineBytes = resolveJsonlRpcPeerOptions().maxLineBytes
     const lines: string[] = []
     vi.spyOn(h.connection, 'send').mockImplementation(async (frame) => {
       lines.push(encodeNdjson(frame, maxLineBytes))
     })
-    const body = message('x'.repeat(maxLineBytes - 30_000))
+    const body = message('x'.repeat(maxLineBytes - 60_000))
     const prepared = await h.adapter.prepareDispatch({
       sessionId,
       fence: 7,
       body,
-      owed: [owed('a', 'a'.repeat(40_000)), owed('b', 'then rebuild', 2)]
+      // The first fits whole; the second does not, so it and every later one wait.
+      owed: [
+        owed('a', 'a'.repeat(40_000)),
+        owed('b', 'b'.repeat(40_000), 2),
+        owed('c', 'then rebuild', 3)
+      ]
     })
     expect(prepared?.carries).toEqual(['a'])
 
@@ -98,8 +105,9 @@ describe('Pi stopped history', () => {
     expect(Buffer.byteLength(line) - 1).toBeLessThanOrEqual(maxLineBytes)
     const written = JSON.parse(line)
     expect(written.streamingBehavior).toBe('followUp')
-    expect(written.message.match(/<stopped-message number=/g)).toHaveLength(1)
-    expect(written.message).toContain('shortened="true"')
+    expect(
+      written.message.startsWith(`${'a'.repeat(40_000)}\n\n[Request interrupted by user]\n\nx`)
+    ).toBe(true)
     expect(written.message).not.toContain('then rebuild')
   })
 
@@ -138,6 +146,7 @@ describe('Pi stopped history', () => {
         }
       ],
       carried: new Map([['next', prepared?.carries ?? []]]),
+      appended: new Map(),
       clearSequence: 0,
       body: (id) => stopped.find((entry) => entry.submission.clientMessageId === id)?.body ?? null
     })

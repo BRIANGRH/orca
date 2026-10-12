@@ -181,7 +181,7 @@ it('re-sends a prompt carrying stopped history unchanged on each sign-in retry, 
   const h = rig()
   const frame = {
     type: 'prompt',
-    message: '<stopped-history>\n…\n</stopped-history>\n\nUser message:\nnext',
+    message: 'stopped\n\n[Request interrupted by user]\n\nnext',
     images: []
   }
   await h.delivery.submit('carrier', 1, frame)

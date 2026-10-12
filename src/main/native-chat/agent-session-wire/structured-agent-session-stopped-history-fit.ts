@@ -1,20 +1,12 @@
-// Which owed stopped messages fit beside a send within one agent's admission limits, and the frame
-// that carries them. Each message's cost is measured once and its images read once; the adapter
-// supplies the limits, the cost of text and its own image content, and writes what this returns.
+// Which owed stopped messages an ACP or Pi send carries, which cannot append them to the agent's own
+// log: each whole, oldest first, as its words and then the record Claude writes for its own Stop,
+// ahead of the send's own words, with its images ahead of the send's. Only the agent's own admission
+// limits bound them; the first that does not fit waits, with every later one, for a send with room.
 
 import type { OwedStoppedMessage } from '../../../shared/agent-session-stopped-history'
 import type { NativeChatImageRefBlock } from '../../../shared/native-chat-types'
-import { sliceAtCodeUnitLimit } from '../../../shared/surrogate-safe-text-slice'
-import {
-  stoppedHistoryElement,
-  stoppedHistoryElementSpan,
-  stoppedHistoryFrame,
-  type StoppedHistoryElement
-} from './structured-agent-session-stopped-history-frame'
 
-// Carried history stays a small part of any model's context.
-export const STOPPED_HISTORY_MAX_CHARS = 64_000
-export const STOPPED_HISTORY_MAX_IMAGES = 20
+export const STOPPED_MESSAGE_INTERRUPTED_MARKER = '[Request interrupted by user]'
 
 /** An amount per admission limit, keyed by the adapter's own names; a missing key costs nothing. */
 export type StoppedHistoryCost = Readonly<Record<string, number>>
@@ -23,9 +15,7 @@ export type StoppedHistoryFitInput<TImage> = {
   owed: readonly OwedStoppedMessage[]
   /** What the agent still admits beside the send, per limit; an unnamed limit is unbounded. */
   room: StoppedHistoryCost
-  /** How many images the send itself carries, numbered after the history's. */
-  sendImages: number
-  /** What text costs; additive, so a frame costs the sum of its parts. */
+  /** What text costs; additive, so the carried words cost the sum of each message's. */
   textCost: (text: string) => StoppedHistoryCost
   /** One stopped image as the agent's content; null or a throw leaves that image out. */
   image: (
@@ -34,12 +24,12 @@ export type StoppedHistoryFitInput<TImage> = {
 }
 
 export type StoppedHistoryFit<TImage> = {
-  /** The stopped messages inside `frame`, oldest first. */
+  /** The stopped messages carried, oldest first. */
   carries: string[]
-  /** Their images in the frame's numbering, which go ahead of the send's own. */
+  /** Their images, which go ahead of the send's own. */
   images: TImage[]
-  /** The frame, ending with the label the send's own words follow. */
-  frame: string
+  /** Their words, ending in the break the send's own words follow. */
+  text: string
 }
 
 function plus(left: StoppedHistoryCost, right: StoppedHistoryCost): StoppedHistoryCost {
@@ -54,175 +44,53 @@ function fits(cost: StoppedHistoryCost, room: StoppedHistoryCost): boolean {
   return Object.entries(cost).every(([key, value]) => value <= (room[key] ?? Infinity))
 }
 
-/** What is left of `room` after `cost`; an unbounded limit stays unbounded. */
 function minus(room: StoppedHistoryCost, cost: StoppedHistoryCost): StoppedHistoryCost {
   return Object.fromEntries(
     Object.entries(room).map(([key, value]) => [key, value - (cost[key] ?? 0)])
   )
 }
 
-function wordsOf(entry: OwedStoppedMessage): string {
-  return entry.body.blocks
+/** One stopped message as the agent reads it, ending in the break before what follows. */
+function carriedText(entry: OwedStoppedMessage): string {
+  const words = entry.body.blocks
     .flatMap((block) => (block.type === 'text' && block.text.length > 0 ? [block.text] : []))
     .join('\n')
+  return `${words.length > 0 ? `${words}\n\n` : ''}${STOPPED_MESSAGE_INTERRUPTED_MARKER}\n\n`
 }
 
-function imagesOf(entry: OwedStoppedMessage): NativeChatImageRefBlock[] {
-  return entry.body.blocks.filter(
-    (block): block is NativeChatImageRefBlock => block.type === 'image-ref'
-  )
+/** The carried words joined to the send's own; with none of its own, without the trailing break. */
+export function withStoppedHistoryText(carried: string, own: string): string {
+  return own.length > 0 ? `${carried}${own}` : carried.trimEnd()
 }
 
-/** Each image read on its own, so one the agent refuses leaves the others riding. */
-async function readImages<TImage>(
-  blocks: readonly NativeChatImageRefBlock[],
-  image: StoppedHistoryFitInput<TImage>['image']
-): Promise<{ read: { content: TImage; cost: StoppedHistoryCost }[]; refused: number }> {
-  const read: { content: TImage; cost: StoppedHistoryCost }[] = []
-  for (const block of blocks) {
-    const prepared = await image(block).catch(() => null)
-    if (prepared) {
-      read.push(prepared)
-    }
-  }
-  return { read, refused: blocks.length - read.length }
-}
-
-/** The longest start of `element.text` whose element fits `room`, keeping at least one character. */
-function shortenedToFit(
-  element: StoppedHistoryElement,
-  room: StoppedHistoryCost,
-  textCost: StoppedHistoryFitInput<unknown>['textCost']
-): string | null {
-  const total = element.text.length
-  const render = (kept: number): string => {
-    const text = sliceAtCodeUnitLimit(element.text, kept)
-    return stoppedHistoryElement({
-      ...element,
-      text,
-      shortened: { leftOut: total - text.length, total }
-    })
-  }
-  const fitsKeeping = (kept: number): boolean =>
-    fits(textCost(stoppedHistoryElementSpan(render(kept))), room)
-  const first = element.text.codePointAt(0)
-  const least = first === undefined ? 0 : String.fromCodePoint(first).length
-  if (least === 0 || !fitsKeeping(least)) {
-    return null
-  }
-  let low = least
-  let high = total - 1
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2)
-    if (fitsKeeping(middle)) {
-      low = middle
-    } else {
-      high = middle - 1
-    }
-  }
-  return render(low)
-}
-
-/** Oldest first, each owed message rides whole while it fits, less any image the agent refuses.
- *  Only the oldest may ride without its images or with its words shortened for want of room, so a
- *  message squeezed out by earlier ones waits whole for a send with room, the frame saying so. Null
- *  when none rides. */
+/** Oldest first, each owed message whole while it fits, less any image the agent refuses. Null
+ *  when none fits. */
 export async function fitStoppedHistory<TImage>(
   input: StoppedHistoryFitInput<TImage>
 ): Promise<StoppedHistoryFit<TImage> | null> {
-  const { owed } = input
-  const textCost = (text: string): StoppedHistoryCost =>
-    plus(input.textCost(text), { stoppedHistoryChars: text.length })
-  const startingRoom = {
-    ...input.room,
-    stoppedHistoryChars: STOPPED_HISTORY_MAX_CHARS,
-    stoppedHistoryImages: STOPPED_HISTORY_MAX_IMAGES
-  }
-  const historyImages = owed.reduce((sum, entry) => sum + imagesOf(entry).length, 0)
-  // The frame around the elements at its longest: every count and image number at its widest.
-  const skeleton = stoppedHistoryFrame({
-    elements: [],
-    notIncluded: owed.length,
-    shortened: owed.length,
-    sendImages: { first: historyImages + 1, count: input.sendImages }
-  })
-  if (!fits(textCost(skeleton), startingRoom)) {
-    return null
-  }
-  let room = minus(startingRoom, textCost(skeleton))
-  const carries: string[] = []
-  const images: TImage[] = []
-  const elements: string[] = []
-  let shortened = 0
-  for (const entry of owed) {
-    const blocks = imagesOf(entry)
-    const element: StoppedHistoryElement = {
-      number: elements.length + 1,
-      text: wordsOf(entry),
-      images: { first: images.length + 1, count: 0 },
-      omittedImages: blocks.length
-    }
-    let chosen: { text: string; cost: StoppedHistoryCost; images: TImage[] } | null = null
-    const withAllImages = textCost(
-      stoppedHistoryElementSpan(
-        stoppedHistoryElement({
-          ...element,
-          images: { first: images.length + 1, count: blocks.length },
-          omittedImages: 0
-        })
-      )
-    )
-    // An image the agent refuses never rides, so without it a message is whole.
-    const read = fits(withAllImages, room) ? await readImages(blocks, input.image) : null
-    if (read) {
-      const text = stoppedHistoryElement({
-        ...element,
-        images: { first: images.length + 1, count: read.read.length },
-        omittedImages: read.refused
-      })
-      const cost = read.read.reduce(
-        (sum, item) => plus(sum, plus(item.cost, { stoppedHistoryImages: 1 })),
-        textCost(stoppedHistoryElementSpan(text))
-      )
-      if (fits(cost, room)) {
-        chosen = { text, cost, images: read.read.map((item) => item.content) }
-      }
-    }
-    // Leaving out images for want of room is the oldest's alone.
-    if (!chosen && blocks.length > 0 && elements.length === 0) {
-      const text = stoppedHistoryElement(element)
-      const cost = textCost(stoppedHistoryElementSpan(text))
-      if (fits(cost, room)) {
-        chosen = { text, cost, images: [] }
-      }
-    }
-    if (!chosen && elements.length > 0) {
+  let room = input.room
+  const fit: StoppedHistoryFit<TImage> = { carries: [], images: [], text: '' }
+  for (const entry of input.owed) {
+    const text = carriedText(entry)
+    let cost = input.textCost(text)
+    if (!fits(cost, room)) {
       break
     }
-    if (!chosen) {
-      const text = shortenedToFit(element, room, textCost)
-      if (text === null) {
-        break
+    const images: TImage[] = []
+    for (const block of entry.body.blocks) {
+      const read = block.type === 'image-ref' ? await input.image(block).catch(() => null) : null
+      if (read) {
+        images.push(read.content)
+        cost = plus(cost, read.cost)
       }
-      shortened += 1
-      chosen = { text, cost: textCost(stoppedHistoryElementSpan(text)), images: [] }
     }
-    room = minus(room, chosen.cost)
-    carries.push(entry.submission.clientMessageId)
-    images.push(...chosen.images)
-    elements.push(chosen.text)
+    if (!fits(cost, room)) {
+      break
+    }
+    room = minus(room, cost)
+    fit.carries.push(entry.submission.clientMessageId)
+    fit.images.push(...images)
+    fit.text += text
   }
-  if (carries.length === 0) {
-    return null
-  }
-  return {
-    carries,
-    images,
-    frame: stoppedHistoryFrame({
-      elements,
-      notIncluded: owed.length - carries.length,
-      shortened,
-      sendImages: { first: images.length + 1, count: input.sendImages }
-    })
-  }
+  return fit.carries.length > 0 ? fit : null
 }

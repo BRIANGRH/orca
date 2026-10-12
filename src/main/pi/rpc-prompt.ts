@@ -17,7 +17,10 @@ import {
   preparedByAdapter,
   type AgentSessionPreparedDispatch
 } from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
-import { fitStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
+import {
+  fitStoppedHistory,
+  withStoppedHistoryText
+} from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const MAX_IMAGE_COUNT = 20
@@ -216,10 +219,9 @@ function jsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), 'utf8')
 }
 
-/** The prompt led by the owed stopped history that fits Pi's image limits, its one RPC line and
- *  what its prompt queue can still hold (`heldBytesFree`): the frame then the send's own words as
- *  one text, the history's images ahead of the send's. Null when none fits or the send alone fails,
- *  whose refusal dispatch gives. */
+/** The prompt with the owed stopped messages that fit Pi's image limits, its one RPC line and what
+ *  its prompt queue can still hold (`heldBytesFree`): their words leading the send's, their images
+ *  ahead of the send's. Null when none fits or the send alone fails, whose refusal dispatch gives. */
 export async function preparePiRpcDispatch(
   body: AgentJournalMessageItem,
   owed: readonly OwedStoppedMessage[],
@@ -234,16 +236,13 @@ export async function preparePiRpcDispatch(
     (sum, image) => sum + Buffer.byteLength(image.data, 'base64'),
     0
   )
-  // The JSON-escaped newline joining the frame to the send's words, when it has any.
-  const join = own.message.length > 0 ? 2 : 0
   const fit = await fitStoppedHistory({
     owed,
     room: {
-      line: Math.min(MAX_PROMPT_WIRE_BYTES, heldBytesFree) - piRpcPromptFrameBytes(own) - join,
+      line: Math.min(MAX_PROMPT_WIRE_BYTES, heldBytesFree) - piRpcPromptFrameBytes(own),
       images: MAX_IMAGE_COUNT - own.images.length,
       bytes: MAX_TOTAL_IMAGE_BYTES - ownBytes
     },
-    sendImages: own.images.length,
     textCost: (text) => ({ line: jsonBytes(text) - 2 }),
     image: async (block) => {
       const { bytes, mimeType } = await readImage(block, reads)
@@ -259,7 +258,7 @@ export async function preparePiRpcDispatch(
   }
   return new PiPreparedDispatch(fit.carries, {
     ...own,
-    message: own.message.length > 0 ? `${fit.frame}\n${own.message}` : fit.frame,
+    message: withStoppedHistoryText(fit.text, own.message),
     images: [...fit.images, ...own.images]
   })
 }

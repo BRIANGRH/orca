@@ -1,4 +1,4 @@
-// An ACP send carrying stopped history writes exactly the prompt it was prepared with, within the
+// An ACP send carrying stopped messages writes exactly the prompt it was prepared with, within the
 // one JSON-RPC line the writer allows, and a line the writer refuses never counts as delivered.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -55,10 +55,6 @@ function promptOf(frame: { params?: unknown }): unknown[] {
   return Array.isArray(prompt) ? prompt : []
 }
 
-function textOf(block: unknown): string {
-  return typeof block === 'object' && block !== null && 'text' in block ? String(block.text) : ''
-}
-
 async function prepareAndSend(owedMessages: OwedStoppedMessage[], body = NEXT) {
   const rig = await openAcpAdapterRig()
   await rig.acquire()
@@ -79,7 +75,7 @@ async function prepareAndSend(owedMessages: OwedStoppedMessage[], body = NEXT) {
 }
 
 describe('ACP stopped history', () => {
-  it('writes exactly the prepared blocks: the frame, then the send', async () => {
+  it("writes exactly the prepared blocks: each stopped message and its interruption lead the send's words", async () => {
     const image: AgentJournalMessageItem = {
       kind: 'message',
       role: 'user',
@@ -94,35 +90,41 @@ describe('ACP stopped history', () => {
     ])
     expect(outcome).toEqual({ state: 'admitted' })
     expect(prepared?.carries).toEqual(['a', 'b'])
-    const prompt = promptOf(await rig.frame('session/prompt'))
-    expect(prompt).toEqual([
-      { type: 'text', text: expect.stringContaining('<stopped-history>') },
-      { type: 'text', text: 'what did I send?' }
+    // This agent takes no images, so the stopped one's is left out and the message rides whole.
+    expect(promptOf(await rig.frame('session/prompt'))).toEqual([
+      {
+        type: 'text',
+        text:
+          'delete the build folder\n\n[Request interrupted by user]\n\n' +
+          'look\n\n[Request interrupted by user]\n\n' +
+          'what did I send?'
+      }
     ])
-    const frame = textOf(prompt[0])
-    expect(frame.match(/<stopped-message number=/g)).toHaveLength(2)
-    // This agent takes no images, so the stopped one's is left out and said to be.
-    expect(frame).toContain('<stopped-message number="2" images="none" omitted-images="1">')
   })
 
-  it('fits a text-only backlog within the real line limit: the send goes, the excess is shortened or left owed', async () => {
+  it('carries only whole messages within the real line limit; the first that does not fit waits with the rest', async () => {
     const maxLineBytes = resolveAcpPeerOptions().maxLineBytes
-    // A send that leaves the line less room than the shared history cap.
-    const long = message('w'.repeat(maxLineBytes - 64 * 1024 - 30_000))
+    // Room beside the send for one of the stopped messages, not two.
+    const long = message('w'.repeat(maxLineBytes - 64 * 1024 - 70_000))
     const { rig, prepared, outcome } = await prepareAndSend(
-      [owed('one', message('x'.repeat(40_000))), owed('two', message('y'))],
+      [
+        owed('one', message('x'.repeat(40_000))),
+        owed('two', message('y'.repeat(40_000))),
+        owed('three', message('z'))
+      ],
       long
     )
 
     expect(outcome).toEqual({ state: 'admitted' })
     const written = await rig.frame('session/prompt')
     expect(Buffer.byteLength(JSON.stringify(written))).toBeLessThanOrEqual(maxLineBytes)
-    const frame = textOf(promptOf(written)[0])
     expect(prepared?.carries).toEqual(['one'])
-    expect(frame.match(/<stopped-message number=/g)).toHaveLength(1)
-    expect(frame).toContain('shortened="true"')
-    expect(frame).toContain('1 earlier stopped message is not included in this message')
-    expect(promptOf(written).at(-1)).toEqual(long.blocks[0])
+    expect(promptOf(written)).toEqual([
+      {
+        type: 'text',
+        text: `${'x'.repeat(40_000)}\n\n[Request interrupted by user]\n\n${'w'.repeat(maxLineBytes - 64 * 1024 - 70_000)}`
+      }
+    ])
   })
 
   it('refuses a text-only send too large for one line before writing it', async () => {
