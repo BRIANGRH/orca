@@ -1,14 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import { CLAUDE_SESSION_OPTION_CATALOG } from './agent-session-option-catalog-claude-codex'
+import type { AgentSessionModelCatalogResult } from './agent-session-wire'
 import {
   applyStructuredAgentSessionModelCatalog,
+  applyStructuredAgentSessionOptions,
   createStructuredAgentSessionOptionState,
-  settleStructuredAgentSessionBuiltinCatalog,
   structuredAgentSessionOptionSnapshot
 } from './structured-agent-session-options'
-import { structuredAgentSessionOptionView } from './structured-agent-session-option-view'
+import {
+  structuredAgentSessionListedPicks,
+  structuredAgentSessionOptionView
+} from './structured-agent-session-option-view'
 
 const levels = (...values: string[]) => values.map((value) => ({ value, label: value }))
+// Claude's session-less listing marks no default row.
+const LISTED: AgentSessionModelCatalogResult = {
+  origin: 'probe',
+  fetchedAt: 1,
+  models: [
+    { id: 'opus[1m]', label: 'Opus', isDefault: false, efforts: levels('low', 'high', 'xhigh') },
+    { id: 'sonnet', label: 'Sonnet', isDefault: false, efforts: levels('low', 'high') }
+  ]
+}
 
 function shown(...args: Parameters<typeof structuredAgentSessionOptionView>) {
   const snapshot = structuredAgentSessionOptionSnapshot(structuredAgentSessionOptionView(...args))
@@ -19,59 +32,48 @@ function shown(...args: Parameters<typeof structuredAgentSessionOptionView>) {
   return { model: value('model'), effort: value('effort') }
 }
 
-describe('a new Claude chat whose remembered model the host list no longer offers', () => {
-  const cold = createStructuredAgentSessionOptionState('claude', CLAUDE_SESSION_OPTION_CATALOG)
-  const listed = applyStructuredAgentSessionModelCatalog(
-    cold,
-    CLAUDE_SESSION_OPTION_CATALOG,
-    {
-      origin: 'probe',
-      fetchedAt: 1,
-      models: [
-        { id: 'sonnet', label: 'Sonnet', isDefault: false, efforts: levels('low', 'high') },
-        { id: 'opus', label: 'Opus', isDefault: true, efforts: levels('low', 'high', 'xhigh') }
-      ]
-    },
-    { newLaunch: true }
-  )
-  const seed = { model: 'gone', effort: 'max' }
+const cold = createStructuredAgentSessionOptionState('claude', CLAUDE_SESSION_OPTION_CATALOG)
+const newChat = applyStructuredAgentSessionModelCatalog(
+  cold,
+  CLAUDE_SESSION_OPTION_CATALOG,
+  LISTED,
+  { newLaunch: true }
+)
+const remembered = { model: 'claude-gone', effort: 'max' }
 
-  it('shows the listed default with the nearest effort it offers', () => {
-    expect(shown(listed, seed, {})).toEqual({ model: 'opus', effort: 'xhigh' })
-    // Derived only: the record never takes it.
-    expect(listed.record.model).toBeUndefined()
-  })
-
-  it('keeps a listed model as remembered', () => {
-    expect(shown(listed, { model: 'sonnet', effort: 'low' }, {})).toEqual({
-      model: 'sonnet',
-      effort: 'low'
+describe('a Claude model the host list no longer offers', () => {
+  it('shows a new chat on the first listed row, effort moved to the nearest level', () => {
+    expect(shown(newChat, remembered, {}, LISTED)).toEqual({ model: 'opus[1m]', effort: 'xhigh' })
+    expect(structuredAgentSessionListedPicks(newChat, remembered, {}, LISTED)).toEqual({
+      model: 'opus[1m]',
+      effort: 'xhigh'
     })
+    // Derived only: the record never takes it.
+    expect(newChat.record.model).toBeUndefined()
   })
 
-  it('derives nothing beside a held model, which the host runs as picked', () => {
-    expect(shown(listed, seed, { model: 'opus' })).toEqual({ model: 'opus', effort: undefined })
+  it('shows a stopped chat on the listed default too', () => {
+    const fresh = createStructuredAgentSessionOptionState('claude', CLAUDE_SESSION_OPTION_CATALOG)
+    const stopped = applyStructuredAgentSessionOptions(fresh, CLAUDE_SESSION_OPTION_CATALOG, {
+      models: [
+        ...LISTED.models,
+        { id: 'claude-gone', label: 'claude-gone', isDefault: false, efforts: [] }
+      ],
+      current: { model: 'claude-gone', effort: 'high' }
+    })
+    expect(shown(stopped, undefined, {}, LISTED)).toEqual({ model: 'opus[1m]', effort: 'high' })
   })
 
-  it('takes the first row from a list that marks no default', () => {
-    const unmarked = applyStructuredAgentSessionModelCatalog(
-      cold,
-      CLAUDE_SESSION_OPTION_CATALOG,
-      {
-        origin: 'probe',
-        fetchedAt: 1,
-        models: [
-          { id: 'sonnet', label: 'Sonnet', isDefault: false, efforts: levels('low', 'high') },
-          { id: 'opus', label: 'Opus', isDefault: false, efforts: levels('low', 'high') }
-        ]
-      },
-      { newLaunch: true }
-    )
-    expect(shown(unmarked, seed, {})).toEqual({ model: 'sonnet', effort: 'high' })
-  })
-
-  it('names nothing new while the host list is loading or failed', () => {
-    expect(shown(cold, seed, {}).model).toBeUndefined()
-    expect(shown(settleStructuredAgentSessionBuiltinCatalog(cold), seed, {}).model).toBeUndefined()
+  it('keeps a listed model, a held pick, and any model while no list has loaded', () => {
+    expect(structuredAgentSessionListedPicks(newChat, { model: 'sonnet' }, {}, LISTED)).toBeNull()
+    expect(
+      structuredAgentSessionListedPicks(newChat, remembered, { model: 'sonnet' }, LISTED)
+    ).toBeNull()
+    expect(structuredAgentSessionListedPicks(newChat, remembered, {}, null)).toBeNull()
+    expect(
+      structuredAgentSessionListedPicks(newChat, remembered, {}, { origin: 'unknown' })
+    ).toBeNull()
+    // With no list, main's quiet placeholder names nothing.
+    expect(shown(newChat, remembered, {}, null).model).toBeUndefined()
   })
 })

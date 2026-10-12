@@ -52,10 +52,17 @@ export type {
 } from './structured-agent-session-send-runtime'
 
 /** The send's one request, and what its answer settles. Nothing is ever sent again. */
-async function attempt(entry: StructuredAgentSessionPendingSend): Promise<void> {
+async function attempt(
+  entry: StructuredAgentSessionPendingSend,
+  prepare?: () => Promise<unknown>
+): Promise<void> {
   const runtime = runtimes.get(entry.clientMessageId)
   if (!runtime) {
     return
+  }
+  // Settles what the send runs on (a gone model's replacement); a failure never holds it back.
+  if (prepare) {
+    await prepare().catch(() => undefined)
   }
   const outcome = await attemptStructuredAgentSessionSend({
     entry,
@@ -84,10 +91,11 @@ async function attempt(entry: StructuredAgentSessionPendingSend): Promise<void> 
 
 function dispatch(
   entry: StructuredAgentSessionPendingSend,
-  target: RuntimeClientTarget
+  target: RuntimeClientTarget,
+  prepare?: () => Promise<unknown>
 ): StructuredAgentSessionSent {
   const sent = beginSend(entry, target)
-  void attempt(entry)
+  void attempt(entry, prepare)
   return sent
 }
 
@@ -98,10 +106,14 @@ function dispatch(
  * worktree purged).
  */
 export function sendStructuredAgentSessionMessage(
-  input: StructuredAgentSessionSendInput & { target: RuntimeClientTarget }
+  input: StructuredAgentSessionSendInput & {
+    target: RuntimeClientTarget
+    /** Runs, awaited, after the send takes its slot and before its request. */
+    prepare?: () => Promise<unknown>
+  }
 ): StructuredAgentSessionSent | null {
   const entry = takeStructuredAgentSessionSendSlot(input)
-  return entry ? dispatch(entry, input.target) : null
+  return entry ? dispatch(entry, input.target, input.prepare) : null
 }
 
 export type StructuredAgentSessionReservedSend = {

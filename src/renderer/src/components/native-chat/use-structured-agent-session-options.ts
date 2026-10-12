@@ -23,7 +23,7 @@ import { enqueueSessionOptionSettingsWrite } from './native-chat-session-option-
 import { encodeStructuredAgentSessionOptionValue } from '../../../../shared/structured-agent-session-option-codec'
 import type { StructuredAgentSessionMutate } from './use-structured-agent-session-mutate'
 import { useHostModelCatalogUpgrade } from './use-host-model-catalog-upgrade'
-import { useUnlistedLaunchModelPick } from './use-unlisted-launch-model-pick'
+import { useListedModelSendPrepare } from './use-listed-model-send-prepare'
 import { useStructuredAgentSessionOptionState } from './use-structured-agent-session-option-state'
 import { agentSessionWriteFailureText } from './agent-session-write-notice-text'
 import type { StructuredAgentSessionLaunchView } from './use-native-chat-provisional-launch'
@@ -213,10 +213,10 @@ export function useStructuredAgentSessionOptions(args: {
   )
   const optionSnapshot = useMemo(() => {
     const snapshot = structuredAgentSessionOptionSnapshot(
-      structuredAgentSessionOptionView(optionState, launchSeedOptions, held)
+      structuredAgentSessionOptionView(optionState, launchSeedOptions, held, hostCatalog.listed)
     )
     return acceptsPicks ? snapshot : lockedStructuredAgentSessionOptionSnapshot(snapshot)
-  }, [acceptsPicks, held, launchSeedOptions, optionState])
+  }, [acceptsPicks, held, hostCatalog.listed, launchSeedOptions, optionState])
   const setStructuredOption = useCallback(
     async (id: string, value: string | boolean): Promise<boolean> => {
       const view = structuredAgentSessionOptionView(optionStateRef.current, launchSeedOptions, held)
@@ -252,12 +252,11 @@ export function useStructuredAgentSessionOptions(args: {
       transportEnabled
     ]
   )
-  useUnlistedLaunchModelPick({
-    sessionId,
+  const prepareSend = useListedModelSendPrepare({
     optionState,
     launchSeed: launchSeedOptions,
     held,
-    acceptsPicks,
+    listed: hostCatalog.listed,
     setStructuredOption
   })
   const setOption = useCallback(
@@ -302,6 +301,7 @@ export function useStructuredAgentSessionOptions(args: {
     optionSnapshot,
     optionSurface,
     setStructuredOption,
+    prepareSend,
     unavailable: hostCatalog.unavailable
   }
 }

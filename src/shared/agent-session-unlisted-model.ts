@@ -1,5 +1,5 @@
-// A remembered model the account's loaded list no longer offers gives way to the list's default,
-// so a new chat starts on a model that runs instead of failing its first message.
+// A model the account's loaded list no longer offers gives way to the list's default, so the next
+// send runs a model that exists instead of failing.
 
 const EFFORT_RANK = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
@@ -23,18 +23,18 @@ export function nearestAgentEffort(
     .sort((a, b) => distance(a) - distance(b) || rank(b) - rank(a))[0]
 }
 
-/** `seed` on the list's default (else its first row) when a loaded list lacks `seed.model`, its
- *  effort moved to the nearest level that row offers; `seed` itself otherwise. */
-export function seedOnListedModel(
-  seed: Readonly<Record<string, string>>,
+/** `values` on the list's default (else its first row) when a loaded list lacks `values.model`,
+ *  effort moved to the nearest level that row offers; `values` itself otherwise. */
+export function valuesOnListedModel(
+  values: Readonly<Record<string, string>>,
   models: readonly ListedModelRow[]
 ): Readonly<Record<string, string>> {
-  const model = seed.model
+  const model = values.model
   if (model === undefined || models.length === 0 || models.some((row) => row.id === model)) {
-    return seed
+    return values
   }
   const target = models.find((row) => row.isDefault) ?? models[0]!
-  const { effort, ...rest } = seed
+  const { effort, ...rest } = values
   const efforts = target.efforts.map((choice) => choice.value)
   const carried = effort === undefined ? undefined : nearestAgentEffort(effort, efforts)
   return { ...rest, model: target.id, ...(carried ? { effort: carried } : {}) }

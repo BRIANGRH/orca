@@ -101,6 +101,7 @@ export function useStructuredAgentSession(args: {
     optionSnapshot,
     optionSurface,
     setStructuredOption,
+    prepareSend,
     unavailable,
     threadGoal: threadGoalSupport,
     contextUsage: contextUsageSupport,
@@ -155,7 +156,8 @@ export function useStructuredAgentSession(args: {
     queue,
     historyLoaded: transportEnabled && state.status === 'ready',
     isWorking: transportState.isWorking,
-    stopping: stopControl.stopping
+    stopping: stopControl.stopping,
+    prepare: prepareSend
   })
 
   const threadGoal = useStructuredAgentSessionThreadGoal({

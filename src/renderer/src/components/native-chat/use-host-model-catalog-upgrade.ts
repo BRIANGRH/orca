@@ -63,7 +63,11 @@ export function useHostModelCatalogUpgrade(args: {
   updateOptionState: (
     update: (current: StructuredAgentSessionOptionState) => StructuredAgentSessionOptionState
   ) => void
-}): { unavailable: AgentSessionUnavailable | null } {
+}): {
+  unavailable: AgentSessionUnavailable | null
+  /** The host's latest answer for this chat, apart from the session's own list; null until one. */
+  listed: AgentSessionModelCatalogResult | null
+} {
   const {
     activeOptionRecordRef,
     agent,
@@ -82,6 +86,10 @@ export function useHostModelCatalogUpgrade(args: {
     unavailable: AgentSessionUnavailable | null
   } | null>(null)
   const unavailable = verdict?.key === waitKey ? verdict.unavailable : null
+  const [answer, setAnswer] = useState<{
+    key: string
+    catalog: AgentSessionModelCatalogResult | null
+  } | null>(null)
   const [rereads, setRereads] = useState(0)
   const recheck = useCallback(() => setRereads((count) => count + 1), [])
   const said = unavailable !== null
@@ -133,6 +141,12 @@ export function useHostModelCatalogUpgrade(args: {
                 newLaunch
               })
             : settleStructuredAgentSessionBuiltinCatalog(current)
+      )
+      // Kept once the answer applied; the same answer again must not render the chat again.
+      setAnswer((current) =>
+        current?.key === waitKey && JSON.stringify(current.catalog) === JSON.stringify(catalog)
+          ? current
+          : { key: waitKey, catalog }
       )
     }
     let leave: (() => void) | null = null
@@ -186,5 +200,5 @@ export function useHostModelCatalogUpgrade(args: {
     waitKey,
     worktree
   ])
-  return { unavailable }
+  return { unavailable, listed: answer?.key === waitKey ? answer.catalog : null }
 }

@@ -35,11 +35,14 @@ export function useStructuredAgentSessionSends(args: {
   isWorking?: boolean
   /** The chat reads Stopping: a send made now is drawn after the turn being stopped. */
   stopping?: boolean
+  /** Awaited before each send's request. */
+  prepare?: () => Promise<unknown>
 }) {
   const {
     fence,
     historyLoaded,
     isWorking = false,
+    prepare,
     queue,
     queuedMessageIds,
     sessionId,
@@ -97,7 +100,8 @@ export function useStructuredAgentSessionSends(args: {
         text,
         attachments,
         ...(delivery ? { delivery } : {}),
-        ...(stopping ? { sentWhileStopping: true as const } : {})
+        ...(stopping ? { sentWhileStopping: true as const } : {}),
+        ...(prepare ? { prepare } : {})
       })
       // Refused while the chat's send is out: the text stays in the box.
       if (!sent) {
@@ -112,7 +116,7 @@ export function useStructuredAgentSessionSends(args: {
         ? 'queued'
         : true
     },
-    [isWorking, queue, queuedMessageIds, sessionId, stopping, target]
+    [isWorking, prepare, queue, queuedMessageIds, sessionId, stopping, target]
   )
 
   return {
