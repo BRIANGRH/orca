@@ -199,6 +199,7 @@ export async function runPairedTerminalParkingOracle(
     expect(after.bufferCells).toBeLessThanOrEqual(baseline.bufferCells * MAX_RETAINED_CELL_FRACTION)
     expect(after.mountedTargetManagers).toBe(1)
     expect(maxLagMs).toBeLessThan(MAX_EVICTION_LAG_MS)
+    console.log(`[heap-diag5] baseline=${baseline.heapBytes} after=${after.heapBytes}`)
     if (baseline.heapBytes !== null && after.heapBytes !== null) {
       expect(after.heapBytes).toBeLessThanOrEqual(baseline.heapBytes + MAX_HEAP_GROWTH_BYTES)
     }
