@@ -51,7 +51,7 @@ function taskNotStartableNextSteps(detail: TaskNotStartableDetail): string[] {
   if (detail.retryOf && detail.failureCount !== undefined) {
     return [
       `Do not retry this Task or start a replacement for it: it failed ${detail.failureCount} times. Report the failure to the user.`,
-      `Read what the last attempt showed with orca orchestration worker-read --dispatch ${detail.retryOf} --json; its terminal stays open for the user until orca orchestration worker-release --dispatch ${detail.retryOf} --json.`
+      `Read what the last attempt showed with orca orchestration worker-read --dispatch ${detail.retryOf} --json. If its terminal is still open, it stays for the user until orca orchestration worker-release --dispatch ${detail.retryOf} --json.`
     ]
   }
   if (detail.retryOf) {
