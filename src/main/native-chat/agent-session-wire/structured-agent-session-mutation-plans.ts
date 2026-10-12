@@ -45,10 +45,7 @@ import {
   type AgentSessionPromptRequest
 } from './structured-agent-session-turns-prompt'
 import { queuedSendAnswer } from './structured-agent-session-queued-send-answer'
-import {
-  BACKGROUND_STOP_COMMAND_RECEIPT,
-  STOP_COMMAND_RECEIPT
-} from './structured-agent-session-stop-acceptance'
+import { STOP_COMMAND_RECEIPT } from './structured-agent-session-stop-acceptance'
 import { runTargetedCancel } from './structured-agent-session-targeted-cancel'
 import type { JournalOperationReceipt } from '../agent-session-journal/journal-row-writer'
 import type { CommandReceiptResult } from '../agent-session-journal/command-receipt-schema'
@@ -98,9 +95,6 @@ export type MutationCommandReceipt<TValue> = {
   /** A run that wrote nothing: the receipt committed alone, before the answer goes out (a no-op's
    *  answer, or the earlier write it acknowledged), or null to record nothing. */
   unwritten?: (value: TValue, ctx: AgentSessionTurnContext) => CommandReceiptResult | null
-  /** A refusal its run returns once accepted is the command's own answer: it reaches the client
-   *  once, and a retry is answered from the receipt. */
-  refusalAnswers?: true
 }
 
 /** The journal row an accepted command wrote, which must be of a kind it accepts with. */
@@ -293,7 +287,7 @@ export function cancelPlan(params: {
     // Stop is a conversation write; a prompt or background-task cancel needs the live child.
     ...(params.scope || params.prompt ? {} : { conversationWrite: true as const }),
     // Saved before it acts: a Stop whose acceptance cannot be saved interrupts nothing.
-    commandReceipt: params.scope ? BACKGROUND_STOP_COMMAND_RECEIPT : STOP_COMMAND_RECEIPT,
+    commandReceipt: STOP_COMMAND_RECEIPT,
     fields: {
       ...named,
       ...(params.scope ? { scope: params.scope } : {}),

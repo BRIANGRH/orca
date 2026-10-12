@@ -123,6 +123,8 @@ export const AGENT_SESSION_FAILURE_COPY = {
   couldNotStop: "Couldn't stop {{agent}}.",
   couldNotStopTheAgent: "Couldn't stop the agent.",
   noTurnToStop: '{{agent}} had no turn running to stop.',
+  backgroundTaskNotStopped: "The background task wasn't stopped.",
+  backgroundTasksNotStopped: "The background tasks weren't stopped.",
   answerUnconfirmed: 'Your answer was recorded but the agent did not confirm it.',
   hostFault: "Orca ran into a problem, so this didn't go through.",
   hostFaultTryAgain: "Orca ran into a problem, so this didn't go through. Try again.",

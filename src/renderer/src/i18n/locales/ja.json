@@ -17825,6 +17825,8 @@
         "compactionFailedQuoted": "圧縮に失敗しました: {{detail}}。",
         "compactionUnconfirmed": "圧縮の完了は確認されていません。",
         "cancelUnconfirmed": "キャンセルは確認されませんでした。",
+        "backgroundTaskNotStopped": "バックグラウンドタスクは停止されませんでした。",
+        "backgroundTasksNotStopped": "バックグラウンドタスクは停止されませんでした。",
         "stopRefused": "{{agent}} は停止しませんでした。",
         "stopRefusedQuoted": "{{agent}} は停止しませんでした: {{detail}}。",
         "couldNotStop": "{{agent}} を停止できませんでした。",

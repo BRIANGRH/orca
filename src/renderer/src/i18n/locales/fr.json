@@ -17892,6 +17892,8 @@
         "compactionFailedQuoted": "La compaction a échoué : {{detail}}.",
         "compactionUnconfirmed": "La fin de la compaction n'est pas confirmée.",
         "cancelUnconfirmed": "L'annulation n'a pas été confirmée.",
+        "backgroundTaskNotStopped": "La tâche en arrière-plan n'a pas été arrêtée.",
+        "backgroundTasksNotStopped": "Les tâches en arrière-plan n'ont pas été arrêtées.",
         "stopRefused": "{{agent}} ne s'est pas arrêté.",
         "stopRefusedQuoted": "{{agent}} ne s'est pas arrêté : {{detail}}.",
         "couldNotStop": "Impossible d'arrêter {{agent}}.",

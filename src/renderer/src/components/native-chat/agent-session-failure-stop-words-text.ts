@@ -23,7 +23,20 @@ export const STOP_FAILURE_PIECES = {
   couldNotStop: (values) =>
     translate('components.native-chat.failureWords.couldNotStop', COPY.couldNotStop, values),
   couldNotStopTheAgent: () =>
-    translate('components.native-chat.failureWords.couldNotStopTheAgent', COPY.couldNotStopTheAgent)
+    translate(
+      'components.native-chat.failureWords.couldNotStopTheAgent',
+      COPY.couldNotStopTheAgent
+    ),
+  backgroundTaskNotStopped: () =>
+    translate(
+      'components.native-chat.failureWords.backgroundTaskNotStopped',
+      COPY.backgroundTaskNotStopped
+    ),
+  backgroundTasksNotStopped: () =>
+    translate(
+      'components.native-chat.failureWords.backgroundTasksNotStopped',
+      COPY.backgroundTasksNotStopped
+    )
 } satisfies Partial<
   Record<AgentSessionFailureCopyId, (values: AgentSessionFailureCopyValues) => string>
 >

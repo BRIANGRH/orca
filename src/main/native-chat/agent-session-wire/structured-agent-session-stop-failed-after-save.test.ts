@@ -240,7 +240,7 @@ describe('a saved Stop whose own step then throws', () => {
 
     expect(statusTexts()).not.toContain('Cancellation was not confirmed.')
     expect(warned.mock.calls.map((call) => String(call[0]))).toEqual(
-      expect.arrayContaining([expect.stringContaining("writing a failed Stop's note failed")])
+      expect.arrayContaining([expect.stringContaining("writing a Stop's note failed")])
     )
   })
 })

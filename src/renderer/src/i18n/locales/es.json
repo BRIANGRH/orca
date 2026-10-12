@@ -17790,6 +17790,8 @@
         "compactionFailedQuoted": "La compactación falló: {{detail}}.",
         "compactionUnconfirmed": "No se confirmó que la compactación haya terminado.",
         "cancelUnconfirmed": "No se confirmó la cancelación.",
+        "backgroundTaskNotStopped": "La tarea en segundo plano no se detuvo.",
+        "backgroundTasksNotStopped": "Las tareas en segundo plano no se detuvieron.",
         "stopRefused": "{{agent}} no se detuvo.",
         "stopRefusedQuoted": "{{agent}} no se detuvo: {{detail}}.",
         "couldNotStop": "No se pudo detener {{agent}}.",

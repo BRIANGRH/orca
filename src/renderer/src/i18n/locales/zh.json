@@ -17804,6 +17804,8 @@
         "compactionFailedQuoted": "压缩失败：{{detail}}。",
         "compactionUnconfirmed": "未确认压缩是否完成。",
         "cancelUnconfirmed": "未确认取消。",
+        "backgroundTaskNotStopped": "后台任务未停止。",
+        "backgroundTasksNotStopped": "后台任务未停止。",
         "stopRefused": "{{agent}} 未停止。",
         "stopRefusedQuoted": "{{agent}} 未停止：{{detail}}。",
         "couldNotStop": "无法停止 {{agent}}。",

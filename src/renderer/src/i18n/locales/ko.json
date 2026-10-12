@@ -17825,6 +17825,8 @@
         "compactionFailedQuoted": "압축에 실패했습니다: {{detail}}.",
         "compactionUnconfirmed": "압축 완료가 확인되지 않았습니다.",
         "cancelUnconfirmed": "취소가 확인되지 않았습니다.",
+        "backgroundTaskNotStopped": "백그라운드 작업이 중지되지 않았습니다.",
+        "backgroundTasksNotStopped": "백그라운드 작업이 중지되지 않았습니다.",
         "stopRefused": "{{agent}}이(가) 중지되지 않았습니다.",
         "stopRefusedQuoted": "{{agent}}이(가) 중지되지 않았습니다: {{detail}}.",
         "couldNotStop": "{{agent}}을(를) 중지하지 못했습니다.",
