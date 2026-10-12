@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import '@testing-library/jest-dom/vitest'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { projectStructuredItemsToNativeChat } from '../../../../shared/structured-agent-session-projection'
 import type { AgentJournalStatusItem } from '../../../../shared/agent-session-journal-types'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { MessageRow } from './NativeChatMessageRow'
 import { NativeChatNoticeRow } from './NativeChatNoticeRow'
 import { i18n } from '@/i18n/i18n'
@@ -18,18 +19,35 @@ afterEach(async () => {
   await i18n.changeLanguage('en')
 })
 
+it('keeps a skipped compaction warning truthful instead of showing the success separator', () => {
+  renderStatus({
+    kind: 'status',
+    tone: 'warning',
+    text: 'Nothing to compact (session too small)',
+    presentation: 'compaction-skipped'
+  })
+  expect(screen.getByText('Nothing to compact (session too small)')).toBeInTheDocument()
+  expect(screen.queryByText('Context compacted')).toBeNull()
+})
+
 function orcaStopView(
   hostLabel: string | null,
-  continueAvailable: boolean
+  continueAvailable: boolean,
+  remoteHost: boolean,
+  offer: Pick<NativeChatOrcaStopView, 'offeredTurnItemId' | 'continueNow'>
 ): NativeChatOrcaStopView {
-  return { hostLabel, continueAvailable }
+  return { hostLabel, remoteHost, continueAvailable, ...offer }
 }
+
+const NO_OFFER = { offeredTurnItemId: null, continueNow: () => {} }
 
 function renderStatus(
   body: AgentJournalStatusItem,
   hostLabel: string | null = null,
   continueAvailable = false,
-  agentName?: string
+  remoteHost = false,
+  agentName?: string,
+  offer: Pick<NativeChatOrcaStopView, 'offeredTurnItemId' | 'continueNow'> = NO_OFFER
 ) {
   const [message] = projectStructuredItemsToNativeChat([
     {
@@ -41,16 +59,18 @@ function renderStatus(
       turnScope: { kind: 'turn', turnItemId: 'cut-turn' }
     }
   ])
-  const view = orcaStopView(hostLabel, continueAvailable)
+  const view = orcaStopView(hostLabel, continueAvailable, remoteHost, offer)
   return render(
-    <NativeChatOrcaStopContext.Provider value={view}>
-      <MessageRow
-        message={message!}
-        agentName={agentName}
-        expandSignal={false}
-        onScrollMessageToTop={vi.fn()}
-      />
-    </NativeChatOrcaStopContext.Provider>
+    <TooltipProvider>
+      <NativeChatOrcaStopContext.Provider value={view}>
+        <MessageRow
+          message={message!}
+          agentName={agentName}
+          expandSignal={false}
+          onScrollMessageToTop={vi.fn()}
+        />
+      </NativeChatOrcaStopContext.Provider>
+    </TooltipProvider>
   )
 }
 
@@ -86,6 +106,53 @@ describe('the row an Orca stop leaves', () => {
         'Orca on studio-mac restarted for an update while this response was in progress.'
       )
     ).toBeInTheDocument()
+  })
+
+  it('carries Continue on the cut it is offered for, and only there', () => {
+    const continueNow = vi.fn()
+    renderStatus(orcaStopRow('quit'), 'studio-mac', true, false, undefined, {
+      offeredTurnItemId: 'cut-turn',
+      continueNow
+    })
+    const sentence = screen.getByText(
+      'Orca on studio-mac was closed while this response was in progress.'
+    )
+    const button = screen.getByRole('button', { name: 'Continue' })
+    // Beside the words that say why, in the same card.
+    expect(sentence.parentElement).toContainElement(button)
+    fireEvent.click(button)
+    expect(continueNow).toHaveBeenCalledOnce()
+    cleanup()
+
+    renderStatus(orcaStopRow('quit'), 'studio-mac', true, false, undefined, {
+      offeredTurnItemId: 'another-turn',
+      continueNow
+    })
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
+  })
+
+  it("says a remote host's Orca stopped, not that it was closed", () => {
+    renderStatus(orcaStopRow('quit'), 'QA SSH', true, true)
+    expect(
+      screen.getByText('Orca on QA SSH stopped while this response was in progress.').parentElement
+        ?.parentElement
+    ).toHaveClass('text-muted-foreground')
+    expect(screen.queryByText(/was closed/)).toBeNull()
+  })
+
+  it("keeps this desktop's quit as closed", () => {
+    renderStatus(orcaStopRow('quit'), 'studio-mac', true, false)
+    expect(
+      screen.getByText('Orca on studio-mac was closed while this response was in progress.')
+    ).toBeInTheDocument()
+  })
+
+  it.each([
+    ['update', 'Orca on QA SSH restarted for an update while this response was in progress.'],
+    ['crash', 'Orca on QA SSH stopped unexpectedly while this response was in progress.']
+  ])("keeps a remote host's %s words", (cause, sentence) => {
+    renderStatus(orcaStopRow(cause), 'QA SSH', true, true)
+    expect(screen.getByText(sentence)).toBeInTheDocument()
   })
 
   // A client that re-words unnamed host rows keeps this row's presentation and cause, neutral.
@@ -124,6 +191,16 @@ describe('the row an Orca stop leaves', () => {
     )
   })
 
+  it('calls a paired server with no name the remote server, so its words match the button', () => {
+    renderStatus(orcaStopRow('update'), null, true, true)
+    expect(
+      screen.getByText(
+        'Orca on the remote server restarted for an update while this response was in progress.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.queryByText(LEGACY_TEXT)).toBeNull()
+  })
+
   it('keeps the host words for a stop Orca did not cause', () => {
     const { orcaStop: _orcaStop, presentation: _presentation, ...agentExit } = orcaStopRow('update')
     renderStatus(agentExit, 'studio-mac')
@@ -153,7 +230,7 @@ describe('notice rows', () => {
         { kind },
         { agentName: 'Grok', command: 'compact', surface: 'row' }
       )
-      renderStatus({ kind: 'status', tone: 'error', ...words }, null, false, 'Grok')
+      renderStatus({ kind: 'status', tone: 'error', ...words }, null, false, false, 'Grok')
       expect(screen.getByText(words.text)).toBeInTheDocument()
       expect(screen.getByText(/Run \/compact again\./)).toBeInTheDocument()
       expect(screen.queryByText(/send your message again/i)).toBeNull()
@@ -167,6 +244,7 @@ describe('notice rows', () => {
         ...agentSessionFailureWords({ kind: 'notSignedIn' }, { agentName: 'Grok', surface: 'row' })
       },
       null,
+      false,
       false,
       'Grok'
     )
@@ -216,6 +294,7 @@ describe('notice rows', () => {
         },
         null,
         false,
+        false,
         agentName
       )
       expect(
@@ -237,6 +316,7 @@ describe('notice rows', () => {
         )
       },
       null,
+      false,
       false,
       'Claude'
     )
@@ -260,7 +340,7 @@ describe('notice rows', () => {
       }
       // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: simulates an older client receiving a newer host's unknown failure fact.
       const row = newerRow as unknown as AgentJournalStatusItem
-      renderStatus(row, null, false, 'Grok')
+      renderStatus(row, null, false, false, 'Grok')
       expect(screen.getByText('Future host guidance')).toBeInTheDocument()
     }
   )

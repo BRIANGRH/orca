@@ -7,6 +7,7 @@
 
 import {
   refuse,
+  type AgentSessionModelCatalogResult,
   type AgentSessionOptionResult,
   type AgentSessionOptionsResult
 } from '../../../shared/agent-session-wire'
@@ -16,12 +17,38 @@ import type { AgentSessionRecordStore } from '../../runtime/agent-session-record
 import { journalOpenReadRefusal } from '../agent-session-journal/journal-open-failure'
 import type { StructuredAgentDefinition } from './structured-agent-definition'
 import type { StructuredAgentRegistry } from './structured-agent-registry'
+import type { StructuredAgentSessionLiveOptions } from './structured-agent-session-adapter'
 import type { StructuredAgentSessionHostDeps } from './structured-agent-session-host-types'
 import { structuredAgentSessionOptionModels } from './structured-agent-session-option-models'
 import type { AgentSessionTurnContext, TurnOutcome } from './structured-agent-session-turns'
 import type { StructuredAgentSessionMutationContext } from './structured-agent-session-host-mutations'
 
 type RestingOptions = Pick<AgentSessionOptionsResult, 'models' | 'fastModeSupport' | 'current'>
+
+/** What the asking client takes: whether it reads an answer that names no model. */
+export type StructuredAgentSessionOptionsReader = { readsWithoutModel: boolean }
+
+/** A same-build caller in this process reads as the RPC gate treats one: it takes no model. */
+export const IN_PROCESS_OPTIONS_READER: StructuredAgentSessionOptionsReader = {
+  readsWithoutModel: true
+}
+
+/** Initial explicit picks follow the same rules as a pick made while the chat is at rest. */
+export function structuredAgentSessionOptionOverridesRefusal(
+  agents: Pick<StructuredAgentRegistry, 'definition'>,
+  provider: string,
+  options: Readonly<Record<string, string>>
+) {
+  const rules = agents.definition(provider)?.restingOptions
+  const key = Object.keys(options).find((key) => !rules?.acceptsKey(key))
+  return key === undefined
+    ? null
+    : refuse(
+        'agent_session_operation_invalid',
+        { reason: 'optionRejected' },
+        `${provider} has no session option named ${key}`
+      )
+}
 
 /** The at-rest rules of the record's agent, as this runtime registered it; null for any other. */
 function restingOptionRules(
@@ -33,20 +60,40 @@ function restingOptionRules(
 
 async function readStructuredAgentSessionOptionsAtRest(
   deps: Pick<StructuredAgentSessionHostDeps, 'store' | 'agents' | 'modelCatalog'>,
-  sessionId: string
+  sessionId: string,
+  reader: StructuredAgentSessionOptionsReader
 ): Promise<RestingOptions> {
   const record = deps.store.getRecord(sessionId)
   if (!record) {
     throw new Error('agent_session_identity_required')
   }
   const rules = restingOptionRules(deps.agents, record)
-  const catalog = (await deps.modelCatalog
-    ?.read({ agent: record.provider, sessionId })
-    .catch(() => null)) ?? { origin: 'unknown' as const }
+  const readCatalog = async (
+    inSessionWorkspace: boolean
+  ): Promise<AgentSessionModelCatalogResult> =>
+    (await deps.modelCatalog
+      ?.read({
+        agent: record.provider,
+        sessionId,
+        ...(inSessionWorkspace ? { inSessionWorkspace: true as const } : {})
+      })
+      .catch(() => null)) ?? { origin: 'unknown' }
+  const saved = record.options ?? {}
+  // The chat's own folder decides its default, as its first frame did.
+  const scoped = await readCatalog(true)
+  const folderDefault =
+    scoped.origin === 'unknown' ? undefined : scoped.models.find((entry) => entry.isDefault)
+  // Where the folder names none, a client that needs a model keeps the account default it got before.
+  const catalog =
+    saved.model === undefined &&
+    !folderDefault &&
+    scoped.origin !== 'unknown' &&
+    !reader.readsWithoutModel
+      ? await readCatalog(false)
+      : scoped
   // With no catalog for the account, the list a running child of this agent falls back to.
   const listed = catalog.origin === 'unknown' ? (rules?.fallbackModels() ?? null) : catalog.models
   const models = listed ?? []
-  const saved = record.options ?? {}
   const fastMode =
     saved.fastMode === undefined
       ? null
@@ -55,12 +102,12 @@ async function readStructuredAgentSessionOptionsAtRest(
   // account's default; a built-in list's default is a guess, so with none the client keeps its own.
   const model =
     saved.model ??
-    (catalog.origin === 'unknown' ? undefined : models.find((entry) => entry.isDefault)?.id) ??
-    ''
-  // As a live child answers: the pick, else the model's default where the agent reports that.
+    (catalog.origin === 'unknown' ? undefined : models.find((entry) => entry.isDefault)?.id)
+  // The pick, else the model's default where a live child reports that, or where the chat's folder
+  // names that model as what it runs, as its first frame showed.
   const effort =
     saved.effort ??
-    (rules?.effortDefaultsToModel
+    (rules?.effortDefaultsToModel || (saved.model === undefined && folderDefault)
       ? models.find((entry) => entry.id === model)?.defaultEffort
       : undefined)
   return {
@@ -69,9 +116,10 @@ async function readStructuredAgentSessionOptionsAtRest(
       ? { fastModeSupport: catalog.fastModeSupport }
       : {}),
     current: {
-      model,
+      ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
-      ...(typeof fastMode === 'boolean' ? { fastMode } : {})
+      ...(typeof fastMode === 'boolean' ? { fastMode } : {}),
+      ...(saved.serviceTier ? { serviceTier: saved.serviceTier } : {})
     }
   }
 }
@@ -108,7 +156,8 @@ export async function readStructuredAgentSessionOptions(
     StructuredAgentSessionMutationContext,
     'deps' | 'serialize' | 'openConversation' | 'conversation'
   >,
-  sessionId: string
+  sessionId: string,
+  reader: StructuredAgentSessionOptionsReader
 ): Promise<AgentSessionOptionsResult> {
   const { adapter, agents, store } = context.deps
   const started = await context.serialize(sessionId, async () => {
@@ -131,7 +180,7 @@ export async function readStructuredAgentSessionOptions(
       options: await adapter.readOptions({ sessionId, fence: child.fence })
     }
   })
-  const live =
+  const live: StructuredAgentSessionLiveOptions | null =
     started.kind === 'live'
       ? started.options
       : started.kind === 'prepared'
@@ -142,7 +191,17 @@ export async function readStructuredAgentSessionOptions(
             })
           )
         : null
-  const options = live ?? (await readStructuredAgentSessionOptionsAtRest(context.deps, sessionId))
+  let options: Omit<AgentSessionOptionsResult, 'rewind'>
+  if (live) {
+    const { catalogListing, ...answer } = live
+    if (catalogListing) {
+      // What a running child listed is its account's catalog too, so the next chat opens warm.
+      context.deps.modelCatalog?.recordLiveListing(sessionId, catalogListing)
+    }
+    options = answer
+  } else {
+    options = await readStructuredAgentSessionOptionsAtRest(context.deps, sessionId, reader)
+  }
   // Re-acquired after the reads above: the handle they saw may have closed and reopened since.
   const session = await context.conversation(sessionId)
   const phase = store.getRecord(sessionId)?.rewind?.phase
@@ -160,6 +219,8 @@ export async function readStructuredAgentSessionOptions(
             reason: 'unsupported'
           }),
     conversationCommands: capabilities?.compact ? ['clear', 'compact'] : ['clear'],
+    // A live child may narrow what its agent declares, never widen it.
+    acceptsImages: capabilities?.imagePrompts === true && options.acceptsImages !== false,
     ...(capabilities?.threadGoal
       ? { threadGoal: { current: session.journal.threadGoal(), ...contextFloor } }
       : {}),

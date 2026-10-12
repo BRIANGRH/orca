@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { runProcess } from '../../shared/child-process/run-process'
+import { runProcess } from '@orca/process-host'
 import { ORCAD_LAUNCHER_FILENAME, ORCAD_SERVER_ENTRY_FILENAME } from '../../shared/orcad-artifacts'
 import { NODE_RUNTIME_PIN } from '../../shared/node-runtime-pin'
 import { hashOrcadLauncher } from '../../shared/orcad-build-identity'
@@ -70,6 +70,7 @@ afterAll(async () => {
 it('keeps the server and profile-state graph outside the compatibility launcher', async () => {
   expect(inputs.filter((path) => path.startsWith('src/main/'))).toEqual([
     'src/main/orcad/orcad-app-paths.ts',
+    'src/main/orcad/orcad-configuration-exit.ts',
     'src/main/orcad/orcad-bundled-runtime.ts',
     'src/main/orcad/launcher.ts'
   ])

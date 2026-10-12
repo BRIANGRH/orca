@@ -126,8 +126,10 @@ export class AgentSessionJournal {
         this.adoptLoadedJournal(loaded)
         this.onCommitted?.()
       },
-      commit: (row) => {
-        applyJournalRow(this.state, row)
+      commit: (rows, savedAt) => {
+        for (const row of rows) {
+          applyJournalRow(this.state, row, savedAt)
+        }
         this.onCommitted?.()
       },
       notifyCommitted: () => this.onCommitted?.(),
@@ -183,6 +185,7 @@ export class AgentSessionJournal {
   /** Refuses every later write and resolves once the admitted ones have landed. Holds no
    *  connection, so there is nothing to release and nothing that can fail. */
   close(): Promise<void> {
+    this.queuedMessages.editLeases.dispose()
     this.queue.markClosed()
     return this.queue.drain()
   }
@@ -251,6 +254,10 @@ export class AgentSessionJournal {
   /** Fence of the writer that created the item, while it is in the timeline. */
   itemFence = (itemId: string): number | undefined => this.state.itemFences.get(itemId)
 
+  /** Latest saved output at this fence, excluding client actions and recovery bookkeeping. */
+  lastProviderActivityAt = (fence: number): number | undefined =>
+    this.state.providerActivityAt.get(fence)
+
   submissions = (): AgentJournalSubmission[] => [...this.state.submissions.values()]
 
   submission = (clientMessageId: string) => this.state.submissions.get(clientMessageId)
@@ -294,12 +301,10 @@ export class AgentSessionJournal {
 
   appendTombstone(
     identity: AgentJournalItemIdentity,
-    options: JournalTombstoneInput
+    { fence }: JournalTombstoneInput
   ): Promise<AgentJournalCursor> {
     const itemId = agentJournalItemKey(identity)
-    return this.rowWriter.append(
-      journalTombstoneRowBuilder(() => this.state, itemId, options.fence)
-    )
+    return this.rowWriter.append(journalTombstoneRowBuilder(() => this.state, itemId, fence))
   }
 
   /** A Stop that took effect, timed by its row (`JournalStopEvent`). */
@@ -309,11 +314,8 @@ export class AgentSessionJournal {
 
   /** A person's Resume of the queue. */
   appendQueueResume(fence: number, receipt?: JournalOperationReceipt): Promise<AgentJournalCursor> {
-    return this.rowWriter.append(
-      journalQueueResumeRowBuilder(() => this.state, fence),
-      undefined,
-      receipt
-    )
+    const build = journalQueueResumeRowBuilder(() => this.state, fence)
+    return this.rowWriter.append(build, undefined, receipt)
   }
 
   /** This open found waiting cards an earlier handle wrote (`queued-message-pause.ts`). */

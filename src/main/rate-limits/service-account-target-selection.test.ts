@@ -69,6 +69,36 @@ describe('RateLimitService', () => {
     resetRateLimitProviderMocks()
   })
 
+  it.each([
+    [
+      'account-change refresh',
+      (service: RateLimitService) => service.refreshForCodexAccountChange(null, { runtime: 'host' })
+    ],
+    [
+      'target refresh',
+      (service: RateLimitService) => service.refreshCodexForTarget({ runtime: 'host' })
+    ]
+  ])('passes execution-host proxy settings through %s', async (_label, refresh) => {
+    const service = new RateLimitService()
+    const networkProxySettings = { httpProxyUrl: 'http://proxy.fixture.invalid:8080' }
+    service.setCodexHomePathResolver(() => ({
+      kind: 'ready',
+      codexHomePath: '/managed/synthetic-home'
+    }))
+    service.setNetworkProxySettingsResolver(() => networkProxySettings)
+    vi.mocked(fetchCodexRateLimits).mockResolvedValueOnce(okProvider('codex', 20, Date.now()))
+
+    await refresh(service)
+
+    expect(fetchCodexRateLimits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        codexHomePath: '/managed/synthetic-home',
+        networkProxySettings,
+        signal: expect.any(AbortSignal)
+      })
+    )
+  })
+
   it('passes the selected WSL Codex home into active account rate-limit fetches', async () => {
     const service = new RateLimitService()
     const wslCodexHome =
@@ -368,7 +398,6 @@ describe('RateLimitService', () => {
       wslDistro: target?.wslDistro ?? null,
       wslLinuxConfigDir: target?.runtime === 'wsl' ? '/home/jin/.claude' : null,
       envPatch: target?.runtime === 'wsl' ? { CLAUDE_CONFIG_DIR: '/home/jin/.claude' } : {},
-      stripAuthEnv: target?.runtime === 'wsl',
       provenance: target?.runtime === 'wsl' ? 'managed:wsl-account:wsl:Ubuntu' : 'system'
     }))
     service.setClaudeAuthPreparationResolver(resolver)
@@ -385,8 +414,7 @@ describe('RateLimitService', () => {
         authPreparation: expect.objectContaining({
           runtime: 'wsl',
           wslDistro: 'Ubuntu',
-          wslLinuxConfigDir: '/home/jin/.claude',
-          stripAuthEnv: true
+          wslLinuxConfigDir: '/home/jin/.claude'
         }),
         allowPtyFallback: true,
         allowUsagePanelSupplement: true,
@@ -404,7 +432,6 @@ describe('RateLimitService', () => {
       wslDistro: null,
       wslLinuxConfigDir: null,
       envPatch: {},
-      stripAuthEnv: false,
       provenance: 'system'
     }))
 
@@ -450,7 +477,6 @@ describe('RateLimitService', () => {
       wslDistro: 'Ubuntu',
       wslLinuxConfigDir: '/home/jin/.claude',
       envPatch: {},
-      stripAuthEnv: true,
       provenance: 'wsl:Ubuntu:system'
     }))
 
@@ -551,9 +577,7 @@ describe('RateLimitService', () => {
 
   it('does not cache host Claude usage under an outgoing WSL account', async () => {
     const service = new RateLimitService()
-    service.setInactiveClaudeAccountsResolver(() => [
-      { id: 'wsl-account-1', managedAuthPath: '/tmp/account-1/auth' }
-    ])
+    service.setInactiveClaudeAccountsResolver(() => [{ id: 'wsl-account-1' }])
     service.setClaudeAuthPreparationResolver(async (target) => ({
       configDir:
         target?.runtime === 'wsl'
@@ -563,7 +587,6 @@ describe('RateLimitService', () => {
       wslDistro: target?.wslDistro ?? null,
       wslLinuxConfigDir: target?.runtime === 'wsl' ? '/home/jin/.claude' : null,
       envPatch: {},
-      stripAuthEnv: target?.runtime === 'wsl',
       provenance: target?.runtime === 'wsl' ? 'managed:wsl-account-1:wsl:Ubuntu' : 'system'
     }))
 

@@ -7,7 +7,7 @@ import { sessionSearchScopeCatalogFromStore } from '../ai-vault-search/session-s
 import { getCanonicalUserDataPath } from '../persistence/loading-store/user-data-path'
 import { app } from 'electron'
 import { OrcaRuntimeService } from '../runtime/orca-runtime'
-import { getLocalPtyProvider, getSshPtyProvider, clearProviderPtyState } from '../ipc/pty'
+import { getLocalPtyProvider, clearProviderPtyState } from '../ipc/pty'
 import { agentHookServer } from '../agent-hooks/server'
 import { browserManager } from '../browser/browser-manager'
 import { loadAgentSessionClaimSigner } from '../runtime/agent-session-claim-identity'
@@ -16,16 +16,20 @@ import { prepareCodexAiVaultSessionResume } from '../codex/codex-ai-vault-sessio
 import { prepareCodexPinnedLaunchHome } from './codex-session-resume-launch'
 import { resolveHostCodexSessionSourceHome } from '../codex/codex-session-source-home'
 import { isAgentStatusHooksEnabled } from '../agent-hooks/managed-agent-hook-controls'
-import { getDaemonProvider } from '../daemon/daemon-init'
+import { getDaemonProvider } from '../daemon/daemon-provider-state'
 import type { TerminalSideEffectBatch } from '../../shared/terminal-side-effect-facts'
 import type { OrchestrationEnvironmentTransport } from '../runtime/orchestration/environment-transport'
 import { resolveEnvironment } from '../../shared/runtime-environment-store'
 import { resolveTuiAgentLaunchEnv } from '../../shared/tui-agent-launch-defaults'
-import { getPreferredPairingOffer } from '../../shared/runtime-environments'
+import { getPreferredPairedRuntimeConnection } from '../../shared/runtime-environments'
 import { fingerprintOrchestrationPeer } from '../runtime/orchestration/environment-transport'
 import { callRuntimeEnvironment } from '../ipc/runtime-environment-transport-routing'
 import { mainProcessState as state } from './main-process-state'
-import { prepareCodexRuntimeHomeForLaunch } from './codex-launch-preparation'
+import {
+  codexStructuredLaunchHomeResolvers,
+  prepareCodexRuntimeHomeForLaunch
+} from './codex-launch-preparation'
+import { resolveHostAgentBaseEnvironment } from '../runtime/structured-agent-shell-environment'
 import type { RuntimeDesktopWindowStatus } from '../../shared/runtime-types'
 import { ArtifactCloudService } from '../artifacts/artifact-cloud-service'
 import { SkillCloudService } from '../skills/skill-cloud-service'
@@ -55,11 +59,11 @@ export function initializeMainProcessRuntime(): OrcaRuntimeService {
   const orchestrationEnvironmentTransport: OrchestrationEnvironmentTransport = {
     resolve: (selector) => {
       const environment = resolveEnvironment(app.getPath('userData'), selector)
-      const pairing = getPreferredPairingOffer(environment)
+      const connection = getPreferredPairedRuntimeConnection(environment)
       return {
         environmentId: environment.id,
         name: environment.name,
-        peerFingerprint: fingerprintOrchestrationPeer(pairing.publicKeyB64),
+        peerFingerprint: fingerprintOrchestrationPeer(connection.hostPublicKeyB64),
         pairingRevision: environment.pairingRevision ?? environment.createdAt
       }
     },
@@ -85,8 +89,6 @@ export function initializeMainProcessRuntime(): OrcaRuntimeService {
     ),
     // Why: resolve the PTY provider lazily — a daemon swap happens later, so an eager reference would freeze the pre-daemon provider (design §4.3).
     getLocalProvider: () => getLocalPtyProvider(),
-    // Why: SSH relay providers register after construction and may reconnect, so destructive cleanup must resolve the current generation.
-    getSshProvider: (connectionId) => getSshPtyProvider(connectionId),
     onPtyStopped: clearProviderPtyState,
     onTerminalAgentStatus: (event) => agentHookServer.ingestTerminalStatus(event),
     onClaudeTerminalEvidence: (paneKey, evidence) =>
@@ -143,17 +145,7 @@ export function initializeMainProcessRuntime(): OrcaRuntimeService {
         systemCodexHomePath: resolveHostCodexSessionSourceHome(store.getSettings()),
         preparePinnedLaunchHome: (home) => prepareCodexPinnedLaunchHome(home)
       }),
-    prepareCodexStructuredLaunch: ({ launchEnv }) =>
-      prepareCodexRuntimeHomeForLaunch(undefined, launchEnv),
-    // Why throw like prepare does: a null from an uninitialized service would
-    // map to the system home and key a catalog read to the wrong account.
-    resolveCodexStructuredLaunchHome: ({ launchEnv }) => {
-      const runtimeHome = state.codexRuntimeHome
-      if (!runtimeHome) {
-        throw new Error('Codex runtime home service is not initialized')
-      }
-      return runtimeHome.resolveHostCodexHomePathForLaunchReadOnly(launchEnv)
-    },
+    ...codexStructuredLaunchHomeResolvers,
     prepareCodexCatalogProbeHome: (homePath) =>
       state.codexRuntimeHome?.prepareHostCodexHomeForReadOnlyAppServer(
         homePath,
@@ -212,6 +204,7 @@ export function configureRuntimeServices(runtime: OrcaRuntimeService): void {
   runtime.setCommitMessageAgentEnvironmentResolvers({
     // Why: Codex hooks/auth live in Orca's managed runtime home even for the default path, so every launch must resolve CODEX_HOME via runtime-home.
     prepareForCodexLaunch: prepareCodexRuntimeHomeForLaunch,
-    prepareForClaudeLaunch: (target) => state.claudeRuntimeAuth!.prepareForClaudeLaunch(target)
+    prepareForClaudeLaunch: (target) => state.claudeRuntimeAuth!.prepareForClaudeLaunch(target),
+    resolveBaseEnvironment: () => resolveHostAgentBaseEnvironment(store.getSettings())
   })
 }

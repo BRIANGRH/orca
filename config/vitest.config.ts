@@ -5,19 +5,25 @@ import TimingSequencer from './scripts/ci-unit-sequencer.mjs'
 import RuntimeSequencer from './scripts/vitest-runtime-sequencer.mjs'
 import { NODE_RUNTIME_INCLUDE } from './scripts/vitest-node-runtime-files.mjs'
 import { nodeRuntimePool } from './scripts/vitest-node-runtime-pool'
+import { createWorkspaceSourceResolver } from './scripts/workspace-source-exports.mjs'
 
 const balancedShards = process.env.ORCA_BALANCE_UNIT_SHARDS === '1'
 const measurementFile = 'src/main/foreign-sqlite-readers/foreign-sqlite-reader-event-loop.test.ts'
 const transforms = {
-  define: { ORCA_FEATURE_WALL_ENABLED: 'true' },
+  define: {
+    ORCA_FEATURE_WALL_ENABLED: 'true',
+    // Why: tests only interpolate it; they must not depend on the checkout's HEAD.
+    ORCA_BUILD_COMMIT: JSON.stringify('0'.repeat(40))
+  },
   resolve: {
-    alias: {
-      '@renderer': resolve('src/renderer/src'),
-      '@': resolve('src/renderer/src'),
-      'fs/promises': 'node:fs/promises',
-      fs: 'node:fs',
-      os: 'node:os'
-    }
+    alias: [
+      ...createWorkspaceSourceResolver().aliases,
+      { find: '@renderer', replacement: resolve('src/renderer/src') },
+      { find: '@', replacement: resolve('src/renderer/src') },
+      { find: 'fs/promises', replacement: 'node:fs/promises' },
+      { find: 'fs', replacement: 'node:fs' },
+      { find: 'os', replacement: 'node:os' }
+    ]
   }
 }
 const testOptions = {
@@ -42,8 +48,10 @@ const testOptions = {
   testTimeout: 30_000
 }
 const nodeProject = {
-  extends: true,
+  extends: false,
+  ...transforms,
   test: {
+    ...testOptions,
     name: process.versions.bun ? 'node-runtime' : 'node',
     env: { ORCA_VITEST_RUNTIME: process.versions.bun ? 'node-runtime' : 'node' },
     include: process.versions.bun ? NODE_RUNTIME_INCLUDE : UNIT_INCLUDE,
@@ -58,12 +66,13 @@ const projects = [
   ...(process.versions.bun
     ? [
         {
-          extends: true,
+          extends: false,
+          ...transforms,
           test: {
+            ...testOptions,
             name: 'bun',
             env: { ORCA_VITEST_RUNTIME: 'bun' },
             pool: 'forks',
-            include: UNIT_INCLUDE,
             exclude: [...testOptions.exclude, ...NODE_RUNTIME_INCLUDE, measurementFile],
             sequence: { groupOrder: 1 }
           }
@@ -87,32 +96,8 @@ const projects = [
 
 export default defineConfig({
   ...transforms,
-  plugins: [
-    {
-      name: 'orca-test-container-selectors',
-      enforce: 'post',
-      config: {
-        order: 'post',
-        handler(config) {
-          if (!config.test?.projects) {
-            return
-          }
-          // Keep root coverage exclusions without inheriting duplicate project selectors.
-          if (config.test.include?.length === 0) {
-            config.test.include = testOptions.include
-          }
-          if (config.test.exclude?.length === 0) {
-            config.test.exclude = testOptions.exclude
-          }
-        }
-      }
-    }
-  ],
   test: {
     ...testOptions,
-    // Inline projects own their selectors; empty root arrays avoid concatenating them.
-    include: [],
-    exclude: [],
     sequence: { sequencer: balancedShards ? TimingSequencer : RuntimeSequencer },
     ...(balancedShards
       ? {

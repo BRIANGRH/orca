@@ -14,11 +14,8 @@ import type {
   AgentSessionSendResult
 } from '../../../shared/agent-session-wire'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
-import { QueuedMessageNotConsumableError } from '../agent-session-journal/journal-queued-messages'
-import {
-  isJournalWrittenByNewerOrca,
-  journalOpenRefusal
-} from '../agent-session-journal/journal-open-failure'
+import { QueuedMessageNotConsumableError } from '../agent-session-journal/queued-message-consume-error'
+import { refusingNewerOrcaJournal } from '../agent-session-journal/journal-open-failure'
 import type { QueuedMessageRow } from '../agent-session-journal/queued-message-table'
 import {
   journalRowReceiptResult,
@@ -91,7 +88,7 @@ export async function withdrawQueuedMessagesForOperation(
 
 /** Draft actions run like any mutation: admitted on the session's lane, the
  *  conversation opened for the write. */
-function mutateQueued<TValue>(
+export function mutateQueued<TValue>(
   context: StructuredAgentSessionMutationContext,
   caller: StructuredAgentSessionCaller,
   envelope: AgentSessionMutationEnvelope,
@@ -104,20 +101,6 @@ function mutateQueued<TValue>(
     { ...plan, run: (ctx) => refusingNewerOrcaJournal(plan.run(ctx)) },
     openForWrite(context, envelope)
   )
-}
-
-/** A newer Orca's journal refuses a draft write with the words a send gets there. */
-async function refusingNewerOrcaJournal<TValue>(
-  run: Promise<TurnOutcome<TValue>>
-): Promise<TurnOutcome<TValue>> {
-  try {
-    return await run
-  } catch (error) {
-    if (isJournalWrittenByNewerOrca(error)) {
-      return { ok: false, refusal: journalOpenRefusal(error) }
-    }
-    throw error
-  }
 }
 
 /**

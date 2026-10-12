@@ -30,6 +30,7 @@ vi.mock('../runtime/runtime-rpc', () => ({
       launchOrder.push('rpc-start')
     })
     setOnUnpairedDeviceAuthFailure = vi.fn()
+    setMobileDesktopRelayHosts = vi.fn()
   }
 }))
 vi.mock('../runtime/headless-runtime-graph', () => ({ publishHeadlessRuntimeGraph: vi.fn() }))
@@ -39,6 +40,9 @@ vi.mock('./headless-serve-ssh-registration', () => ({
   })
 }))
 vi.mock('../ipc/mobile', () => ({ registerMobileHandlers: vi.fn() }))
+vi.mock('../ipc/runtime-environment-mobile-relay-hosts', () => ({
+  createRuntimeEnvironmentMobileRelayHosts: vi.fn()
+}))
 vi.mock('../ipc/pty', () => ({
   getLocalPtyProvider: vi.fn(),
   registerHeadlessPtyRuntime: vi.fn()
@@ -50,7 +54,7 @@ vi.mock('./main-process-relay-status', () => ({
   getDesktopRelayStatus: vi.fn(),
   publishDesktopRelayStatus: vi.fn()
 }))
-vi.mock('../runtime/relay/desktop-relay-service', () => ({ DesktopRelayService: class {} }))
+vi.mock('./main-process-relay-startup', () => ({ startDesktopRelayService: vi.fn() }))
 vi.mock('./main-process-serve', () => ({
   getServeOptions: vi.fn(() => null),
   getBundledWebClientRoot: vi.fn(() => null),

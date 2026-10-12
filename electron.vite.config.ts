@@ -6,12 +6,14 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { createBootstrapFatalExitBanner } from './config/build-plugins/bootstrap-fatal-exit-banner'
 import { createPdfjsViewerAssetsPlugin } from './config/build-plugins/pdfjs-viewer-assets'
+import { createProcessHostDevRebuildPlugin } from './config/build-plugins/process-host-dev-rebuild'
 import {
   CLI_MAIN_ENTRY_NAMES,
   createPlainNodeEntryGuardPlugin
 } from './config/build-plugins/plain-node-entry-guard'
 import { ORCAD_LOCAL_SERVE_SELECTION_ENTRY } from './src/shared/orcad-local-serve-selection'
 import packageJson from './package.json' with { type: 'json' }
+import { resolveBuildSourceCommit } from './config/scripts/build-source-commit.mjs'
 
 const BUNDLED_MAIN_DEPENDENCIES = new Set([
   'stream-json',
@@ -66,6 +68,10 @@ const ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL =
   typeof orcaDiagnosticsTokenUrl === 'string' && orcaDiagnosticsTokenUrl.length > 0
     ? JSON.stringify(orcaDiagnosticsTokenUrl)
     : 'null'
+
+// Why: official skill installs pin to the commit the build came from, so they match the
+// bundled skills on every channel. Main runs the installer; the renderer prints the command.
+const ORCA_BUILD_COMMIT_LITERAL = JSON.stringify(resolveBuildSourceCommit())
 
 function createStartupDiagnosticsBanner(chunkName: string): string {
   return `
@@ -290,7 +296,11 @@ export const electronViteConfig: UserConfig = {
           entryFileNames: '[name].js',
           chunkFileNames: 'chunks/[name]-[hash].js'
         },
-        plugins: [createMainBootstrapPlugin(), createPlainNodeEntryGuardPlugin()]
+        plugins: [
+          createMainBootstrapPlugin(),
+          createPlainNodeEntryGuardPlugin(),
+          createProcessHostDevRebuildPlugin()
+        ]
       }
     },
     // Why: compile-time substitution for the telemetry gate. See the block
@@ -298,7 +308,8 @@ export const electronViteConfig: UserConfig = {
     define: {
       ORCA_BUILD_IDENTITY: ORCA_BUILD_IDENTITY_LITERAL,
       ORCA_POSTHOG_WRITE_KEY: ORCA_POSTHOG_WRITE_KEY_LITERAL,
-      ORCA_DIAGNOSTICS_TOKEN_URL: ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL
+      ORCA_DIAGNOSTICS_TOKEN_URL: ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL,
+      ORCA_BUILD_COMMIT: ORCA_BUILD_COMMIT_LITERAL
     },
     // Why: @xterm/headless declares "exports": null in package.json, which
     // prevents Vite's default resolver from finding the CJS entry. Point
@@ -320,6 +331,9 @@ export const electronViteConfig: UserConfig = {
     }
   },
   renderer: {
+    define: {
+      ORCA_BUILD_COMMIT: ORCA_BUILD_COMMIT_LITERAL
+    },
     resolve: {
       alias: {
         ...markdownParserAliases,

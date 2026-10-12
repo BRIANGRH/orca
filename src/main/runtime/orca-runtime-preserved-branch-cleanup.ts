@@ -31,8 +31,6 @@ import { RuntimeAccountController } from './runtime-account-controller'
 import { RuntimeMobileSpeechCatalog } from './runtime-mobile-speech-catalog'
 import { RuntimeMobileDictationController } from './runtime-mobile-dictation-controller'
 import { RuntimeProjectHostSetupController } from './runtime-project-host-setup-controller'
-import { addRemoteRepoFromPath } from '../ipc/repos/remote-repo-registration'
-import type { Store } from '../persistence'
 import { RuntimeProjectGroupController } from './runtime-project-group-controller'
 import { RuntimeNestedRepoImport } from './runtime-nested-repo-import'
 import { RuntimeRepositoryRegistrationController } from './runtime-repository-registration-controller'
@@ -46,6 +44,7 @@ import { RuntimeWorkspaceSessionController } from './runtime-workspace-session-c
 import { RuntimeAiVaultCommands } from './runtime-ai-vault-commands'
 import { ClaudeAgentTeamsService } from './claude-agent-teams-service'
 import { teardownFolderWorkspacePtys } from './folder-workspace-pty-teardown'
+import { countRepoTerminalsNotKnownExited } from './project-removal-impact'
 
 export class OrcaRuntimeWithPreservedBranchCleanup extends OrcaRuntimeWithTerminalDrivers {
   protected readonly preservedBranchCleanup = new RuntimePreservedBranchCleanup(() =>
@@ -53,8 +52,6 @@ export class OrcaRuntimeWithPreservedBranchCleanup extends OrcaRuntimeWithTermin
   )
 
   protected readonly getLocalProviderFn: (() => IPtyProvider) | null
-
-  protected readonly getSshProviderFn: ((connectionId: string) => IPtyProvider | undefined) | null
 
   protected readonly onPtyStopped: ((ptyId: string) => void) | null
 
@@ -251,22 +248,15 @@ export class OrcaRuntimeWithPreservedBranchCleanup extends OrcaRuntimeWithTermin
     listRepos: () => this.listRepos(),
     addRepo: (path, kind, hostId) =>
       (this as RuntimeCommandSurfaceHost<this>).addRepo(path, kind, hostId),
-    addRemoteRepo: async (remote) => {
-      // The same registration the desktop IPC handler uses, so both surfaces agree on SSH hosts.
-      const result = await addRemoteRepoFromPath(this.requireStore() as unknown as Store, remote)
-      if ('error' in result) {
-        throw new Error(result.error)
-      }
-      this.invalidateResolvedWorktreeCache()
-      this.invalidateWorktreeScanCacheForRepo(result.repo.id)
-      this.notifyReposChanged()
-      return result.repo
-    },
     cloneRepo: (url, destination, hostId) =>
       (this as RuntimeCommandSurfaceHost<this>).cloneRepo(url, destination, hostId),
     invalidateResolvedWorktrees: () => this.invalidateResolvedWorktreeCache(),
     invalidateWorktreeScan: (repoId) => this.invalidateWorktreeScanCacheForRepo(repoId),
-    notifyReposChanged: () => this.notifyReposChanged()
+    notifyReposChanged: () => this.notifyReposChanged(),
+    countLiveTerminalsForRepo: (repo) =>
+      countRepoTerminalsNotKnownExited(repo, this.ptysById.values(), (ptyId) =>
+        this.isPtyKnownExited(ptyId)
+      )
   })
 
   protected readonly projectGroups = new RuntimeProjectGroupController({
@@ -278,7 +268,6 @@ export class OrcaRuntimeWithPreservedBranchCleanup extends OrcaRuntimeWithTermin
       teardownFolderWorkspacePtys(
         {
           runtime: this,
-          getSshProvider: this.getSshProviderFn,
           getLocalProvider: () => this.getLocalProvider(),
           onPtyStopped: this.onPtyStopped
         },

@@ -20,6 +20,7 @@ import type {
 } from '../host-env/types'
 import type { CodexResumeLaunch, PreparedCodexResumeHome } from '../host-env/codex-resume'
 import type { StablePaneOwner } from '../pane/stable-owner'
+import type { ResolvedPtyHost } from '../provider/registry'
 
 export type PtySpawnIpcArgs = {
   cols: number
@@ -55,6 +56,8 @@ export type PtySpawnIpcArgs = {
   replacesPtyId?: string
   // Untyped on purpose: parseTerminalPanePlacement is the one check, and drops what it rejects.
   placement?: unknown
+  // Untyped on purpose: isRestoreSpawnIntent is the one check; anything else is undeclared.
+  spawnIntent?: unknown
   // Why: renderer-threaded launch telemetry (telemetry-plan.md§Agent launch semantics); loosely typed because the main-side schema validator is the single enforcement point.
   telemetry?: {
     agent_kind?: unknown
@@ -91,7 +94,7 @@ export type PtySpawnIpcDeps = {
     prepareCodexSessionResume?: PrepareCodexSessionResume
     onCodexHomePtySpawned?: (args: CodexHomePtySpawnedLifecycleArgs) => void
   }
-  getLocalPtyStartupPromise: (connectionId?: string | null) => Promise<void> | undefined
+  getLocalPtyStartupPromise: (hostId?: ResolvedPtyHost) => Promise<void> | undefined
   adoptStablePane: (args: AdoptStablePaneArgs) => Promise<AdoptStablePaneResult | null>
   assertFolderWorkspacePtyPathUsable: (worktreeId: string | undefined) => Promise<void> | void
   resolvePtySpawnStartupCwd: (
