@@ -57,7 +57,7 @@ export class AcpSubagents {
   private readonly known = new BoundedMap<string, KnownSubagent>({
     maxEntries: MAX_KNOWN_SUBAGENTS
   })
-  private pending: AgentChildWorkEvidence[] = []
+  private readonly pending: AgentChildWorkEvidence[] = []
 
   /** Known children include settled ones, so they cannot become background tasks. */
   has(id: string): boolean {
@@ -66,14 +66,12 @@ export class AcpSubagents {
 
   dispose(): void {
     this.known.clear()
-    this.pending = []
+    this.pending.length = 0
   }
 
   /** What the updates translated since the last drain said, for the host's records. */
   drainEvidence(): AgentChildWorkEvidence[] {
-    const pending = this.pending
-    this.pending = []
-    return pending
+    return this.pending.splice(0)
   }
 
   translate(
@@ -95,8 +93,7 @@ export class AcpSubagents {
         }
       }
       this.known.set(update.id, subagent)
-      const ending =
-        update.state !== undefined && update.state !== 'working' && update.state !== 'idle'
+      const ending = update.state !== undefined && acpSubagentOutcome(update.state) !== undefined
       // A late report about an ended run is not a new run: the host drops the run's record at the
       // next send, so a live edge then would bring it back as working.
       if (ending || subagent.ended === undefined) {
@@ -133,8 +130,8 @@ export class AcpSubagents {
 /** A subagent runs on past the prompt turn that spawned it, and the provider names no run. */
 function subagentEvidence(update: AcpSubagentUpdate, observedAt: number): AgentChildWorkEvidence {
   const handle = subagentHandle(update.id)
-  const state = update.state ?? 'working'
-  if (state === 'working' || state === 'idle') {
+  const outcome = update.state === undefined ? undefined : acpSubagentOutcome(update.state)
+  if (outcome === undefined) {
     return {
       type: 'live',
       observedAt,
@@ -142,7 +139,7 @@ function subagentEvidence(update: AcpSubagentUpdate, observedAt: number): AgentC
         handle,
         kind: 'agent',
         residency: 'background',
-        state: state === 'idle' ? 'idle' : 'working',
+        state: update.state === 'idle' ? 'idle' : 'working',
         // The strip and the saved row show the same label.
         ...(update.label !== undefined ? { description: boundSubagentLabel(update.label) } : {}),
         ...(update.tokens !== undefined ? { totalTokens: update.tokens } : {}),
@@ -155,7 +152,7 @@ function subagentEvidence(update: AcpSubagentUpdate, observedAt: number): AgentC
     type: 'ended',
     observedAt,
     handle,
-    outcome: OUTCOMES[state],
+    outcome,
     ...(update.tokens !== undefined ? { totalTokens: update.tokens } : {})
   }
 }
