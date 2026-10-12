@@ -5,9 +5,9 @@ import {
 import { cloneNativeChatSessionOptionRecord } from './native-chat-session-option-state'
 import { seedOnListedModel } from './agent-session-unlisted-model'
 
-/** A Claude seed the host's loaded list lacks shows as the default the host create starts on. As
- *  on the host, a held model runs as picked; a list naming no default may not be this workspace's. */
-function seedOnHostListedModel(
+/** A Claude launch seed the host's loaded list lacks, moved to the list's default; the picker
+ *  applies it as a pick so the first send runs what it shows. A held model is the user's own. */
+export function seedOnHostListedModel(
   state: StructuredAgentSessionOptionState,
   seed: Readonly<Record<string, string>> | undefined,
   held: Readonly<Record<string, string>>
@@ -17,7 +17,7 @@ function seedOnHostListedModel(
     held.model !== undefined ||
     state.catalogSource !== 'host' ||
     state.record.agent !== 'claude' ||
-    !state.catalog?.models.some((model) => model.isDefault)
+    !state.catalog
   ) {
     return seed
   }

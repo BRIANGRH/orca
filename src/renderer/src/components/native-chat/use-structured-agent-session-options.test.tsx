@@ -289,6 +289,25 @@ describe('useStructuredAgentSessionOptions', () => {
   })
 
   describe('while the launch is provisional', () => {
+    it('picks the listed replacement for a remembered Claude model the host list lacks', async () => {
+      answer({
+        modelCatalog: () =>
+          Promise.resolve({
+            origin: 'probe',
+            fetchedAt: 1,
+            models: [{ id: 'opus[1m]', label: 'Opus', isDefault: false, efforts: [] }]
+          })
+      })
+      mocks.hold.mockReturnValue(new Promise(() => {}))
+      const { unmount } = renderOptions(
+        { ...PROVISIONAL, agent: 'claude', launchSeedOptions: { model: 'claude-gone' } },
+        mutateWith(async () => null).mutate
+      )
+      await waitFor(() => expect(mocks.hold).toHaveBeenCalledWith('session-1', 'model', 'opus[1m]'))
+      expect(mocks.hold).toHaveBeenCalledTimes(1)
+      unmount()
+    })
+
     it('renders the launch seed and hands a pick to the launch without any RPC', async () => {
       answer({ modelCatalog: () => Promise.resolve(SAVED_LIST) })
       mocks.hold.mockReturnValue(new Promise(() => {}))

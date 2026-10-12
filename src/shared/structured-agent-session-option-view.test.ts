@@ -53,7 +53,7 @@ describe('a new Claude chat whose remembered model the host list no longer offer
     expect(shown(listed, seed, { model: 'opus' })).toEqual({ model: 'opus', effort: undefined })
   })
 
-  it('names nothing new from a list that marks no default for this workspace', () => {
+  it('takes the first row from a list that marks no default', () => {
     const unmarked = applyStructuredAgentSessionModelCatalog(
       cold,
       CLAUDE_SESSION_OPTION_CATALOG,
@@ -67,7 +67,7 @@ describe('a new Claude chat whose remembered model the host list no longer offer
       },
       { newLaunch: true }
     )
-    expect(shown(unmarked, seed, {}).model).toBeUndefined()
+    expect(shown(unmarked, seed, {})).toEqual({ model: 'sonnet', effort: 'high' })
   })
 
   it('names nothing new while the host list is loading or failed', () => {

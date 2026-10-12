@@ -23,6 +23,7 @@ import { enqueueSessionOptionSettingsWrite } from './native-chat-session-option-
 import { encodeStructuredAgentSessionOptionValue } from '../../../../shared/structured-agent-session-option-codec'
 import type { StructuredAgentSessionMutate } from './use-structured-agent-session-mutate'
 import { useHostModelCatalogUpgrade } from './use-host-model-catalog-upgrade'
+import { useUnlistedLaunchModelPick } from './use-unlisted-launch-model-pick'
 import { useStructuredAgentSessionOptionState } from './use-structured-agent-session-option-state'
 import { agentSessionWriteFailureText } from './agent-session-write-notice-text'
 import type { StructuredAgentSessionLaunchView } from './use-native-chat-provisional-launch'
@@ -251,6 +252,14 @@ export function useStructuredAgentSessionOptions(args: {
       transportEnabled
     ]
   )
+  useUnlistedLaunchModelPick({
+    sessionId,
+    optionState,
+    launchSeed: launchSeedOptions,
+    held,
+    acceptsPicks,
+    setStructuredOption
+  })
   const setOption = useCallback(
     async (id: string, value: string | boolean) => {
       await setStructuredOption(id, value)
