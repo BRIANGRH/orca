@@ -11,15 +11,12 @@ afterEach(() => vi.useRealTimers())
 function fixture() {
   const answer = vi.fn()
   const unavailable = vi.fn()
-  return {
-    answer,
-    unavailable,
-    read: createResumeOfferRead(
-      { kind: 'local' },
-      () => ({ current: () => true, answer }),
-      unavailable
-    )
-  }
+  const start = createResumeOfferRead(
+    { kind: 'local' },
+    () => ({ current: () => true, answer }),
+    unavailable
+  )
+  return { answer, unavailable, start, read: () => start().result }
 }
 it.each(['success', 'failure'] as const)(
   'discards older successful rows after the newer read reports %s',

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { AgentJournalSubmission } from '../../../shared/agent-session-journal-types'
 import type {
   AgentSessionHistoryPage,
-  AgentSessionHistoryResult,
   AgentSessionSubscribeEvent
 } from '../../../shared/agent-session-wire'
 import {
@@ -18,10 +17,11 @@ import {
   RESUME_RUN_SOURCE_READ_BUDGET_MS
 } from './native-chat-resume-run-source'
 import { admitUserResumeRequest } from './native-chat-resume-user-action.test-support'
+import { createResumeOfferRead, type ResumeOfferReadRequest } from './native-chat-resume-offer-read'
 import type { NativeChatRestartOffer } from './native-chat-resume-on-restart-store'
 import { failure } from './native-chat-resume-modal.test-support'
 
-const rpc = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<AgentSessionHistoryResult>>())
+const rpc = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<unknown>>())
 const wire = vi.hoisted(() => ({
   emit: (_event: AgentSessionSubscribeEvent) => {},
   unsubscribe: vi.fn(),
@@ -99,7 +99,7 @@ function publishPage(sequence: number, records: AgentJournalSubmission[]): void 
   retireStructuredAgentSessionReadOwner('b', LOCAL)
   getStructuredAgentSessionReadOwner('b', LOCAL).publishCreated(page(sequence, records))
 }
-function fixture(cursor?: number) {
+function fixture(cursor?: number, read?: () => ResumeOfferReadRequest) {
   let run: ResumeRun = {
     ...beginResumeRun([failure('b')], 100, 'user'),
     inFlight: false,
@@ -121,7 +121,17 @@ function fixture(cursor?: number) {
     run = next
   })
   let watch: ReturnType<typeof watchResumeRunSource> | undefined
-  const refresh = vi.fn(async () => watch?.offerChanged(run))
+  const refresh = vi.fn(() =>
+    read
+      ? read()
+      : {
+          current: () => true,
+          result: Promise.resolve().then(() => {
+            watch?.offerChanged(run)
+            return undefined
+          })
+        }
+  )
   watch = watchResumeRunSource({ current: () => run, publish, offer: () => offer, refresh })
   resources.push(watch.release)
   return {
@@ -129,6 +139,7 @@ function fixture(cursor?: number) {
     publish,
     refresh,
     release: watch.release,
+    settled: watch.settled,
     withdraw: () => {
       offer = { ...offer, failed: [], listedAt: 200 }
       watch?.offerChanged(run)
@@ -324,4 +335,75 @@ it('keeps visible reader retries when the result has no activation to expire', a
   expect(wire.attempts.mock.calls.length).toBeGreaterThan(attempts)
   test.release()
   expect(owner.hasActiveReaders()).toBe(true)
+})
+
+it('keeps a replacement in its own slot when the obsolete read completes', async () => {
+  const responses = [Promise.withResolvers<unknown>(), Promise.withResolvers<unknown>()]
+  rpc
+    .mockImplementationOnce(() => responses[0]!.promise)
+    .mockImplementationOnce(() => responses[1]!.promise)
+  let boundary = 0
+  let test: ReturnType<typeof fixture>
+  const requests: ResumeOfferReadRequest[] = []
+  const start = createResumeOfferRead(
+    LOCAL,
+    () => {
+      const issued = boundary
+      return { current: () => boundary === issued, answer: () => test.withdraw() }
+    },
+    () => {}
+  )
+  test = fixture(7, () => {
+    const request = start()
+    requests.push(request)
+    return request
+  })
+  admitUserResumeRequest('b', 'user-8')
+  publishPage(8, [submission(8)])
+  expect(rpc).toHaveBeenCalledTimes(1)
+  boundary += 1
+  test.settled()
+  expect(rpc).toHaveBeenCalledTimes(2)
+  responses[0]!.resolve({ sessions: [], failed: [] })
+  await requests[0]?.result
+  test.settled()
+  expect(rpc).toHaveBeenCalledTimes(2)
+  responses[1]!.resolve({ sessions: [], failed: [] })
+  await requests[1]?.result
+  expect(test.view().counts.resumed).toBe(1)
+})
+it('can replace a forever-pending invalid read and ignores late work after disposal', async () => {
+  const responses = [Promise.withResolvers<unknown>(), Promise.withResolvers<unknown>()]
+  rpc
+    .mockImplementationOnce(() => responses[0]!.promise)
+    .mockImplementationOnce(() => responses[1]!.promise)
+  let boundary = 0
+  let test: ReturnType<typeof fixture>
+  const requests: ResumeOfferReadRequest[] = []
+  const start = createResumeOfferRead(
+    LOCAL,
+    () => {
+      const issued = boundary
+      return { current: () => boundary === issued, answer: () => test.withdraw() }
+    },
+    () => {}
+  )
+  test = fixture(7, () => {
+    const request = start()
+    requests.push(request)
+    return request
+  })
+  admitUserResumeRequest('b', 'user-8')
+  publishPage(8, [submission(8)])
+  boundary += 1
+  test.settled()
+  expect(rpc).toHaveBeenCalledTimes(2)
+  test.release()
+  const published = test.publish.mock.calls.length
+  responses[1]!.resolve({ sessions: [], failed: [] })
+  await requests[1]?.result
+  responses[0]!.resolve({ sessions: [], failed: [] })
+  await requests[0]?.result
+  expect(test.publish).toHaveBeenCalledTimes(published)
+  expect(rpc).toHaveBeenCalledTimes(2)
 })

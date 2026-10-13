@@ -132,8 +132,8 @@ const offeredChatWatch = createOfferedChatWatch({
   refresh: refreshCurrentNativeChatRestartOffer
 })
 
-function refreshCurrentNativeChatRestartOffer(): Promise<void> | undefined {
-  return actionsBegun === actionsSettled ? readNativeChatRestartOffer().then(() => {}) : undefined
+function refreshCurrentNativeChatRestartOffer() {
+  return actionsBegun === actionsSettled ? beginNativeChatRestartOfferRead() : undefined
 }
 
 function refreshAfterNativeChatRestartActions(): void {
@@ -173,7 +173,7 @@ function subscribe(listener: () => void): () => void {
  *
  * Called before the dialog is reopened, so a count can never name a chat the host would now refuse.
  */
-const readNativeChatRestartOffer = createResumeOfferRead(
+const beginNativeChatRestartOfferRead = createResumeOfferRead(
   LOCAL,
   () => {
     const issued = { run, actionsBegun, actionsSettled }
@@ -185,6 +185,7 @@ const readNativeChatRestartOffer = createResumeOfferRead(
   },
   () => publish({ ...EMPTY, listedAt: Date.now() })
 )
+const readNativeChatRestartOffer = () => beginNativeChatRestartOfferRead().result
 
 export async function refreshNativeChatRestartOffer(): Promise<void> {
   await readNativeChatRestartOffer()

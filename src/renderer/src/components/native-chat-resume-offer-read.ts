@@ -9,6 +9,11 @@ export type HostOfferRead = {
   available: boolean
 }
 
+export type ResumeOfferReadRequest = {
+  current: () => boolean
+  result: Promise<HostOfferRead | undefined>
+}
+
 /** The host's answer as this side understands it. `failed` is optional on the wire: an older host
  *  never sends it, and its absence means nothing to show, not an invalid answer. */
 export type HostOfferPayload = { sessions?: unknown; failed?: unknown }
@@ -55,17 +60,21 @@ export function createResumeOfferRead(
     answer: (offer: Omit<NativeChatRestartOffer, 'available'>) => void
   },
   unavailable: () => void
-): () => Promise<HostOfferRead | undefined> {
+): () => ResumeOfferReadRequest {
   let generation = 0
   return () => {
     const issued = ++generation
     const request = prepareRequest()
-    return readNativeChatResumeHostOffer({
-      target,
-      current: () => generation === issued && request.current(),
-      answer: request.answer,
-      unavailable
-    })
+    const current = () => generation === issued && request.current()
+    return {
+      current,
+      result: readNativeChatResumeHostOffer({
+        target,
+        current,
+        answer: request.answer,
+        unavailable
+      })
+    }
   }
 }
 

@@ -16,6 +16,7 @@ import {
   type ResumeRun
 } from './native-chat-resume-run'
 import type { NativeChatRestartOffer } from './native-chat-resume-on-restart-store'
+import type { ResumeOfferReadRequest } from './native-chat-resume-offer-read'
 
 import { createResumeSourceReadLeases } from './native-chat-resume-source-read-leases'
 import {
@@ -39,10 +40,10 @@ export function watchResumeRunSource(deps: {
   current: () => ResumeRun | null
   publish: (run: ResumeRun) => void
   offer: () => NativeChatRestartOffer
-  refresh: () => Promise<void> | undefined
+  refresh: () => ResumeOfferReadRequest | undefined
 }): { offerChanged: (issued: ResumeRun | null) => void; settled: () => void; release: () => void } {
   let stopped = false
-  let reading: Promise<void> | undefined
+  let reading: ResumeOfferReadRequest | undefined
   const slots = new Map<string, ReadSlot>()
   const releaseProgress = watchResumeRunStatus(deps.current, deps.publish)
   const releases: (() => void)[] = []
@@ -72,7 +73,7 @@ export function watchResumeRunSource(deps: {
     }
   }
   const refresh = () => {
-    if (stopped || reading) {
+    if (stopped || reading?.current()) {
       return
     }
     const issued = deps.current()
@@ -80,7 +81,11 @@ export function watchResumeRunSource(deps: {
     if (!read) {
       return
     }
-    reading = read.finally(() => {
+    reading = read
+    void read.result.finally(() => {
+      if (reading !== read) {
+        return
+      }
       reading = undefined
       if (!stopped && hasLaterResumeRunSource(deps.current(), issued)) {
         refresh()
