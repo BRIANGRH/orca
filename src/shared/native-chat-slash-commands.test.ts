@@ -4,9 +4,12 @@ import {
   filterSlashCommands,
   getAgentSlashCommands,
   isSlashCommandDraft,
+  ORCA_NATIVE_CHAT_COMMANDS,
+  parseOrcaNativeChatCommand,
   sessionReportedSkillNames,
   sessionSlashCommandSuggestions,
-  slashCommandDispatchText
+  slashCommandDispatchText,
+  withOrcaNativeChatCommands
 } from './native-chat-slash-commands'
 
 describe('getAgentSlashCommands', () => {
@@ -130,5 +133,44 @@ describe('a session that reports its own command surface', () => {
         kindUnspecified: true
       }
     ])
+  })
+})
+
+describe('Orca-owned commands', () => {
+  it('reads /resume only as the exact leading token', () => {
+    expect(parseOrcaNativeChatCommand('/resume')).toEqual({ name: 'resume', argument: '' })
+    expect(parseOrcaNativeChatCommand('/resume ')).toEqual({ name: 'resume', argument: '' })
+    for (const draft of ['/resumex', '/resume-other', '/Resume', ' /resume', 'please /resume']) {
+      expect(parseOrcaNativeChatCommand(draft)).toBeNull()
+    }
+  })
+
+  it('passes the rest of the draft through as the search, whitespace-collapsed', () => {
+    expect(parseOrcaNativeChatCommand('/resume  auth   retry ')).toEqual({
+      name: 'resume',
+      argument: 'auth retry'
+    })
+    // A line break after the token still never reaches the agent.
+    expect(parseOrcaNativeChatCommand('/resume\nauth')).toEqual({
+      name: 'resume',
+      argument: 'auth'
+    })
+  })
+
+  it("replaces a provider's own /resume row instead of listing it twice", () => {
+    const codex = getAgentSlashCommands('codex')
+    const composed = withOrcaNativeChatCommands(codex)
+    expect(composed.filter(({ name }) => name === 'resume')).toEqual([ORCA_NATIVE_CHAT_COMMANDS[0]])
+    expect(composed).toHaveLength(codex.length)
+    expect(composed.slice(1)).toEqual(codex.filter(({ name }) => name !== 'resume'))
+  })
+
+  it('still offers its rows when the agent catalog is empty', () => {
+    expect(withOrcaNativeChatCommands([])).toEqual(ORCA_NATIVE_CHAT_COMMANDS)
+  })
+
+  it('leaves agent catalogs themselves untouched for surfaces that do not compose them', () => {
+    expect(getAgentSlashCommands('claude').map(({ name }) => name)).not.toContain('resume')
+    expect(getAgentSlashCommands('omp').map(({ name }) => name)).toContain('resume')
   })
 })

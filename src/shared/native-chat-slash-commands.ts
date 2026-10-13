@@ -203,6 +203,39 @@ export function slashCommandDispatchText(command: SlashCommandSuggestion): strin
   return `/${command.name}`
 }
 
+/** Commands Orca handles itself in a desktop chat; they never reach the agent. */
+export const ORCA_NATIVE_CHAT_COMMANDS: readonly SlashCommandSuggestion[] = [
+  { name: 'resume', description: 'Open Agent Session History', argumentHint: '[search]' }
+]
+
+export type OrcaNativeChatCommand = {
+  name: string
+  /** The rest of the draft after the command token, whitespace-collapsed. */
+  argument: string
+}
+
+/** Reads the leading token like send classification, so such a draft never reaches the agent. */
+export function parseOrcaNativeChatCommand(draft: string): OrcaNativeChatCommand | null {
+  const firstToken = draft.split(/\s/, 1)[0] ?? ''
+  const command = ORCA_NATIVE_CHAT_COMMANDS.find(({ name }) => firstToken === `/${name}`)
+  if (!command) {
+    return null
+  }
+  return {
+    name: command.name,
+    argument: draft.slice(firstToken.length).replace(/\s+/g, ' ').trim()
+  }
+}
+
+/** Drops agent rows with Orca-reserved names, so a provider's `/resume` never shows twice. */
+export function withOrcaNativeChatCommands(
+  agentCommands: readonly SlashCommandSuggestion[],
+  orcaCommands: readonly SlashCommandSuggestion[] = ORCA_NATIVE_CHAT_COMMANDS
+): readonly SlashCommandSuggestion[] {
+  const reserved = new Set(orcaCommands.map(({ name }) => name))
+  return [...orcaCommands, ...agentCommands.filter(({ name }) => !reserved.has(name))]
+}
+
 export type NativeChatSendClassification = 'chat' | 'command' | 'unknown-token'
 
 export function classifyNativeChatSend(

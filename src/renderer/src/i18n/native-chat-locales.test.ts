@@ -85,3 +85,22 @@ describe('account-aware Send fixes', () => {
     }
   )
 })
+
+describe('/resume copy', () => {
+  it.each(Object.entries({ es, fr, ja, ko, zh }))(
+    '%s translates the command row, its notice and the dialog hint',
+    (_code, catalog) => {
+      const command = catalog.components['native-chat'].resumeCommand
+      const english = en.components['native-chat'].resumeCommand
+      for (const key of ['description', 'argumentHint', 'workspaceUnavailable'] as const) {
+        expect(command[key].trim()).not.toBe('')
+        expect(command[key]).not.toBe(english[key])
+      }
+      // The notice names the command the user types, which is never translated.
+      expect(command.workspaceUnavailable).toContain('/resume')
+      for (const key of ['select', 'open'] as const) {
+        expect(catalog.sessionHistory.dialog[key]).not.toBe(en.sessionHistory.dialog[key])
+      }
+    }
+  )
+})

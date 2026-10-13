@@ -326,8 +326,8 @@ describe('NativeChatComposer', () => {
   // Listing the agent's whole TUI catalog here answered every pick with
   // "not available in chat sessions".
   it.each([
-    ['claude', 'compact', ['model', 'effort']],
-    ['codex', 'vim', ['model', 'effort', 'goal']]
+    ['claude', 'compact', ['resume', 'model', 'effort']],
+    ['codex', 'vim', ['resume', 'model', 'effort', 'goal']]
   ] as const)('offers %s only actionable structured slash commands', (agent, withheld, offered) => {
     mocks.draft = '/'
     render(

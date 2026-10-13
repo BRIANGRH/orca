@@ -18478,7 +18478,12 @@
       },
       "visualUnavailable": "시각화를 사용할 수 없습니다",
       "visualLoading": "시각화 로드 중",
-      "visualOpenInNewTab": "새 탭에서 열기"
+      "visualOpenInNewTab": "새 탭에서 열기",
+      "resumeCommand": {
+        "description": "Agent 세션 기록 열기",
+        "argumentHint": "[검색]",
+        "workspaceUnavailable": "이 채팅의 워크스페이스가 아직 로드되지 않았습니다. 잠시 후 /resume을 다시 실행하세요."
+      }
     },
     "tab": {
       "bar": {

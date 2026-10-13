@@ -38,6 +38,7 @@ function harness(options: {
   imageAttachments?: NativeChatComposerImageAttachment[]
   /** The PTY lane has no structured transport at all. */
   lane?: 'pty'
+  consumeOrcaCommand?: (draft: string) => boolean
 }) {
   const onError = vi.fn()
   const onSubmitted = vi.fn()
@@ -63,6 +64,7 @@ function harness(options: {
         caret: props.caret,
         imageAttachments: options.imageAttachments ?? [],
         disabled: false,
+        consumeOrcaCommand: options.consumeOrcaCommand,
         ...calls
       }),
     { initialProps: { draft: options.draft, caret: options.caret ?? options.draft.length } }
@@ -230,6 +232,32 @@ describe('composer goal mode', () => {
     const { hook, calls } = harness({ draft: 'hello', threadGoal: { setObjective: vi.fn() } })
     act(() => hook.result.current.send())
     expect(calls.sendStructured).toHaveBeenCalledWith('hello', [])
+  })
+
+  it('hands an Orca command to Orca before goal mode or either transport', () => {
+    const setObjective = vi.fn(async () => true)
+    const consumeOrcaCommand = vi.fn((draft: string) => draft.startsWith('/resume'))
+    const { hook, calls, type } = harness({
+      draft: '/go',
+      threadGoal: { setObjective },
+      consumeOrcaCommand
+    })
+    act(() => hook.result.current.goalMode.interceptPick(vi.fn())(GOAL_ITEM))
+    type('/resume auth', 0)
+
+    act(() => hook.result.current.send())
+
+    expect(consumeOrcaCommand).toHaveBeenCalledWith('/resume auth')
+    expect(setObjective).not.toHaveBeenCalled()
+    expect(calls.sendStructured).not.toHaveBeenCalled()
+
+    const pty = harness({ draft: '/resume', lane: 'pty', consumeOrcaCommand })
+    act(() => pty.hook.result.current.send())
+    expect(pty.calls.sendPty).not.toHaveBeenCalled()
+
+    const prose = harness({ draft: 'hello', lane: 'pty', consumeOrcaCommand })
+    act(() => prose.hook.result.current.send())
+    expect(prose.calls.sendPty).toHaveBeenCalledOnce()
   })
 
   it('leaves the PTY lane alone: every draft goes to the PTY send, and goal mode never activates', () => {

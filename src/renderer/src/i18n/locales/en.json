@@ -18753,6 +18753,11 @@
       },
       "claudeSignIn": {
         "signingIn": "Signing in…"
+      },
+      "resumeCommand": {
+        "description": "Open Agent Session History",
+        "argumentHint": "[search]",
+        "workspaceUnavailable": "This chat's workspace isn't loaded yet. Try /resume again in a moment."
       }
     },
     "tab": {
