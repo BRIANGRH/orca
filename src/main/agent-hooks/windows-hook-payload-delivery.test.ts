@@ -13,9 +13,17 @@ import { removeTreeSync } from '../../shared/windows-transient-lock-removal'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import type * as osModule from 'node:os'
+import type * as NativeHookExecutableModule from './windows-native-hook-executable'
 
-const { homedirMock } = vi.hoisted(() => ({
-  homedirMock: vi.fn<() => string>()
+const { homedirMock, bundledHook } = vi.hoisted(() => {
+  const bundledHook: { path: string | null } = { path: null }
+  return { homedirMock: vi.fn<() => string>(), bundledHook }
+})
+
+// Why: no packaged resources here; the exe case points install at the real built binary.
+vi.mock('./windows-native-hook-executable', async (importOriginal) => ({
+  ...(await importOriginal<typeof NativeHookExecutableModule>()),
+  resolveBundledWindowsNativeHookExecutable: () => bundledHook.path
 }))
 
 vi.mock('electron', () => ({
@@ -48,6 +56,10 @@ import { zcodeHookService } from '../zcode/hook-service'
 import { readHooksJson, WINDOWS_CMD_SAFE_PATH, wrapWindowsHookCommand } from './installer-utils'
 import { getConfigPath, getWindowsManagedLifecycleHook } from '../claude/hook-settings'
 import { findGitBash } from './windows-git-bash-path.test-fixture'
+import {
+  buildWindowsNativeHookExecutable,
+  WINDOWS_NATIVE_HOOK_BUILD_TIMEOUT_MS
+} from './windows-native-hook-exe.test-fixture'
 
 const PANE_KEY = 'tab-1:leaf-1'
 const HOOK_TOKEN = 'payload-delivery-token'
@@ -241,6 +253,18 @@ const PROVIDERS: Provider[] = [
     commands: () => commandsOf(readHooksJson(getConfigPath())?.hooks?.PreToolUse)
   },
   {
+    // A spaced home cannot carry the bare exe path, so that profile falls back to the `.cmd` hook.
+    name: 'Claude (orca-agent-hook.exe)',
+    script: 'orca-agent-hook.exe',
+    stdout: '{}',
+    install: () => {
+      bundledHook.path = buildWindowsNativeHookExecutable()
+      return new ClaudeHookService().install()
+    },
+    commands: () => commandsOf(readHooksJson(getConfigPath())?.hooks?.PreToolUse),
+    runners: [CMD_PLAIN, GIT_BASH, POWERSHELL_PLAIN]
+  },
+  {
     name: 'Muse',
     script: 'muse-hook.cmd',
     stdout: '',
@@ -421,6 +445,7 @@ describe.skipIf(process.platform !== 'win32')('Windows managed hook payload deli
 
   afterEach(() => {
     vi.unstubAllEnvs()
+    bundledHook.path = null
     server?.close()
     server = null
     homedirMock.mockImplementation(() => process.env.HOME ?? tmpdir())
@@ -468,6 +493,9 @@ describe.skipIf(process.platform !== 'win32')('Windows managed hook payload deli
       // front of it, or #18875's per-event PowerShell start-up has quietly come back.
       if (WINDOWS_CMD_SAFE_PATH.test(scriptPath)) {
         expect(registeredCommand).not.toMatch(/powershell|-EncodedCommand/i)
+        if (provider.script.endsWith('.exe')) {
+          expect(registeredCommand).toBe(`${scriptPath.replaceAll('\\', '/')} claude`)
+        }
       } else {
         expect(registeredCommand).toMatch(/-EncodedCommand/)
       }
@@ -519,9 +547,9 @@ describe.skipIf(process.platform !== 'win32')('Windows managed hook payload deli
         expect(outsideOrca.code, `${runner.name} outside Orca exit code`).toBe(0)
         expect(listener.posts).toHaveLength(before + 1)
       }
-      // Why: several shell launches plus a real install can overrun the default under load.
+      // Why: several shell launches, a real install and a cold exe build can overrun the default.
     },
-    60_000
+    WINDOWS_NATIVE_HOOK_BUILD_TIMEOUT_MS
   )
 
   // Copilot parses stdout on PreToolUse and PermissionRequest, so a printing AutoRun must not

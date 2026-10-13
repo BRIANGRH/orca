@@ -41,6 +41,19 @@ function captureErrors() {
 }
 
 describe('main sync-spawn ratchet', () => {
+  it('retains escaped imports and API names', () => {
+    expect(
+      uses(String.raw`import { \u0065xecSync as run } from 'node:child_\u0070rocess'; run('git')`)
+    ).toEqual({ count: 1, symbols: ['execSync'] })
+  })
+
+  it('retains exports whose module name is inherited from the containing directory', () => {
+    expect(uses("export * from '.'", 'src/main/wsl/consumer.ts')).toEqual({
+      count: 4,
+      symbols: ['getWslHome', 'isWslAvailable', 'listWslDistros', 'wslUncDirectoryExists']
+    })
+  })
+
   it.each([
     ["import { execFileSync } from 'node:child_process'\nexecFileSync('git')", 1, ['execFileSync']],
     [
@@ -212,9 +225,12 @@ describe('main sync-spawn ratchet', () => {
     expect([...(gatedSymbolsFor('src\\main\\foo\\x.ts', '..\\wsl') ?? [])]).toContain('getWslHome')
   })
 
-  it('fails closed on source it cannot parse', () => {
-    expect(() => uses('import {')).toThrow('Cannot parse src/main/consumer.ts')
-  })
+  it.each(['import {', 'const broken = ;'])(
+    'fails closed on source it cannot parse: %s',
+    (source) => {
+      expect(() => uses(source)).toThrow('Cannot parse src/main/consumer.ts')
+    }
+  )
 
   it('counts only production main and shared source', () => {
     const sync = "import { execSync } from 'node:child_process'\nexecSync('a')\nexecSync('b')"

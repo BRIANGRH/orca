@@ -135,9 +135,9 @@ jobs:
       # drifted. This fails when a test file that checks today stops checking, when a test leaves
       # the program, and on @ts-nocheck; the baseline may only shrink.
       - name: Typecheck tests (ratchet)
+        id: test-types
+        background: true
         run: node scripts/check-tests-typecheck-ratchet.mjs
-
-      - wait: production-types
 
       # This includes the bridged replay of the whole recording corpus, which used to be a second
       # step of its own behind RPC_FOUNDATION_BRIDGE=1. A gate nobody can forget to set is the point:
@@ -167,6 +167,9 @@ jobs:
         env:
           ORCA_BACKGROUND_LAUNCH: '1'
         run: node ../config/scripts/run-mobile-ci-tests.mjs
+
+      # All checks read the completed install; compilers need not hold up test workers.
+      - wait: [production-types, test-types]
 
       # Reports, never gates: the goldens are content-addressed JSON, so their raw diff is hashes.
       # This decodes which recorded behaviour the pull request moves into the job summary, and runs

@@ -3243,7 +3243,8 @@
           }
         },
         "dialog": {
-          "f26c4baeda": "Close"
+          "f26c4baeda": "Close",
+          "minimize": "Minimize"
         },
         "repo": {
           "multi": {
@@ -19238,14 +19239,15 @@
       "eyebrow": "New",
       "title": "Native chat got an upgrade",
       "chatModeNote": "New agent tabs still open in the terminal, as before.",
-      "chatModeLabel": "Turn on chat mode",
-      "chatModeHint": "New agent tabs open as chat instead.",
+      "okay": "Okay",
+      "enableNow": "Enable Now",
+      "enableError": "Could not enable chat mode.",
       "intro": "New chats with supported agents now open in the upgraded chat view. To move between chat and CLI, open {{panel}} in the right sidebar:",
       "resumeInNativeChat": "{{action}} opens a supported CLI conversation in native chat.",
       "resumeInCli": "{{action}} copies a Claude or Codex chat into a new CLI session. The original chat stays as it is.",
       "settingsInstruction": "Manage Chat UI in",
       "settingsLink": "Settings → Experimental",
-      "gotIt": "Got it"
+      "gotIt": "Got It"
     },
     "voice": {
       "demoPrompt": "Review this diff for edge cases and add tests for anything you find.",
