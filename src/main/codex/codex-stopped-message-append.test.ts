@@ -11,10 +11,13 @@ import { agentSessionFailureWords } from '../../shared/agent-session-failure-wor
 import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
 import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
 import { readClaudeImage } from '../claude/claude-structured-dispatch-content'
+import { pngImage } from '../../shared/__fixtures__/png-image'
 import { CodexAppServerRequestError } from './codex-app-server-request-error'
 import { CodexAppServerUnsupportedError } from './codex-app-server-session'
 import {
+  CODEX_INJECT_PREPARES_IMAGES_FROM,
   CODEX_TURN_ABORTED_MARKER,
+  codexInjectPreparesImages,
   codexStoppedMessageAppendBusy,
   injectCodexStoppedMessages
 } from './codex-stopped-message-append'
@@ -47,7 +50,10 @@ function stopped(id: string, blocks: AgentJournalMessageItem['blocks']): OwedSto
   }
 }
 
-function session(answer: () => Promise<unknown> = async () => ({})) {
+function session(
+  answer: () => Promise<unknown> = async () => ({}),
+  codexVersion: string | null = '0.159.0'
+) {
   const request = vi.fn(async (_method: string, _params?: Record<string, unknown>) => answer())
   return {
     request,
@@ -57,9 +63,14 @@ function session(answer: () => Promise<unknown> = async () => ({})) {
       threadId: 'thread-1',
       activeTurnIds: new Set<string>(),
       dispatchPending: false,
-      connection: { closed: false, request }
+      connection: { closed: false, request, codexVersion }
     }
   }
+}
+
+/** The inline image Orca sends for `bytes`. */
+function inlined(bytes: Buffer, mimeType = 'image/png') {
+  return { type: 'input_image', image_url: `data:${mimeType};base64,${bytes.toString('base64')}` }
 }
 
 type Host = ReturnType<typeof session>['host']
@@ -130,7 +141,8 @@ describe('appending stopped messages to Codex', () => {
   it('carries images in the order sent, inline, and leaves out one it cannot send', async () => {
     folder = await mkdtemp(join(tmpdir(), 'codex-stopped-'))
     const png = join(folder, 'shot.png')
-    await writeFile(png, Buffer.from([1, 2, 3]))
+    const bytes = pngImage(4, 4)
+    await writeFile(png, bytes)
     const { request, host } = session()
     await inject(host, [
       stopped('a', [
@@ -146,27 +158,18 @@ describe('appending stopped messages to Codex', () => {
       {
         type: 'message',
         role: 'user',
-        content: [
-          {
-            type: 'input_image',
-            image_url: `data:image/png;base64,${Buffer.from([1, 2, 3]).toString('base64')}`
-          },
-          { type: 'input_text', text: 'look' }
-        ]
+        content: [inlined(bytes), { type: 'input_text', text: 'look' }]
       },
       marker
     ])
   })
 
-  it("carries a readable image past Claude's 5 MiB limit, alone or beside words", async () => {
+  it("carries a valid image past Claude's 5 MiB limit, alone or beside words, exactly as read", async () => {
     folder = await mkdtemp(join(tmpdir(), 'codex-stopped-'))
     const png = join(folder, 'large.png')
-    const bytes = Buffer.alloc(6 * 1024 * 1024, 7)
+    const bytes = pngImage(1024, 2048, { stored: true })
+    expect(bytes.byteLength).toBeGreaterThan(5 * 1024 * 1024)
     await writeFile(png, bytes)
-    const image = {
-      type: 'input_image',
-      image_url: `data:image/png;base64,${bytes.toString('base64')}`
-    }
     const { request, host } = session()
     expect(
       await inject(host, [
@@ -179,9 +182,40 @@ describe('appending stopped messages to Codex', () => {
     ).toEqual({ outcome: 'accepted' })
 
     expect(request.mock.calls[0]?.[1]?.items).toEqual([
-      { type: 'message', role: 'user', content: [image] },
+      { type: 'message', role: 'user', content: [inlined(bytes)] },
       marker,
-      { type: 'message', role: 'user', content: [image, { type: 'input_text', text: 'look' }] },
+      {
+        type: 'message',
+        role: 'user',
+        content: [inlined(bytes), { type: 'input_text', text: 'look' }]
+      },
+      marker
+    ])
+  })
+
+  it('sends a small image with huge dimensions and a corrupt one as read: Codex prepares both', async () => {
+    folder = await mkdtemp(join(tmpdir(), 'codex-stopped-'))
+    const wide = join(folder, 'wide.png')
+    const wideBytes = pngImage(8192, 64)
+    const corrupt = join(folder, 'corrupt.jpg')
+    const corruptBytes = Buffer.from('not an image at all')
+    await writeFile(wide, wideBytes)
+    await writeFile(corrupt, corruptBytes)
+    const { request, host } = session()
+    expect(
+      await inject(host, [
+        stopped('a', [
+          { type: 'image-ref', path: wide },
+          { type: 'image-ref', path: corrupt }
+        ])
+      ])
+    ).toEqual({ outcome: 'accepted' })
+    expect(request.mock.calls[0]?.[1]?.items).toEqual([
+      {
+        type: 'message',
+        role: 'user',
+        content: [inlined(wideBytes), inlined(corruptBytes, 'image/jpeg')]
+      },
       marker
     ])
   })
@@ -190,8 +224,9 @@ describe('appending stopped messages to Codex', () => {
     folder = await mkdtemp(join(tmpdir(), 'codex-stopped-'))
     const first = join(folder, 'first.png')
     const second = join(folder, 'second.png')
-    await writeFile(first, Buffer.alloc(30 * 1024 * 1024, 1))
-    await writeFile(second, Buffer.alloc(25 * 1024 * 1024, 2))
+    const firstBytes = pngImage(2048, 5_000, { stored: true })
+    await writeFile(first, firstBytes)
+    await writeFile(second, pngImage(2048, 4_200, { stored: true }))
     const { request, host } = session()
     expect(
       await inject(host, [
@@ -203,13 +238,12 @@ describe('appending stopped messages to Codex', () => {
       ])
     ).toEqual({ outcome: 'accepted' })
 
-    const items = request.mock.calls[0]?.[1]?.items
-    expect(Array.isArray(items) ? items.length : 0).toBe(4)
-    expect(Array.isArray(items) ? items[2] : null).toEqual({
-      type: 'message',
-      role: 'user',
-      content: [{ type: 'input_text', text: 'and this one' }]
-    })
+    expect(request.mock.calls[0]?.[1]?.items).toEqual([
+      { type: 'message', role: 'user', content: [inlined(firstBytes)] },
+      marker,
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'and this one' }] },
+      marker
+    ])
   })
 
   it('leaves out a remote image, which Codex refuses before recording anything, and keeps the words', async () => {
@@ -324,7 +358,7 @@ describe('appending stopped messages to Codex', () => {
     expect(request).not.toHaveBeenCalled()
   })
 
-  it('gives up on a stalled image read in time, refused, and never injects it later', async () => {
+  it('leaves out an image whose read stalls, in time, and the words still go', async () => {
     const { request, host } = session()
     let readLate: (bytes: Buffer) => void = () => {}
     vi.mocked(readClaudeImage).mockImplementationOnce(
@@ -335,17 +369,136 @@ describe('appending stopped messages to Codex', () => {
     )
     const started = Date.now()
     expect(
+      await inject(host, [
+        stopped('a', [
+          { type: 'image-ref', path: '/hung/words.png' },
+          { type: 'text', text: 'look' }
+        ])
+      ])
+    ).toEqual({ outcome: 'accepted' })
+    expect(Date.now() - started).toBeLessThan(1_900)
+    expect(request.mock.calls[0]?.[1]?.items).toEqual([
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'look' }] },
+      marker
+    ])
+    readLate(Buffer.from([1]))
+  })
+
+  it('a second send neither waits on nor reads again an image whose read is still stuck', async () => {
+    const reads = vi.mocked(readClaudeImage)
+    const before = reads.mock.calls.length
+    const finishes: (() => void)[] = []
+    reads.mockImplementation(
+      () => new Promise((resolve) => finishes.push(() => resolve(Buffer.from([1]))))
+    )
+    const messages = [
+      stopped('a', [{ type: 'image-ref', path: '/hung/first.png' }]),
+      stopped('b', [{ type: 'image-ref', path: '/hung/second.png' }])
+    ]
+    try {
+      // The first read outlasts its own limit and the second the whole bound: neither message has
+      // words to send without its image, so they stay owed.
+      const { request, host } = session()
+      expect(await inject(host, messages, () => false, { prepare: 1_500, settle: 50 })).toEqual({
+        outcome: 'refused',
+        reason: 'reading the stopped messages took too long'
+      })
+      expect(reads.mock.calls.length - before).toBe(2)
+      expect(request).not.toHaveBeenCalled()
+
+      const started = Date.now()
+      expect(await inject(host, messages)).toEqual({ outcome: 'unreadable' })
+      expect(Date.now() - started).toBeLessThan(100)
+      expect(reads.mock.calls.length - before).toBe(2)
+    } finally {
+      reads.mockImplementation(
+        (
+          await vi.importActual<typeof ClaudeDispatchContent>(
+            '../claude/claude-structured-dispatch-content'
+          )
+        ).readClaudeImage
+      )
+      finishes.forEach((finish) => finish())
+    }
+  })
+
+  it('past the whole bound sends every message with words, without images, read no further', async () => {
+    const { request, host } = session()
+    let readLate: (bytes: Buffer) => void = () => {}
+    vi.mocked(readClaudeImage).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          readLate = resolve
+        })
+    )
+    expect(
       await inject(
         host,
-        [stopped('a', [{ type: 'image-ref', path: '/tmp/shot.png' }])],
+        [
+          stopped('a', [
+            { type: 'image-ref', path: '/hung/bound.png' },
+            { type: 'text', text: 'first' }
+          ]),
+          stopped('b', [
+            { type: 'image-ref', path: '/tmp/never-read.png' },
+            { type: 'text', text: 'second' }
+          ])
+        ],
         () => false,
         { prepare: 50, settle: 50 }
       )
-    ).toEqual({ outcome: 'refused', reason: 'reading the stopped messages took too long' })
-    expect(Date.now() - started).toBeLessThan(1_000)
+    ).toEqual({ outcome: 'accepted' })
+    expect(vi.mocked(readClaudeImage)).not.toHaveBeenCalledWith(
+      '/tmp/never-read.png',
+      expect.anything(),
+      expect.anything()
+    )
+    expect(request.mock.calls[0]?.[1]?.items).toEqual([
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'first' }] },
+      marker,
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'second' }] },
+      marker
+    ])
     readLate(Buffer.from([1]))
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('injects images only into a Codex that prepares them, never one older or unknown', async () => {
+    folder = await mkdtemp(join(tmpdir(), 'codex-stopped-'))
+    const png = join(folder, 'shot.png')
+    const bytes = pngImage(4, 4)
+    await writeFile(png, bytes)
+    const messages = [
+      stopped('only', [{ type: 'image-ref', path: png }]),
+      stopped('words', [
+        { type: 'image-ref', path: png },
+        { type: 'text', text: 'look' }
+      ])
+    ]
+    for (const version of [CODEX_INJECT_PREPARES_IMAGES_FROM, '0.159.0', '1.0.0']) {
+      const { request, host } = session(undefined, version)
+      expect(await inject(host, messages)).toEqual({ outcome: 'accepted' })
+      expect(request.mock.calls[0]?.[1]?.items).toEqual([
+        { type: 'message', role: 'user', content: [inlined(bytes)] },
+        marker,
+        {
+          type: 'message',
+          role: 'user',
+          content: [inlined(bytes), { type: 'input_text', text: 'look' }]
+        },
+        marker
+      ])
+    }
+    for (const version of ['0.141.0', '0.130.0', '0.142.0-alpha.3', null]) {
+      const { request, host } = session(undefined, version)
+      expect(await inject(host, messages)).toEqual({ outcome: 'accepted' })
+      expect(request.mock.calls[0]?.[1]?.items).toEqual([
+        { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'look' }] },
+        marker
+      ])
+      expect(await inject(host, [messages[0]!])).toEqual({ outcome: 'unreadable' })
+    }
+    expect(codexInjectPreparesImages(undefined)).toBe(false)
+    expect(codexInjectPreparesImages('garbage')).toBe(false)
   })
 
   it('has nothing to write when nothing in the messages reads any more', async () => {

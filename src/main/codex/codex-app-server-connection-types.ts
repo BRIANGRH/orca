@@ -20,6 +20,8 @@ export type CodexAppServerConnectionHandlers = {
 export type CodexAppServerConnection = {
   readonly pid: number | undefined
   readonly closed: boolean
+  /** The Codex version this child named in its handshake; null or absent when it named none. */
+  readonly codexVersion?: string | null
   request: (
     method: string,
     params?: Record<string, unknown>,
