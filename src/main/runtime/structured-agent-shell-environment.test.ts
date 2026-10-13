@@ -422,10 +422,14 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
         )
         await writeFile(pathFile, '/installed')
         vi.advanceTimersByTime(1)
-        const launch = resolveAgainAfterRefreshOnMissingProgram(async () => {
-          const { PATH } = await resolvers.resolveBaseEnvironment()
-          return { command: PATH === '/installed' ? '/installed/agent' : 'agent' }
-        }, resolvers.refreshAfterMissingProgram)
+        const launch = resolveAgainAfterRefreshOnMissingProgram(
+          async () => {
+            const { PATH } = await resolvers.resolveBaseEnvironment()
+            return { command: PATH === '/installed' ? '/installed/agent' : 'agent', PATH }
+          },
+          resolvers.refreshAfterMissingProgram,
+          ({ PATH }) => PATH
+        )
         await new Promise((resolve) => setTimeout(resolve, 300))
         await rm(hold, { force: true })
         expect((await launch).command).toBe('/installed/agent')

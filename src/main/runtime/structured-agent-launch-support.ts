@@ -54,7 +54,8 @@ export async function structuredAgentSupportsLaunch(
           },
           settings
         ),
-      refreshHostAgentBaseEnvironmentAfterMiss
+      refreshHostAgentBaseEnvironmentAfterMiss,
+      ({ env }) => env.PATH ?? env.Path
     )
   } catch (error) {
     // An unrunnable Command setting is the launch's refusal to state, not a terminal.

@@ -54,7 +54,8 @@ export function resolveCodexStructuredInvocation(
 ): Promise<CodexStructuredInvocation> {
   return resolveAgainAfterRefreshOnMissingProgram(
     () => readCodexStructuredInvocation(deps),
-    deps.refreshEnvironmentAfterMiss
+    deps.refreshEnvironmentAfterMiss,
+    ({ environment }) => environment?.PATH ?? environment?.Path
   )
 }
 

@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path'
+import { delimiter, isAbsolute } from 'node:path'
 import type { GlobalSettings } from '../../shared/global-settings-types'
 import type { TuiAgent } from '../../shared/tui-agent'
 import {
@@ -63,12 +63,25 @@ export function resolveStructuredAgentCommand(
   return command
 }
 
-/** Resolves a launch's program from the shell snapshot. When none is found there (a bare name back,
- *  or a Command setting naming no program), waits for a reread that started after this lookup did
- *  and resolves once more, so an agent installed before it starts. A found program never waits. */
+/** Whether a lookup found nothing: a bare name back from a search of absolute directories only. A
+ *  relative entry (a workspace `bin`) is searched again by the spawn in its own directory. */
+function foundNothing(command: string, searchedPath: string | undefined): boolean {
+  if (isAbsolute(command) || /[\\/]/.test(command)) {
+    return false
+  }
+  return (searchedPath ?? '')
+    .split(delimiter)
+    .every((entry) => isAbsolute(entry.trim()) || !entry.trim())
+}
+
+/** Resolves a launch's program from the shell snapshot. When nothing is found there (a bare name
+ *  from `searchedPath`, or a Command setting naming no program), waits for a reread that started
+ *  after this lookup did and resolves once more, so an agent installed before it starts. A found
+ *  program never waits. */
 export async function resolveAgainAfterRefreshOnMissingProgram<T extends { command: string }>(
   resolve: () => Promise<T>,
-  refreshAfterMiss: ((askedAt: number) => Promise<void>) | undefined
+  refreshAfterMiss: ((askedAt: number) => Promise<void>) | undefined,
+  searchedPath: (resolved: T) => string | undefined
 ): Promise<T> {
   if (!refreshAfterMiss) {
     return resolve()
@@ -76,7 +89,7 @@ export async function resolveAgainAfterRefreshOnMissingProgram<T extends { comma
   const askedAt = Date.now()
   try {
     const resolved = await resolve()
-    if (isAbsolute(resolved.command)) {
+    if (!foundNothing(resolved.command, searchedPath(resolved))) {
       return resolved
     }
   } catch (error) {

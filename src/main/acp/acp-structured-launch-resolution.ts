@@ -156,7 +156,8 @@ export function resolveAcpLaunchInvocation(
 ): Promise<{ command: string; env: Record<string, string>; envToDelete: string[] }> {
   return resolveAgainAfterRefreshOnMissingProgram(
     () => readAcpLaunchInvocation(spec, accountHome, deps),
-    deps.refreshEnvironmentAfterMiss
+    deps.refreshEnvironmentAfterMiss,
+    ({ env }) => env.PATH ?? env.Path
   )
 }
 

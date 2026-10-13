@@ -109,16 +109,20 @@ export function resolvePiRpcInvocation(deps: {
   resolveCommand?: typeof resolveCliCommand
   refreshEnvironmentAfterMiss?: (askedAt: number) => Promise<void>
 }): Promise<{ command: string; env: Record<string, string> }> {
-  return resolveAgainAfterRefreshOnMissingProgram(async () => {
-    const env: Record<string, string> = {}
-    for (const [key, value] of Object.entries(await deps.resolveEnvironment())) {
-      if (value !== undefined) {
-        env[key] = value
+  return resolveAgainAfterRefreshOnMissingProgram(
+    async () => {
+      const env: Record<string, string> = {}
+      for (const [key, value] of Object.entries(await deps.resolveEnvironment())) {
+        if (value !== undefined) {
+          env[key] = value
+        }
       }
-    }
-    env.PI_CODING_AGENT_DIR = deps.accountDir
-    return { env, command: resolvePiRpcCommand(env, deps.commandSettings, deps.resolveCommand) }
-  }, deps.refreshEnvironmentAfterMiss)
+      env.PI_CODING_AGENT_DIR = deps.accountDir
+      return { env, command: resolvePiRpcCommand(env, deps.commandSettings, deps.resolveCommand) }
+    },
+    deps.refreshEnvironmentAfterMiss,
+    ({ env }) => env.PATH ?? env.Path
+  )
 }
 
 /** Pi's part of a launch: its account directory, session file or fork, binary and release check. */

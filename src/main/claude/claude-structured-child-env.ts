@@ -39,7 +39,11 @@ export type ClaudeChildEnvSources = {
 export function resolveClaudeChildEnvSources(deps: ClaudeEnvDeps): Promise<ClaudeChildEnvSources> {
   return resolveAgainAfterRefreshOnMissingProgram(
     () => readClaudeChildEnvSources(deps),
-    deps.refreshEnvironmentAfterMiss
+    deps.refreshEnvironmentAfterMiss,
+    ({ inheritedEnv, overlay }) => {
+      const env = { ...inheritedEnv, ...overlay }
+      return env.PATH ?? env.Path
+    }
   )
 }
 

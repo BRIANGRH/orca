@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentSessionRecord } from '../../shared/agent-session-record'
 import { agentSessionRecordFixture } from '../../shared/agent-session-record.test-fixture'
@@ -120,5 +120,30 @@ describe('an agent installed after the first shell capture', () => {
     })({ identity: { ...identity, agent: 'codex' } })
     expect(launch.command).toBe(host.program)
     expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('never rereads for a program found through a relative PATH entry, and rereads once for none', async () => {
+    // A workspace `bin` on PATH: the spawn finds the program in the chat's directory, so the
+    // lookup's bare name is not a miss.
+    const name = `codex-relative-${process.pid}`
+    const launchFrom = async (PATH: string) => {
+      const refresh = vi.fn(async (_askedAt: number) => {})
+      const launch = await createCodexStructuredLaunchResolver({
+        store: store({
+          provider: 'codex',
+          accountHome: { variable: 'CODEX_HOME', path: '/home/user/.codex' }
+        }),
+        resolveEnvironment: async () => ({ PATH, HOME: '/home/user' }),
+        refreshAfterMissingProgram: refresh,
+        resolveCommand: (options) => resolveCliCommand(name, options),
+        resolveLaunchArgs: () => []
+      })({ identity: { ...identity, agent: 'codex' } })
+      return { command: launch.command, rereads: refresh.mock.calls.length }
+    }
+    expect(await launchFrom(['/usr/bin', 'node_modules/.bin'].join(delimiter))).toEqual({
+      command: name,
+      rereads: 0
+    })
+    expect(await launchFrom('/usr/bin')).toEqual({ command: name, rereads: 1 })
   })
 })
