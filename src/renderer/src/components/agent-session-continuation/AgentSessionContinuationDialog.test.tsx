@@ -117,4 +117,35 @@ describe('AgentSessionContinuationDialog', () => {
     // Why: continuing a chat needs an agent to resume it into.
     expect(container.querySelector('[data-allow-blank="false"]')).not.toBeNull()
   })
+
+  it('reports a start only when the new session launched', async () => {
+    mocks.detectAgents.mockResolvedValue(['codex'])
+    const onOpenChange = vi.fn()
+    const onStarted = vi.fn()
+    await act(async () => {
+      root.render(
+        <AgentSessionContinuationDialog
+          open
+          request={request('wt-1')}
+          onOpenChange={onOpenChange}
+          onStarted={onStarted}
+        />
+      )
+    })
+    await vi.waitFor(() => expect(container.querySelector('[data-agent="codex"]')).not.toBeNull())
+    const startButton = (): HTMLButtonElement | undefined =>
+      Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Start New Session')
+      )
+
+    mocks.launchContinuation.mockResolvedValueOnce(false)
+    await act(async () => startButton()?.click())
+    expect(onStarted).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalled()
+
+    mocks.launchContinuation.mockResolvedValueOnce(true)
+    await act(async () => startButton()?.click())
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(onStarted).toHaveBeenCalledTimes(1)
+  })
 })

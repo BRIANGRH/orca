@@ -399,6 +399,7 @@ export default function AiVaultPanel({
           open
           request={launchActions.continuationRequest}
           onOpenChange={launchActions.handleContinuationDialogOpenChange}
+          onStarted={onSessionNavigated}
         />
       )}
     </div>
