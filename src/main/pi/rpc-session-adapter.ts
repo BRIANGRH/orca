@@ -160,7 +160,7 @@ export class PiRpcSessionAdapter implements StructuredAgentSessionAdapter {
 
   prepareDispatch: NonNullable<StructuredAgentSessionAdapter['prepareDispatch']> = (input) => {
     const session = this.session(input.sessionId, input.fence)
-    return preparePiRpcDispatch(input.body, input.owed, session.turns.heldBytesFree)
+    return preparePiRpcDispatch(input.body, input.owed, session.turns.heldBytesFree, input.signal)
   }
 
   compact: NonNullable<StructuredAgentSessionAdapter['compact']> = async (input) =>

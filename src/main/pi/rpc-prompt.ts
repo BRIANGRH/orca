@@ -226,6 +226,7 @@ export async function preparePiRpcDispatch(
   body: AgentJournalMessageItem,
   owed: readonly OwedStoppedMessage[],
   heldBytesFree: number,
+  signal?: AbortSignal,
   reads: ImageReads = { readLocal: readClaudeImage }
 ): Promise<PiPreparedDispatch | null> {
   const own = await preparePiRpcPrompt(body, undefined, reads).catch(() => null)
@@ -244,6 +245,7 @@ export async function preparePiRpcDispatch(
       bytes: MAX_TOTAL_IMAGE_BYTES - ownBytes
     },
     textCost: (text) => ({ line: jsonBytes(text) - 2 }),
+    ...(signal ? { signal } : {}),
     image: async (block) => {
       const { bytes, mimeType } = await readImage(block, reads)
       const image = { type: 'image' as const, data: bytes.toString('base64'), mimeType }

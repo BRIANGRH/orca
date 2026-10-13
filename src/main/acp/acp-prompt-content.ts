@@ -28,6 +28,7 @@ import type { ContentBlock } from './generated/acp-protocol.generated'
 import type { OwedStoppedMessage } from '../../shared/agent-session-stopped-history'
 import type { AgentSessionPreparedDispatch } from '../native-chat/agent-session-wire/structured-agent-session-prepared-dispatch'
 import { fitStoppedHistory } from '../native-chat/agent-session-wire/structured-agent-session-stopped-history-fit'
+import { STOPPED_IMAGE_READ_TIMEOUT_MS } from '../native-chat/agent-session-wire/structured-agent-session-stopped-image-read'
 
 const ACP_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 /** A prompt is one JSON-RPC line; this leaves room for the request around its blocks. */
@@ -198,7 +199,8 @@ function jsonTextBytes(text: string): number {
 export async function prepareAcpDispatch(
   body: AgentJournalMessageItem,
   owed: readonly OwedStoppedMessage[],
-  session: Parameters<typeof acpDispatchPrompt>[1]
+  session: Parameters<typeof acpDispatchPrompt>[1],
+  signal?: AbortSignal
 ): Promise<AcpPreparedDispatch | null> {
   const acceptsImages = await acpSessionAcceptsImages(session)
   const own = await measuredPromptBlocks(body, acceptsImages).catch(() => null)
@@ -215,6 +217,7 @@ export async function prepareAcpDispatch(
       bytes: ACP_PROMPT_IMAGE_MAX_BYTES - own.imageBytes
     },
     textCost: (text) => ({ line: jsonTextBytes(text) }),
+    ...(signal ? { signal } : {}),
     image: async (block) => {
       if (!acceptsImages) {
         return null
@@ -223,7 +226,7 @@ export async function prepareAcpDispatch(
       const image = await imageBlock(
         block,
         ACP_PROMPT_IMAGE_MAX_BYTES,
-        AbortSignal.timeout(READ_TIMEOUT_MS)
+        AbortSignal.timeout(STOPPED_IMAGE_READ_TIMEOUT_MS)
       )
       const line = Buffer.byteLength(JSON.stringify(image.block)) + 1
       return { content: image.block, cost: { line, images: 1, bytes: image.bytes } }

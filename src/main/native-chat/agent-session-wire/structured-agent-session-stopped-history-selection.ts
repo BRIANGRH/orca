@@ -125,10 +125,25 @@ export async function appendStoppedHistory(
   }
 }
 
+/** The words of the leading owed messages that have some, images left out; empty when the oldest
+ *  has none, which then waits rather than ride as nothing. */
+function owedWords(owed: readonly OwedStoppedMessage[]): OwedStoppedMessage[] {
+  const words: OwedStoppedMessage[] = []
+  for (const entry of owed) {
+    const blocks = entry.body.blocks.filter((block) => block.type === 'text' && block.text !== '')
+    if (blocks.length === 0) {
+      break
+    }
+    words.push({ ...entry, body: { ...entry.body, blocks } })
+  }
+  return words
+}
+
 /** The send prepared once with the owed history that fits, or null to send it alone as before:
  *  none fits, the send alone fails preparation (its own refusal follows), or preparing failed or
- *  outlasted `timeoutMs`, which is logged. History never refuses or holds up a send; preparing
- *  writes nothing, so a late result is dropped and the history stays owed. */
+ *  outlasted `timeoutMs`, which is logged. A stopped image too slow to read is left out on its own;
+ *  past the whole bound, the messages ride with their words alone, read no further. History never
+ *  refuses or holds up a send; preparing writes nothing, so a late result is dropped. */
 export async function prepareStoppedHistory(
   ctx: StoppedHistoryContext,
   body: AgentJournalMessageItem,
@@ -147,16 +162,31 @@ export async function prepareStoppedHistory(
     })
     return null
   }
-  const preparing = Promise.resolve()
-    .then(() =>
-      prepare.call(ctx.adapter, { sessionId: ctx.sessionId, fence: ctx.fence, body, owed })
+  const giveUp = new AbortController()
+  const preparing = (
+    history: readonly OwedStoppedMessage[]
+  ): Promise<AgentSessionPreparedDispatch | null | 'timeout'> =>
+    withTimeout<AgentSessionPreparedDispatch | null | 'timeout'>(
+      Promise.resolve()
+        .then(() =>
+          prepare.call(ctx.adapter, {
+            sessionId: ctx.sessionId,
+            fence: ctx.fence,
+            body,
+            owed: history,
+            signal: giveUp.signal
+          })
+        )
+        .catch(failed),
+      timeoutMs,
+      'timeout'
     )
-    .catch(failed)
-  const prepared = await withTimeout<AgentSessionPreparedDispatch | null | 'timeout'>(
-    preparing,
-    timeoutMs,
-    'timeout'
-  )
+  let prepared = await preparing(owed)
+  if (prepared === 'timeout') {
+    giveUp.abort()
+    const words = owedWords(owed)
+    prepared = words.length > 0 ? await preparing(words) : 'timeout'
+  }
   if (prepared === 'timeout') {
     return failed(new Error('preparing stopped history took too long'))
   }

@@ -121,7 +121,8 @@ describe('choosing the stopped history a handover carries', () => {
       sessionId: 'session-1',
       fence: 1,
       body: message('next'),
-      owed: OWED
+      owed: OWED,
+      signal: expect.any(AbortSignal)
     })
   })
 
@@ -158,13 +159,47 @@ describe('choosing the stopped history a handover carries', () => {
   })
 
   it('a preparation that stalls sends the message alone within the limit, and its late result is dropped', async () => {
-    let finish: (prepared: { carries: string[] }) => void = () => {}
-    const ctx = preparing(() => new Promise((resolve) => (finish = resolve)))
+    const finishes: ((prepared: { carries: string[] }) => void)[] = []
+    const ctx = preparing(() => new Promise((resolve) => finishes.push(resolve)))
     expect(await prepareStoppedHistory(ctx, message('next'), OWED, 20)).toBeNull()
     expect(ctx.logger.warn).toHaveBeenCalledTimes(1)
-    finish({ carries: ['old'] })
+    finishes.forEach((finish) => finish({ carries: ['old'] }))
     await Promise.resolve()
     expect(ctx.logger.warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('past its limit carries the leading messages with words, without their images, reading no more', async () => {
+    const image = { type: 'image-ref' as const, path: '/hung/shot.png' }
+    const owed = [
+      { ...OWED[0]!, body: { ...OWED[0]!.body, blocks: [image, ...OWED[0]!.body.blocks] } },
+      { ...OWED[1]!, body: { ...OWED[1]!.body, blocks: [image] } }
+    ]
+    const signals: AbortSignal[] = []
+    const prepare = vi.fn(
+      (input: Parameters<NonNullable<StructuredAgentSessionAdapter['prepareDispatch']>>[0]) => {
+        signals.push(input.signal!)
+        return signals.length === 1
+          ? new Promise<null>(() => {})
+          : Promise.resolve({
+              carries: input.owed.map((entry) => entry.submission.clientMessageId)
+            })
+      }
+    )
+    expect(await prepareStoppedHistory(preparing(prepare), message('next'), owed, 20)).toEqual({
+      carries: ['old']
+    })
+    expect(prepare).toHaveBeenCalledTimes(2)
+    expect(prepare.mock.calls[1]![0].owed.map((entry) => entry.body.blocks)).toEqual([
+      [{ type: 'text', text: 'old' }]
+    ])
+    expect(signals.every((signal) => signal.aborted)).toBe(true)
+
+    // The oldest has no words: nothing rides, and it stays owed.
+    const again = vi.fn(() => new Promise<null>(() => {}))
+    expect(
+      await prepareStoppedHistory(preparing(again), message('next'), [owed[1]!], 20)
+    ).toBeNull()
+    expect(again).toHaveBeenCalledTimes(1)
   })
 
   it('owes nothing an append record names', () => {

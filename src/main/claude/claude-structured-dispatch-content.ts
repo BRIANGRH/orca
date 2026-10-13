@@ -14,6 +14,7 @@ import {
 } from '../../shared/agent-session-failure-words'
 import { TUI_AGENT_DISPLAY_NAMES } from '../../shared/tui-agent-display-names'
 import { claudeRecord } from './claude-structured-item-translation'
+import { readStoppedImage } from '../native-chat/agent-session-wire/structured-agent-session-stopped-image-read'
 
 /** Orca refused the message's content, as opposed to failing to read an attachment. */
 export class ClaudeDispatchContentError extends Error {
@@ -205,13 +206,14 @@ export async function claudeDispatchMessageContent(
   return content
 }
 
-/** A stopped message's content as a send writes it, less any image that no longer reads; null
- *  when nothing is left. */
+/** A stopped message's content as a send writes it, less any image left out: no longer read, too
+ *  slow to read, or read after the preparation gave up (`signal`); null when nothing is left. */
 export async function claudeStoppedMessageContent(
-  body: AgentJournalMessageItem
+  body: AgentJournalMessageItem,
+  signal?: AbortSignal
 ): Promise<unknown[] | null> {
   return claudeDispatchMessageContent(body, (block, budget) =>
-    imageContent(block, budget).catch(() => null)
+    readStoppedImage(block.path, () => imageContent(block, budget), signal)
   ).catch(() => null)
 }
 

@@ -199,7 +199,7 @@ describe('ACP stopped history', () => {
     await rig.frame('session/prompt')
   })
 
-  it('a carried image that never reads leaves the send to go alone within the limit, history owed', async () => {
+  it('a carried image that never reads is left out in time, and its message still rides with its words', async () => {
     const rig = await openAcpAdapterRig({
       spec: acpLaunchSpecFor('opencode')!,
       initialize: { agentCapabilities: { loadSession: true, promptCapabilities: { image: true } } }
@@ -220,20 +220,22 @@ describe('ACP stopped history', () => {
     const prepared = await prepareStoppedHistory(
       { sessionId: SESSION, fence: 1, adapter: rig.adapter, logger },
       NEXT,
-      [owed('a', stalled)],
-      50
+      [owed('a', stalled)]
     )
-    expect(prepared).toBeNull()
-    expect(Date.now() - startedAt).toBeLessThan(5_000)
-    expect(logger.warn).toHaveBeenCalledTimes(1)
+    expect(prepared?.carries).toEqual(['a'])
+    expect(Date.now() - startedAt).toBeLessThan(1_900)
+    expect(logger.warn).not.toHaveBeenCalled()
+    expect(vi.mocked(readNodeFileWithinLimit)).toHaveBeenCalledTimes(1)
     await rig.adapter.dispatch({
       sessionId: SESSION,
       clientMessageId: 'next',
       body: NEXT,
-      fence: 1
+      fence: 1,
+      prepared: prepared!
     })
 
     expect(promptOf(await rig.frame('session/prompt'))).toEqual([
+      { type: 'text', text: 'look\n\n[Request interrupted by user]\n\n' },
       { type: 'text', text: 'what did I send?' }
     ])
   })

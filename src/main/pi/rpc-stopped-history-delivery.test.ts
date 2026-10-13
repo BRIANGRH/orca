@@ -161,7 +161,7 @@ describe('Pi stopped history', () => {
     expect(owedAfter.map((entry) => entry.submission.clientMessageId)).toEqual(['a', 'b'])
   })
 
-  it('a carried image that never reads leaves the send to go alone within the limit, history owed', async () => {
+  it('a carried image that never reads is left out in time, and its message still rides with its words', async () => {
     const h = await setup()
     // A stalled drive: the read never settles, and Pi's own read has no deadline.
     vi.mocked(readClaudeImage).mockImplementationOnce(() => new Promise(() => {}))
@@ -173,18 +173,27 @@ describe('Pi stopped history', () => {
     const prepared = await prepareStoppedHistory(
       { sessionId, fence: 7, adapter: h.adapter, logger },
       body,
-      [stalled],
-      50
+      [stalled]
     )
-    expect(prepared).toBeNull()
-    expect(Date.now() - startedAt).toBeLessThan(5_000)
-    expect(logger.warn).toHaveBeenCalledTimes(1)
+    expect(prepared?.carries).toEqual(['a'])
+    expect(Date.now() - startedAt).toBeLessThan(1_900)
+    expect(logger.warn).not.toHaveBeenCalled()
     expect(
-      await h.adapter.dispatch({ sessionId, fence: 7, clientMessageId: 'next', body })
+      await h.adapter.dispatch({
+        sessionId,
+        fence: 7,
+        clientMessageId: 'next',
+        body,
+        prepared: prepared!
+      })
     ).toEqual({ state: 'admitted' })
 
     expect(h.connection.sent).toEqual([
-      expect.objectContaining({ type: 'prompt', message: 'what did I send?', images: [] })
+      expect.objectContaining({
+        type: 'prompt',
+        message: 'look\n\n[Request interrupted by user]\n\nwhat did I send?',
+        images: []
+      })
     ])
   })
 })

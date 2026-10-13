@@ -135,3 +135,46 @@ describe('stopped messages an ACP or Pi send carries', () => {
     expect(await fit([text('a', 'x'.repeat(100)), text('b', 'y')], { chars: 50 })).toBeNull()
   })
 })
+
+describe('a stopped image whose read stalls', () => {
+  it('is left out in time, and its message still rides whole with its words', async () => {
+    const started = Date.now()
+    const carried = await fit(
+      [
+        owed('a', [
+          { type: 'image-ref', path: '/hung/fit.png' },
+          { type: 'text', text: 'look' }
+        ])
+      ],
+      {},
+      () => new Promise(() => {})
+    )
+    expect(Date.now() - started).toBeLessThan(1_900)
+    expect(carried?.carries).toEqual(['a'])
+    expect(carried?.images).toEqual([])
+    expect(carried?.text).toBe('look\n\n[Request interrupted by user]\n\n')
+  })
+
+  it('is not read once the preparation gave up', async () => {
+    const giveUp = new AbortController()
+    giveUp.abort()
+    let reads = 0
+    const carried = await fitStoppedHistory({
+      owed: [
+        owed('a', [
+          { type: 'image-ref', path: 'one.png' },
+          { type: 'text', text: 'look' }
+        ])
+      ],
+      room: {},
+      textCost: () => ({}),
+      image: async () => {
+        reads += 1
+        return { content: 'one', cost: {} }
+      },
+      signal: giveUp.signal
+    })
+    expect(reads).toBe(0)
+    expect(carried?.images).toEqual([])
+  })
+})

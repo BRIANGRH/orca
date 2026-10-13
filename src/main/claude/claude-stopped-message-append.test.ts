@@ -2,6 +2,8 @@
 // frames, and the zero-turn commands Claude runs for them (frames as 2.1.280 sends them, measured)
 // open no turn, show no Working and write no row.
 
+import type * as FsPromises from 'node:fs/promises'
+import { open } from 'node:fs/promises'
 import { describe, expect, it, vi } from 'vitest'
 import type * as ClaudeDispatchContent from './claude-structured-dispatch-content'
 import { agentSessionFailureFact } from '../../shared/agent-session-failure'
@@ -26,17 +28,22 @@ import {
   type FakeConnection
 } from './claude-structured-session-test-support'
 
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof FsPromises>()
+  return { ...actual, open: vi.fn(actual.open) }
+})
+
 vi.mock('./claude-structured-dispatch-content', async (original) => {
   const actual = await original<typeof ClaudeDispatchContent>()
   return { ...actual, claudeStoppedMessageContent: vi.fn(actual.claudeStoppedMessageContent) }
 })
 
-function stopped(id: string, text: string): OwedStoppedMessage {
-  const body: AgentJournalMessageItem = {
-    kind: 'message',
-    role: 'user',
-    blocks: [{ type: 'text', text }]
-  }
+function stopped(
+  id: string,
+  text: string,
+  blocks: AgentJournalMessageItem['blocks'] = [{ type: 'text', text }]
+): OwedStoppedMessage {
+  const body: AgentJournalMessageItem = { kind: 'message', role: 'user', blocks }
   return {
     body,
     submission: {
@@ -86,6 +93,15 @@ function append(
   sessionId = 'session-1'
 ) {
   return adapter.appendStoppedMessages({ sessionId, fence: 7, messages, turnLive: () => false })
+}
+
+/** Each frame written, as its message content. */
+function sentContents(connection: FakeConnection): unknown[] {
+  return connection.sent.map(({ message }) =>
+    typeof message === 'object' && message !== null && 'content' in message
+      ? message.content
+      : undefined
+  )
 }
 
 function turnRunning(bodies: Map<string, AgentJournalItemBody>): boolean {
@@ -286,7 +302,7 @@ describe('appending stopped messages to Claude', () => {
     expect(turnRunning(bodies)).toBe(true)
   })
 
-  it('gives up on a stalled read in time, refused, and never writes it later', async () => {
+  it('past the whole bound writes the words alone, reading no image, and never the late read', async () => {
     const { connection, session } = await acquired()
     let readLate: (content: unknown[]) => void = () => {}
     vi.mocked(claudeStoppedMessageContent).mockImplementationOnce(
@@ -295,18 +311,73 @@ describe('appending stopped messages to Claude', () => {
           readLate = resolve
         })
     )
+    const reads = vi.mocked(open).mock.calls.length
     const started = Date.now()
+    await appendClaudeStoppedMessages(
+      session,
+      {
+        fence: 7,
+        messages: [
+          stopped('a', 'look', [
+            { type: 'image-ref', path: '/hung/bound.png' },
+            { type: 'text', text: 'look' }
+          ])
+        ],
+        turnLive: () => false
+      },
+      { prepare: 50, settle: 50 }
+    )
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(vi.mocked(open).mock.calls.length).toBe(reads)
+    expect(sentContents(connection)).toEqual([
+      [{ type: 'text', text: 'look' }],
+      [{ type: 'text', text: '[Request interrupted by user]' }]
+    ])
+    readLate([{ type: 'text', text: 'late' }])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(connection.sent).toHaveLength(2)
+  })
+
+  it('past the whole bound is refused, writing nothing, when a message has no words to send', async () => {
+    const { connection, session } = await acquired()
+    vi.mocked(claudeStoppedMessageContent).mockImplementationOnce(() => new Promise(() => {}))
     expect(
       await appendClaudeStoppedMessages(
         session,
-        { fence: 7, messages: [stopped('a', 'look')], turnLive: () => false },
+        {
+          fence: 7,
+          messages: [stopped('a', '', [{ type: 'image-ref', path: '/hung/only.png' }])],
+          turnLive: () => false
+        },
         { prepare: 50, settle: 50 }
       )
     ).toEqual({ outcome: 'refused', reason: 'reading the stopped messages took too long' })
-    expect(Date.now() - started).toBeLessThan(1_000)
-    readLate([{ type: 'text', text: 'look' }])
-    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(connection.sent).toHaveLength(0)
+  })
+
+  it('leaves out an image whose read stalls, in time, and writes the words', async () => {
+    const { connection, session } = await acquired()
+    vi.mocked(open).mockImplementationOnce(() => new Promise(() => {}))
+    const started = Date.now()
+    await appendClaudeStoppedMessages(
+      session,
+      {
+        fence: 7,
+        messages: [
+          stopped('a', 'look', [
+            { type: 'image-ref', path: '/hung/claude.png' },
+            { type: 'text', text: 'look' }
+          ])
+        ],
+        turnLive: () => false
+      },
+      { prepare: 2_000, settle: 50 }
+    )
+    expect(Date.now() - started).toBeLessThan(1_900)
+    expect(sentContents(connection)).toEqual([
+      [{ type: 'text', text: 'look' }],
+      [{ type: 'text', text: '[Request interrupted by user]' }]
+    ])
   })
 
   it('checks again right before the write: refused when the child or Orca moved on while it read', async () => {

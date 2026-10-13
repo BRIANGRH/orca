@@ -28,6 +28,8 @@ export type StructuredAgentSessionStoppedHistoryAdapter = {
     fence: number
     body: AgentJournalMessageItem
     owed: readonly OwedStoppedMessage[]
+    /** Aborted once the handover stops waiting: no further stopped image is read. */
+    signal?: AbortSignal
   }): Promise<AgentSessionPreparedDispatch | null>
   /** Writes stopped messages into the agent's own log, each followed by the agent's own record of
    *  an interrupted request, without running a turn; oldest first, in one write. Refused when,

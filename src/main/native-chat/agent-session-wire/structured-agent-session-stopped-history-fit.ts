@@ -8,6 +8,7 @@ import {
   type OwedStoppedMessage
 } from '../../../shared/agent-session-stopped-history'
 import type { NativeChatImageRefBlock } from '../../../shared/native-chat-types'
+import { readStoppedImage } from './structured-agent-session-stopped-image-read'
 
 /** An amount per admission limit, keyed by the adapter's own names; a missing key costs nothing. */
 export type StoppedHistoryCost = Readonly<Record<string, number>>
@@ -18,10 +19,12 @@ export type StoppedHistoryFitInput<TImage> = {
   room: StoppedHistoryCost
   /** What text costs; additive, so the carried words cost the sum of each message's. */
   textCost: (text: string) => StoppedHistoryCost
-  /** One stopped image as the agent's content; null or a throw leaves that image out. */
+  /** One stopped image as the agent's content; null, a throw or a stalled read leaves it out. */
   image: (
     block: NativeChatImageRefBlock
   ) => Promise<{ content: TImage; cost: StoppedHistoryCost } | null>
+  /** Aborted once the handover stops waiting: no further image is read. */
+  signal?: AbortSignal
 }
 
 export type StoppedHistoryFit<TImage> = {
@@ -79,7 +82,10 @@ export async function fitStoppedHistory<TImage>(
     }
     const images: TImage[] = []
     for (const block of entry.body.blocks) {
-      const read = block.type === 'image-ref' ? await input.image(block).catch(() => null) : null
+      const read =
+        block.type === 'image-ref'
+          ? await readStoppedImage(block.path, () => input.image(block), input.signal)
+          : null
       if (read) {
         images.push(read.content)
         cost = plus(cost, read.cost)

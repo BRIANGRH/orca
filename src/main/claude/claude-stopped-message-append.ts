@@ -101,15 +101,17 @@ export async function appendClaudeStoppedMessages(
   if (!session || before) {
     return { outcome: 'refused', reason: before ?? 'Claude ended before the append' }
   }
-  const contents = await withTimeout<(unknown[] | null)[] | null>(
-    Promise.all(input.messages.map(({ body }) => claudeStoppedMessageContent(body))),
-    timeoutMs.prepare,
-    null
-  )
-  // Past here nothing awaits before the write, so preparation abandoned above never writes.
-  if (!contents) {
+  const giveUp = new AbortController()
+  const read = (): Promise<(unknown[] | null)[]> =>
+    Promise.all(input.messages.map(({ body }) => claudeStoppedMessageContent(body, giveUp.signal)))
+  const prepared = await withTimeout(read(), timeoutMs.prepare, null)
+  // Past the bound the words go alone, which reads nothing, if every message still has some.
+  giveUp.abort()
+  const contents = prepared ?? (await read())
+  if (!prepared && contents.includes(null)) {
     return { outcome: 'refused', reason: 'reading the stopped messages took too long' }
   }
+  // Past here nothing awaits before the write, so preparation abandoned above never writes.
   const now = notReady(session, input)
   if (now) {
     return { outcome: 'refused', reason: now }
