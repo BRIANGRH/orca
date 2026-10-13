@@ -58,4 +58,25 @@ describe('reading a stopped image', () => {
     expect(next).not.toHaveBeenCalled()
     stuck.finish('late')
   })
+
+  it('keeps a file blocked until every abandoned read of it settles', async () => {
+    const first = stalled()
+    const second = stalled()
+    expect(
+      await Promise.all([
+        readStoppedImage('/shared.png', first.read, undefined, 30),
+        readStoppedImage('/shared.png', second.read, undefined, 30)
+      ])
+    ).toEqual([null, null])
+
+    first.finish('late')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const again = vi.fn(async () => 'bytes')
+    expect(await readStoppedImage('/shared.png', again, undefined, 30)).toBeNull()
+    expect(again).not.toHaveBeenCalled()
+
+    second.finish('late')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(await readStoppedImage('/shared.png', again, undefined, 30)).toBe('bytes')
+  })
 })

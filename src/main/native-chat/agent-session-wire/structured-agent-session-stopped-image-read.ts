@@ -8,8 +8,8 @@ export const STOPPED_IMAGE_READ_TIMEOUT_MS = 1_000
 
 const GAVE_UP: unique symbol = Symbol('stopped image read abandoned')
 
-/** Files whose abandoned read has not settled yet. */
-const pendingAbandonedReads = new Set<string>()
+/** How many abandoned reads of each file have not settled yet. */
+const pendingAbandonedReads = new Map<string, number>()
 
 /** `read`'s image, or null to leave it out: it failed, outlasted `timeoutMs` or the preparation
  *  (`signal`), or an abandoned read of `path` is still pending. */
@@ -36,8 +36,15 @@ export async function readStoppedImage<T>(
     return image
   }
   if (path !== undefined) {
-    pendingAbandonedReads.add(path)
-    const settled = (): void => void pendingAbandonedReads.delete(path)
+    pendingAbandonedReads.set(path, (pendingAbandonedReads.get(path) ?? 0) + 1)
+    const settled = (): void => {
+      const left = (pendingAbandonedReads.get(path) ?? 1) - 1
+      if (left > 0) {
+        pendingAbandonedReads.set(path, left)
+      } else {
+        pendingAbandonedReads.delete(path)
+      }
+    }
     reading.then(settled, settled)
   }
   return null
