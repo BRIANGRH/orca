@@ -17,6 +17,7 @@ import {
 import { DriveCheckoutSuspectPaths } from './drive-checkout-suspect-paths'
 import { bulkPathspecCommands } from './git-pathspec'
 import type { GetStatusOptions } from './get-status-options'
+import type { GitRuntimeOptions } from '../git-runtime-options'
 
 // Why: the later `-c` overrides the injected `core.checkStat=minimal` for just these paths.
 const TARGETED_STATUS_ARGS = [
@@ -35,12 +36,18 @@ const STAT_CONCURRENCY = 8
 const trackers = new Map<string, DriveCheckoutSuspectPaths>()
 let stopObserving: (() => void) | null = null
 
-/** Whether this checkout's status runs under the Windows-checkout minimal stat config. */
-function runsMinimalStatStatus(worktreePath: string, options: GetStatusOptions): boolean {
+/** Whether `args` run under the Windows-checkout minimal stat config in this checkout. */
+function runsMinimalStat(
+  args: string[],
+  worktreePath: string,
+  options: GitRuntimeOptions
+): boolean {
   if (usesHostGitForWslLinkedWorktree(worktreePath, options.wslDistro)) {
     return false
   }
-  return withWslWindowsCheckoutGitConfig(['status'], worktreePath, options.wslDistro).length > 1
+  return withWslWindowsCheckoutGitConfig(args, worktreePath, options.wslDistro).includes(
+    'core.checkStat=minimal'
+  )
 }
 
 function trackerFor(worktreePath: string, options: GetStatusOptions): DriveCheckoutSuspectPaths {
@@ -171,7 +178,7 @@ export async function reconcileDriveCheckoutSuspects(
   entries: GitStatusEntry[],
   options: GetStatusOptions
 ): Promise<GitStatusEntry[]> {
-  if (!runsMinimalStatStatus(worktreePath, options)) {
+  if (!runsMinimalStat(['status'], worktreePath, options)) {
     return entries
   }
   const tracker = trackerFor(worktreePath, options)
@@ -230,6 +237,35 @@ export async function reconcileDriveCheckoutSuspects(
     }
   }
   return merged
+}
+
+function pathspecScope(pathspec: string): string {
+  const scope = pathspec
+    .replace(/\\/g, '/')
+    .replace(/^(?:\.\/)+/, '')
+    .replace(/\/+$/, '')
+  return scope === '.' ? '' : scope
+}
+
+/**
+ * Suspects inside `pathspecs` (worktree-relative files or folders; `.` is the whole worktree)
+ * when writes there run minimal-stat, else none. Reads only the existing tracker.
+ */
+export function driveCheckoutSuspectsWithin(
+  worktreePath: string,
+  pathspecs: readonly string[],
+  options: GitRuntimeOptions
+): string[] {
+  const tracker = trackers.get(wslWindowsCheckoutKey(worktreePath, options.wslDistro ?? ''))
+  if (!tracker || tracker.size === 0 || !runsMinimalStat(['add'], worktreePath, options)) {
+    return []
+  }
+  const scopes = pathspecs.map(pathspecScope)
+  return tracker
+    .paths()
+    .filter((suspect) =>
+      scopes.some((scope) => scope === '' || suspect === scope || suspect.startsWith(`${scope}/`))
+    )
 }
 
 export function driveCheckoutSuspectTrackerForTests(

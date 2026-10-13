@@ -92,6 +92,10 @@ export class DriveCheckoutSuspectPaths {
     return this.suspects.size
   }
 
+  paths(): string[] {
+    return [...this.suspects.keys()]
+  }
+
   recordEvents(root: SuspectWatchRoot, events: readonly SuspectWatchEvent[]): void {
     if (!covers(root, this.repoPath)) {
       return
