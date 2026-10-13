@@ -23,24 +23,23 @@ export function getVaultStickyHeaderIndexes(rows: readonly VaultVirtualRow[]): n
 export function extractVaultVirtualRowIndexes(args: {
   range: Range
   stickyHeaderIndexes: readonly number[]
+  /** Kept mounted while scrolled away, e.g. the row an aria-activedescendant names. */
+  pinnedIndex?: number | null
 }): number[] {
   const activeStickyHeaderIndex = getActiveStickyHeaderIndex(
     args.stickyHeaderIndexes,
     args.range.startIndex
   )
-  if (activeStickyHeaderIndex === null) {
-    return defaultRangeExtractor(args.range)
+  const previousStickyHeaderIndex =
+    activeStickyHeaderIndex === null
+      ? null
+      : getPreviousStickyHeaderIndex(args.stickyHeaderIndexes, activeStickyHeaderIndex)
+  const extra = [activeStickyHeaderIndex, previousStickyHeaderIndex, args.pinnedIndex ?? null]
+  const visible = defaultRangeExtractor(args.range)
+  if (extra.every((index) => index === null)) {
+    return visible
   }
-
-  const previousStickyHeaderIndex = getPreviousStickyHeaderIndex(
-    args.stickyHeaderIndexes,
-    activeStickyHeaderIndex
-  )
   return Array.from(
-    new Set([
-      activeStickyHeaderIndex,
-      ...(previousStickyHeaderIndex === null ? [] : [previousStickyHeaderIndex]),
-      ...defaultRangeExtractor(args.range)
-    ])
+    new Set([...extra.filter((index): index is number => index !== null), ...visible])
   ).sort((a, b) => a - b)
 }

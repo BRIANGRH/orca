@@ -23,10 +23,11 @@ import {
   canUseLocalAiVaultSessionPathActions
 } from './ai-vault-session-path-actions'
 import { canContinueAiVaultSessionInNewSession } from './ai-vault-session-continuation'
-import { resolveAiVaultSessionSurfaceSwitchTargets } from './ai-vault-session-surface-switch'
+import { resolveAiVaultSessionRowChatActions } from './ai-vault-session-chat-action'
 import type { AiVaultResumeInChatEligibility } from './ai-vault-session-resume-in-chat'
 import type { AiVaultSearchHit } from '../../../../shared/ai-vault-search-types'
 import { canResumeAiVaultSearchHit, hasAiVaultSearchHitPath } from './ai-vault-search-session'
+import { getSessionRowId } from './ai-vault-session-row-display'
 
 export type AiVaultListRow =
   | { type: 'group'; group: AiVaultSessionGroup }
@@ -64,7 +65,9 @@ export function AiVaultVirtualRow({
   onRevealLog,
   onOpenCwd,
   onRequestDelete,
-  searchHits
+  searchHits,
+  selected,
+  onSelect
 }: {
   row: AiVaultListRow | undefined
   index: number
@@ -98,6 +101,9 @@ export function AiVaultVirtualRow({
   onOpenCwd: (session: AiVaultSession) => void
   onRequestDelete: (session: AiVaultSession) => void
   searchHits?: ReadonlyMap<string, AiVaultSearchHit>
+  /** Set only where rows are keyboard-selectable. */
+  selected?: boolean
+  onSelect?: (sessionId: string) => void
 }): React.JSX.Element | null {
   if (!row) {
     return null
@@ -129,17 +135,28 @@ export function AiVaultVirtualRow({
       ? aiVaultSessionRowResumeGating(row.session, resumeState)
       : { resumeDisabled: true, canCopyResumeCommand: false }
   const resumeLabel = resumeState ? aiVaultSessionResumeLabel(resumeState) : ''
-  const { resumeInNewChatWorkspaceId, resumeInNewCliWorktreeId } =
+  const searchHit = row.type === 'session' ? searchHits?.get(row.session.id) : undefined
+  const { canJumpToOriginalPane, resumeInNewChatWorkspaceId, resumeInNewCliWorktreeId } =
     row.type === 'session'
-      ? resolveAiVaultSessionSurfaceSwitchTargets(row.session, resumeState, resumeInChat)
-      : { resumeInNewChatWorkspaceId: null, resumeInNewCliWorktreeId: null }
+      ? resolveAiVaultSessionRowChatActions({
+          session: row.session,
+          originalPaneTarget,
+          structuredSessionOpen,
+          resumeState,
+          resumeInChat,
+          searchHit
+        })
+      : {
+          canJumpToOriginalPane: false,
+          resumeInNewChatWorkspaceId: null,
+          resumeInNewCliWorktreeId: null
+        }
   const canOpenLocalSessionPaths =
     row.type === 'session' && canUseLocalAiVaultSessionPathActions(row.session.executionHostId)
   // Why: in-Orca View Log additionally withholds synthetic (SQLite/OpenCode)
   // identities that have no single file to open, while Reveal/CWD stay on the
   // existing local-path gate.
   const canOpenLogInOrca = row.type === 'session' && canOpenAiVaultSessionLogInOrca(row.session)
-  const searchHit = row.type === 'session' ? searchHits?.get(row.session.id) : undefined
   const searchResumeAllowed = searchHit ? canResumeAiVaultSearchHit(searchHit) : true
   const searchPathAllowed = searchHit ? hasAiVaultSearchHitPath(searchHit) : true
   const usesLegacyResumeCommand = row.type === 'session' && !row.session.structuredSession
@@ -163,8 +180,16 @@ export function AiVaultVirtualRow({
     <div
       ref={measureElement}
       data-index={index}
+      id={
+        row.type === 'session' && selected !== undefined
+          ? getSessionRowId(row.session.id)
+          : undefined
+      }
+      data-selected={selected ? 'true' : undefined}
+      aria-current={selected || undefined}
       className={cn(
         'left-0 w-full',
+        row.type === 'session' && 'ai-vault-session-row',
         isActiveStickyHeader ? 'sticky top-0 z-10 bg-sidebar' : 'absolute top-0'
       )}
       style={isActiveStickyHeader ? undefined : { transform: `translateY(${start}px)` }}
@@ -192,11 +217,12 @@ export function AiVaultVirtualRow({
           resumeDisabled={!searchResumeAllowed || resumeGating.resumeDisabled}
           resumeLabel={resumeLabel}
           resumeActions={visibleResumeActions}
-          onToggleDetails={() => onToggleSessionDetails(row.session.id)}
+          onToggleDetails={() => {
+            onSelect?.(row.session.id)
+            onToggleSessionDetails(row.session.id)
+          }}
           onJumpToOriginalPane={
-            originalPaneTarget || structuredSessionOpen
-              ? () => onJumpToOriginalPane(row.session)
-              : undefined
+            canJumpToOriginalPane ? () => onJumpToOriginalPane(row.session) : undefined
           }
           resumeHidden={structuredSessionOpen}
           showJumpToWorktree={showJumpToWorktree}
@@ -213,12 +239,12 @@ export function AiVaultVirtualRow({
               : undefined
           }
           onResumeInNewChat={
-            searchResumeAllowed && resumeInNewChatWorkspaceId
+            resumeInNewChatWorkspaceId
               ? () => onResumeInNewChat(row.session, resumeInNewChatWorkspaceId)
               : undefined
           }
           onResumeInNewCli={
-            searchResumeAllowed && resumeInNewCliWorktreeId
+            resumeInNewCliWorktreeId
               ? () => onResumeInNewCli(row.session, resumeInNewCliWorktreeId)
               : undefined
           }

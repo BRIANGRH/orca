@@ -31,6 +31,10 @@ export function getSessionDetailsId(sessionId: string): string {
   return `ai-vault-session-details-${sessionId.replace(/[^A-Za-z0-9_-]/g, '-')}`
 }
 
+export function getSessionRowId(sessionId: string): string {
+  return `ai-vault-session-row-${sessionId.replace(/[^A-Za-z0-9_-]/g, '-')}`
+}
+
 export function SessionMetadata({
   session,
   liveState,

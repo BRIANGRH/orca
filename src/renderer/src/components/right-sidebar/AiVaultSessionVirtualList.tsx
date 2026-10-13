@@ -1,6 +1,6 @@
 import { SubagentExpansionProvider } from './ai-vault-subagent-expansion'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, type Ref } from 'react'
 import type { AgentStatusState } from '../../../../shared/agent-status-types'
 import type { AiVaultScope, AiVaultSession } from '../../../../shared/ai-vault-types'
 import type { AiVaultResumeStartup } from '@/lib/ai-vault-resume-command'
@@ -23,6 +23,12 @@ import {
 import type { AiVaultResumeInChatEligibility } from './ai-vault-session-resume-in-chat'
 import { AiVaultVirtualRow, type AiVaultListRow } from './AiVaultVirtualRow'
 import type { AiVaultSearchHit } from '../../../../shared/ai-vault-search-types'
+import { resolveAiVaultSessionRowChatActions } from './ai-vault-session-chat-action'
+import {
+  useAiVaultSessionListKeyboard,
+  useAiVaultSessionSelection,
+  type AiVaultSessionListKeyboard
+} from './use-ai-vault-session-keyboard-navigation'
 
 const VAULT_ROW_OVERSCAN = 8
 const VAULT_EXPANDED_SESSION_ROW_ESTIMATED_HEIGHT = 420
@@ -58,7 +64,9 @@ export function AiVaultSessionVirtualList({
   onRevealLog,
   onOpenCwd,
   onRequestDelete,
-  searchHits
+  searchHits,
+  keyboardRef,
+  onActiveRowIdChange
 }: {
   groups: readonly AiVaultSessionListGroup[]
   collapsedGroups: ReadonlySet<string>
@@ -91,6 +99,9 @@ export function AiVaultSessionVirtualList({
   onOpenCwd: (session: AiVaultSession) => void
   onRequestDelete: (session: AiVaultSession) => void
   searchHits?: ReadonlyMap<string, AiVaultSearchHit>
+  /** Present only where rows are keyboard-selectable. */
+  keyboardRef?: Ref<AiVaultSessionListKeyboard>
+  onActiveRowIdChange?: (rowId: string | null) => void
 }): React.JSX.Element {
   const listScrollRef = useRef<HTMLDivElement>(null)
   const stickyRangeStartIndexRef = useRef(0)
@@ -114,6 +125,8 @@ export function AiVaultSessionVirtualList({
   }, [collapsedGroups, groups])
 
   const stickyHeaderIndexes = useMemo(() => getVaultStickyHeaderIndexes(vaultRows), [vaultRows])
+  const selection = useAiVaultSessionSelection(vaultRows, keyboardRef !== undefined)
+  const { selectedIndex } = selection
 
   const virtualizer = useVirtualizer({
     count: vaultRows.length,
@@ -134,9 +147,13 @@ export function AiVaultSessionVirtualList({
     rangeExtractor: useCallback(
       (range) => {
         stickyRangeStartIndexRef.current = range.startIndex
-        return extractVaultVirtualRowIndexes({ range, stickyHeaderIndexes })
+        return extractVaultVirtualRowIndexes({
+          range,
+          stickyHeaderIndexes,
+          pinnedIndex: selectedIndex
+        })
       },
-      [stickyHeaderIndexes]
+      [selectedIndex, stickyHeaderIndexes]
     ),
     getItemKey: (index) => {
       const row = vaultRows[index]
@@ -158,6 +175,33 @@ export function AiVaultSessionVirtualList({
       return next
     })
   }, [])
+
+  // Enter does what the row's own buttons offer, or opens its details when they offer nothing.
+  const activateSession = (session: AiVaultSession, index: number): void => {
+    const actions = resolveAiVaultSessionRowChatActions({
+      session,
+      originalPaneTarget: getOriginalPaneTarget(session),
+      structuredSessionOpen: isStructuredSessionOpen(session),
+      resumeState: getSessionResumeState(session),
+      resumeInChat: getSessionResumeInChat(session),
+      searchHit: searchHits?.get(session.id)
+    })
+    if (actions.canJumpToOriginalPane) {
+      onJumpToOriginalPane(session)
+    } else if (actions.resumeInNewChatWorkspaceId) {
+      onResumeInNewChat(session, actions.resumeInNewChatWorkspaceId)
+    } else {
+      setExpandedSessionIds((current) => new Set(current).add(session.id))
+      virtualizer.scrollToIndex(index)
+    }
+  }
+  useAiVaultSessionListKeyboard(keyboardRef, {
+    rows: vaultRows,
+    selection,
+    scrollToIndex: (index) => virtualizer.scrollToIndex(index),
+    activate: activateSession,
+    onActiveRowIdChange
+  })
 
   const virtualItems = virtualizer.getVirtualItems()
   activeStickyHeaderIndexRef.current = getActiveStickyHeaderIndexForScroll({
@@ -237,6 +281,8 @@ export function AiVaultSessionVirtualList({
                 onRevealLog={onRevealLog}
                 onOpenCwd={onOpenCwd}
                 onRequestDelete={onRequestDelete}
+                selected={keyboardRef ? virtualRow.index === selectedIndex : undefined}
+                onSelect={keyboardRef ? selection.select : undefined}
               />
             ))}
           </div>
