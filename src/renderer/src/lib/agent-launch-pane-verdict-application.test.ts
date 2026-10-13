@@ -30,8 +30,7 @@ vi.mock('@/components/terminal-pane/closed-terminal-leaf-notice', () => ({
 
 createTabsSliceMockApi()
 
-const { applyAgentLaunchPaneVerdict, isAgentLaunchPaneOver } =
-  await import('./agent-launch-pane-verdict-application')
+const { applyAgentLaunchPaneVerdict } = await import('./agent-launch-pane-verdict-application')
 const { agentLaunchPanePrompt, rememberAgentLaunchPanePrompt } =
   await import('./agent-launch-pane-prompt')
 const { wasAgentLaunchPaneClosedByUser } = await import('./agent-launch-pane-closes')
@@ -78,18 +77,9 @@ describe("a launch pane's verdict in the window", () => {
     expect(agentLaunchPanePrompt(tabId)).toBe('fix the build')
   })
 
-  // As on main: a pane that mounts again this session keeps the notice and spawns no shell under it.
-  it('final: the pane is over for this session; pending or settled, it is not', () => {
-    expect(isAgentLaunchPaneOver(WT, tabId, LEAF)).toBe(false)
-    apply({ kind: 'not-started', code: 'boom' })
-    expect(isAgentLaunchPaneOver(WT, tabId, LEAF)).toBe(true)
-    expect(isAgentLaunchPaneOver(WT, tabId, 'another-leaf')).toBe(false)
-  })
-
-  it('unconfirmed: the notice stays, and the pane still asks main, so a late agent attaches', () => {
+  it('unconfirmed: the notice stays until the agent turns up after all', () => {
     apply({ kind: 'unconfirmed' })
     expect(launchTab()?.agentLaunchPane?.outcome).toEqual({ kind: 'unconfirmed' })
-    expect(isAgentLaunchPaneOver(WT, tabId, LEAF)).toBe(false)
     apply({ kind: 'proceed' })
     expect(launchTab()?.agentLaunchPane).toBeUndefined()
   })

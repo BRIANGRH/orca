@@ -158,7 +158,7 @@ function runLegacyAgentLaunch(
   params: AgentLaunchParams,
   context: RpcContext
 ): Promise<AgentLaunchResult> {
-  // No early tab: without a launch record its pane could not learn how the launch ended.
+  // No early tab, as before: only a replay-safe launch shows its tab before its agent exists.
   const execute = async () =>
     runAgentLaunch(await resolveUnlaunchedIntent(params, context.runtime, null), context, {
       early: null,

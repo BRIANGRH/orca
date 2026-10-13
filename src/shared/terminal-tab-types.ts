@@ -96,9 +96,9 @@ export type TerminalTab = {
   launchAgent?: TuiAgent
   /**
    * The pane an `agent.launch` laid out before its agent existed, for this session only. Cleared once
-   * the agent attaches or the pane is an ordinary terminal again. `outcome`: the launch never ran
-   * there, and the pane says so until a different launch (`operationId`) reuses it; a retry of the
-   * same launch changes nothing.
+   * the agent attaches or the pane is an ordinary terminal again. `outcome`: what main says the
+   * launch left the pane, which it keeps until it quits; the pane says so until a different launch
+   * (`operationId`) reuses it, and a retry of the same launch changes nothing. Never saved.
    */
   agentLaunchPane?: { leafId: string; operationId?: string; outcome?: AgentLaunchPaneOutcome }
   /** Why: when `setActiveWorktree` bumps generation on all-dead tabs to drive a

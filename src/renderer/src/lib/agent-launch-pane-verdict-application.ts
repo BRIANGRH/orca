@@ -9,20 +9,6 @@ import { collectLeafIdsInOrder } from '@/components/terminal-pane/terminal-layou
 import { useAppStore } from '@/store'
 import { forgetAgentLaunchPanePrompt } from './agent-launch-pane-prompt'
 
-/** The pane's launch failed before its agent ran: its notice stays, and the pane never spawns. An
- *  unconfirmed one still asks main, which attaches the agent if it turned up. */
-export function isAgentLaunchPaneOver(
-  worktreeId: string | undefined,
-  tabId: string | undefined,
-  leafId: string | undefined
-): boolean {
-  const tab = worktreeId
-    ? useAppStore.getState().tabsByWorktree[worktreeId]?.find((candidate) => candidate.id === tabId)
-    : undefined
-  const pane = tab?.agentLaunchPane
-  return pane !== undefined && pane.leafId === leafId && pane.outcome?.kind === 'not-started'
-}
-
 export function applyAgentLaunchPaneVerdict(event: AgentLaunchPaneVerdictEvent): void {
   const { worktreeId, tabId, leafId, verdict } = event
   const state = useAppStore.getState()

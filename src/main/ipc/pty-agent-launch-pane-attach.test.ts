@@ -212,7 +212,8 @@ const DAEMON_ANSWERS = [
   ['daemon gone: the terminal host is unavailable, as for any tab', 'gone']
 ] as const
 
-describe('a launch pane after a restart', () => {
+// What a launch pane is after a restart: nothing about its launch is restored, so it spawns as any pane.
+describe('a restored pane after a restart', () => {
   const { handlers, mainWindow } = setupPtyIpcSuite()
 
   it.each(DAEMON_ANSWERS)('%s', async (_name, daemon) => {

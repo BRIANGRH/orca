@@ -16,8 +16,6 @@ import type { IpcPtySessionHandlers } from './ipc-pty-session-handlers'
 import { isSshSessionGoneError } from './pty-connection/pty-connect-limits'
 import { spawnIpcPty } from './ipc-pty-spawn-request'
 import { agentLaunchPaneSpawnHold } from '@/lib/agent-launch-pane-spawn-hold'
-import { isAgentLaunchPaneOver } from '@/lib/agent-launch-pane-verdict-application'
-import { AGENT_LAUNCH_PANE_REFUSED_CODE } from '../../../../shared/agent-launch-pane-verdict'
 import type { IpcPtyTransportOptions, PtyConnectResult, PtyTransport } from './pty-transport-types'
 
 const SSH_PTY_CONNECTION_MISMATCH_MARKER = 'belongs to SSH connection'
@@ -86,17 +84,6 @@ export async function connectIpcPty(
       if (context.isDestroyed()) {
         return
       }
-    }
-    // A launch pane whose agent couldn't start says so for this session, never over a shell.
-    if (
-      !admittedSessionId &&
-      isAgentLaunchPaneOver(
-        transportOptions.worktreeId,
-        transportOptions.tabId,
-        transportOptions.leafId
-      )
-    ) {
-      throw new Error(AGENT_LAUNCH_PANE_REFUSED_CODE)
     }
     if (options.shouldContinue && !options.shouldContinue()) {
       return

@@ -369,6 +369,11 @@ describe('the pane after its launch', () => {
         { kind: 'not-started', code: 'spawn claude ENOENT' }
       )
     )
+    // A spawn of the pane after the verdict, in this process: refused the same way, no shell.
+    await expect(paneVerdict(runtime)).resolves.toEqual({
+      kind: 'not-started',
+      code: 'spawn claude ENOENT'
+    })
     // A restarted host: no launch in memory, and the record is not read for the pane.
     resetAgentLaunchPanesForTests()
     await expect(paneVerdict(hostWithWindow())).resolves.toBe('unowned')

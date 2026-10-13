@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { installIpcPtyWindow, restorePtySpecWindow } from './pty-transport-test-harness'
 
-const isAgentLaunchPaneOver = vi.hoisted(() => vi.fn(() => false))
-vi.mock('@/lib/agent-launch-pane-verdict-application', () => ({ isAgentLaunchPaneOver }))
-
 describe('createIpcPtyTransport', () => {
   const originalWindow = (globalThis as { window?: typeof window }).window
   let onData: ((payload: { id: string; data: string }) => void) | null = null
@@ -129,18 +126,6 @@ describe('createIpcPtyTransport', () => {
     release()
     await expect(abandoned).resolves.toBeUndefined()
     expect(spawn).not.toHaveBeenCalled()
-  })
-
-  // The same session: the pane mounts again after its launch failed, and keeps its notice, no shell.
-  it("never spawns a launch pane whose agent couldn't start", async () => {
-    const { createIpcPtyTransport } = await import('./pty-transport')
-    const pane = { worktreeId: 'wt', tabId: 'tab-over', leafId: 'leaf-over' }
-    isAgentLaunchPaneOver.mockReturnValueOnce(true)
-    const onError = vi.fn()
-    await createIpcPtyTransport(pane).connect({ url: '', callbacks: { onError } })
-
-    expect(isAgentLaunchPaneOver).toHaveBeenCalledWith('wt', 'tab-over', 'leaf-over')
-    expect(window.api.pty.spawn).not.toHaveBeenCalled()
   })
 
   it('keeps the recovery hint and raw diagnostic from a wrapped spawn error', async () => {
