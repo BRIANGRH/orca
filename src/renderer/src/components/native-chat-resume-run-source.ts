@@ -39,7 +39,7 @@ export function watchResumeRunSource(deps: {
   current: () => ResumeRun | null
   publish: (run: ResumeRun) => void
   offer: () => NativeChatRestartOffer
-  refresh: () => Promise<void>
+  refresh: () => Promise<void> | undefined
 }): { offerChanged: (issued: ResumeRun | null) => void; settled: () => void; release: () => void } {
   let stopped = false
   let reading: Promise<void> | undefined
@@ -76,7 +76,11 @@ export function watchResumeRunSource(deps: {
       return
     }
     const issued = deps.current()
-    reading = deps.refresh().finally(() => {
+    const read = deps.refresh()
+    if (!read) {
+      return
+    }
+    reading = read.finally(() => {
       reading = undefined
       if (!stopped && hasLaterResumeRunSource(deps.current(), issued)) {
         refresh()

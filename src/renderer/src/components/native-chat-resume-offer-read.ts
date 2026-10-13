@@ -24,33 +24,63 @@ export async function readNativeChatResumeHostOffer(deps: {
   current: () => boolean
   answer: (offer: Omit<NativeChatRestartOffer, 'available'>) => void
   unavailable: () => void
-}): Promise<HostOfferRead> {
+}): Promise<HostOfferRead | undefined> {
   try {
     const offered = await callStructuredAgentSession<HostOfferPayload>(
       deps.target,
       'agentSession.restartResumable'
     )
+    if (!deps.current()) {
+      return undefined
+    }
     if (!Array.isArray(offered.sessions)) {
       throw new Error('agent_session_restart_offer_invalid')
     }
     const failed = restartOfferFailures(offered)
-    if (deps.current()) {
-      deps.answer({ candidates: offered.sessions, failed, listedAt: Date.now() })
-    }
-    return { candidates: offered.sessions, failed, available: true }
+    deps.answer({ candidates: offered.sessions, failed, listedAt: Date.now() })
+    return deps.current() ? { candidates: offered.sessions, failed, available: true } : undefined
   } catch {
-    if (deps.current()) {
-      deps.unavailable()
+    if (!deps.current()) {
+      return undefined
     }
-    return { candidates: [], failed: [], available: false }
+    deps.unavailable()
+    return deps.current() ? { candidates: [], failed: [], available: false } : undefined
   }
 }
 
 export function createResumeOfferRead(
   target: RuntimeClientTarget,
-  prepareAnswer: () => (offer: Omit<NativeChatRestartOffer, 'available'>) => void,
+  prepareRequest: () => {
+    current: () => boolean
+    answer: (offer: Omit<NativeChatRestartOffer, 'available'>) => void
+  },
   unavailable: () => void
-): (current?: () => boolean) => Promise<HostOfferRead> {
-  return (current = () => true) =>
-    readNativeChatResumeHostOffer({ target, current, answer: prepareAnswer(), unavailable })
+): () => Promise<HostOfferRead | undefined> {
+  let generation = 0
+  return () => {
+    const issued = ++generation
+    const request = prepareRequest()
+    return readNativeChatResumeHostOffer({
+      target,
+      current: () => generation === issued && request.current(),
+      answer: request.answer,
+      unavailable
+    })
+  }
+}
+
+/** Startup retries unavailable reads; supersession ends that launch's decision. */
+export async function readLaunchResumeOffer(
+  read: () => Promise<HostOfferRead | undefined>
+): Promise<HostOfferRead | undefined> {
+  let result = await read()
+  // Host startup can race the renderer; a confirmed empty answer must never be retried.
+  for (const delay of [100, 250, 500]) {
+    if (!result || result.available) {
+      break
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, delay))
+    result = await read()
+  }
+  return result
 }

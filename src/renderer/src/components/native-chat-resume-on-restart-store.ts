@@ -1,5 +1,6 @@
 import {
   createResumeOfferRead,
+  readLaunchResumeOffer,
   restartOfferFailures,
   type HostOfferPayload
 } from './native-chat-resume-offer-read'
@@ -80,7 +81,6 @@ let run: ResumeRun | null = null
 let sourceWatch: ReturnType<typeof watchResumeRunSource> | undefined
 let resuming: readonly string[] = resumeRunPendingIds(null)
 const listeners = new Set<() => void>()
-const LAUNCH_READ_RETRY_DELAYS_MS = [100, 250, 500] as const
 
 function emit(): void {
   for (const listener of listeners) {
@@ -132,10 +132,13 @@ const offeredChatWatch = createOfferedChatWatch({
   refresh: refreshCurrentNativeChatRestartOffer
 })
 
-async function refreshCurrentNativeChatRestartOffer(): Promise<void> {
+function refreshCurrentNativeChatRestartOffer(): Promise<void> | undefined {
+  return actionsBegun === actionsSettled ? readNativeChatRestartOffer().then(() => {}) : undefined
+}
+
+function refreshAfterNativeChatRestartActions(): void {
   if (actionsBegun === actionsSettled) {
-    const issued = actionsBegun
-    await readNativeChatRestartOffer(() => actionsBegun === issued)
+    sourceWatch?.settled()
   }
 }
 
@@ -173,8 +176,12 @@ function subscribe(listener: () => void): () => void {
 const readNativeChatRestartOffer = createResumeOfferRead(
   LOCAL,
   () => {
-    const issued = run
-    return (answer) => publishAnswer(answer, issued)
+    const issued = { run, actionsBegun, actionsSettled }
+    return {
+      current: () =>
+        actionsBegun === issued.actionsBegun && actionsSettled === issued.actionsSettled,
+      answer: (answer) => publishAnswer(answer, issued.run)
+    }
   },
   () => publish({ ...EMPTY, listedAt: Date.now() })
 )
@@ -255,7 +262,7 @@ export async function continueNativeChatRestartOffer(
     outcome = [
       requested,
       [],
-      read.available ? offer.failed : undefined,
+      read?.available ? offer.failed : undefined,
       reopenNativeChatRestartOffer
     ]
   } finally {
@@ -272,8 +279,8 @@ export async function continueNativeChatRestartOffer(
           (id) => offer.failed.find((failure) => failure.sessionId === id)
         )
       )
-      sourceWatch?.settled()
     }
+    refreshAfterNativeChatRestartActions()
   }
   announceRestartResults(...outcome)
 }
@@ -317,6 +324,7 @@ export async function dismissNativeChatRestartOffer(sessionIds?: readonly string
     await refreshNativeChatRestartOffer()
   } finally {
     actionsSettled += 1
+    refreshAfterNativeChatRestartActions()
   }
 }
 
@@ -333,17 +341,8 @@ export async function dismissNativeChatRestartOffer(sessionIds?: readonly string
 async function loadLaunchOffer(): Promise<void> {
   // The preference belongs to this launch's request; later saves cannot dispatch another.
   const autoResume = useAppStore.getState().settings?.nativeChatResumeWorkOnRestart === true
-  let read = await readNativeChatRestartOffer()
-  // Host startup can race the renderer. Retry only failed reads, never a confirmed empty result,
-  // so a transient startup gap does not strand a durable offer or add steady-state polling.
-  for (const delay of LAUNCH_READ_RETRY_DELAYS_MS) {
-    if (read.available) {
-      break
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, delay))
-    read = await readNativeChatRestartOffer()
-  }
-  const offered = read.candidates
+  const read = await readLaunchResumeOffer(readNativeChatRestartOffer)
+  const offered = read?.candidates ?? []
   // Failures left from an earlier launch are the status bar's to show; only a fresh offer asks.
   if (offered.length === 0) {
     return

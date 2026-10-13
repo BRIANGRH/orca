@@ -1,5 +1,10 @@
 // @vitest-environment happy-dom
 import React, { act } from 'react'
+import {
+  sendStructuredAgentSessionMessage,
+  resetStructuredAgentSessionSendsForTests
+} from './native-chat/structured-agent-session-message-sender'
+import { noteStructuredAgentSessionFence } from './native-chat/structured-agent-session-send-attempt'
 import { admitUserResumeRequest } from './native-chat-resume-user-action.test-support'
 import { beforeEach, afterEach, expect, it, vi, type Mock } from 'vitest'
 import { NativeChatResumeOnRestartModal } from './NativeChatResumeOnRestartModal'
@@ -12,6 +17,7 @@ import {
 } from './native-chat-resume-modal.test-support'
 import {
   refreshNativeChatRestartOffer,
+  dismissNativeChatRestartOffer,
   getNativeChatRestartOffer,
   getNativeChatRestartRun
 } from './native-chat-resume-on-restart-store'
@@ -58,6 +64,8 @@ beforeEach(() => {
 afterEach(() => {
   releases.splice(0).forEach((release) => release())
   resetStructuredAgentSessionReadOwnersForTests()
+  resetStructuredAgentSessionSendsForTests()
+  vi.useRealTimers()
 })
 function source(
   sequence: number,
@@ -363,3 +371,219 @@ it.each(['unavailable', 'confirmed failure'] as const)(
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Need you0')
   }
 )
+
+it.each(['unavailable', 'failure'] as const)(
+  'retains the latest %s after an older empty read arrives last',
+  async (mode) => {
+    const host = fakeHost()
+    visibleOwner()
+    await surfaces()
+    rpc.mockImplementationOnce(async () => {
+      throw new Error('lost bulk reply')
+    })
+    rpc.mockImplementationOnce(async () => ({ sessions: [], failed: [] }))
+    await act(async () => button('Resume 2 chats').click())
+    const old = Promise.withResolvers<unknown>()
+    const newer = Promise.withResolvers<unknown>()
+    rpc.mockImplementationOnce(() => old.promise)
+    await act(async () => button('1 chat to check').click())
+    host.state.failed = [failure('b')]
+    rpc.mockImplementationOnce(() => newer.promise)
+    await act(async () => emit(8, [source(8)]))
+    await act(async () => {
+      if (mode === 'unavailable') {
+        newer.reject(new Error('newer unavailable'))
+      } else {
+        newer.resolve({ sessions: [], failed: host.state.failed })
+      }
+    })
+    await act(async () => old.resolve({ sessions: [], failed: [] }))
+    expect(runStatus('Prompt b')).not.toBe('Prompt b: Resumed by you')
+    expect(getNativeChatRestartOffer().available).toBe(mode === 'failure')
+    if (mode === 'failure') {
+      expect(getNativeChatRestartOffer().failed).toHaveLength(1)
+    } else {
+      expect(getNativeChatRestartRun()?.finishedViewShown).toBeUndefined()
+      await act(async () => button('Done').click())
+      expect(getNativeChatRestartRun()).not.toBeNull()
+    }
+  }
+)
+it('refreshes a genuinely later normal Send after pending Dismiss settles', async () => {
+  const host = fakeHost({}, (id) => (id === 'a' ? 'continued' : 'unknown'))
+  visibleOwner()
+  await surfaces()
+  await act(async () => button('Resume 2 chats').click())
+  rpc.mockImplementationOnce(async () => {
+    throw new Error('reopen unavailable')
+  })
+  await act(async () => lastToastShow()?.())
+  await act(async () => button('Need you1').click())
+  await act(async () => refreshNativeChatRestartOffer())
+  expect(getNativeChatRestartRun()?.finishedViewShown).toBeUndefined()
+  const dismiss = Promise.withResolvers<unknown>()
+  rpc.mockImplementationOnce(() => dismiss.promise)
+  await act(async () => button('Dismiss "Prompt b" in workspace').click())
+  await act(async () => button('Close').click())
+  noteStructuredAgentSessionFence('b', 2)
+  const reply = Promise.withResolvers<unknown>()
+  rpc.mockImplementationOnce((_target, method) => {
+    expect(method).toBe('agentSession.send')
+    return reply.promise
+  })
+  await act(async () => {
+    const sent = sendStructuredAgentSessionMessage({
+      sessionId: 'b',
+      target: { kind: 'local' },
+      text: 'later',
+      callerKeepsText: true
+    })
+    if (!sent) {
+      throw new Error('send not admitted')
+    }
+    reply.resolve({
+      ok: true,
+      replayed: false,
+      fence: 2,
+      cursor: { epoch: 'resume-b', sequence: 8 },
+      value: {
+        clientMessageId: sent.clientMessageId,
+        submission: source(8, { clientMessageId: sent.clientMessageId })
+      }
+    })
+    await sent.outcome
+  })
+  expect(getNativeChatRestartRun()?.entries[1]?.userRequest?.offer).toBeUndefined()
+  vi.useFakeTimers()
+  await act(async () => {
+    statusStream.emit({
+      type: 'snapshot',
+      sessions: [...statusStream.snapshot.values()].map((row) =>
+        row.sessionId === 'b'
+          ? { ...row, status: 'idle', turnOutcome: 'success', latestPrompt: 'later' }
+          : row
+      )
+    })
+    await vi.advanceTimersByTimeAsync(600)
+  })
+  vi.useRealTimers()
+  const reads = rpc.mock.calls.filter(
+    ([, method]) => method === 'agentSession.restartResumable'
+  ).length
+  host.state.failed = []
+  await act(async () => dismiss.resolve({ sessions: [], failed: [] }))
+  expect(
+    rpc.mock.calls.filter(([, method]) => method === 'agentSession.restartResumable').length
+  ).toBeGreaterThan(reads)
+  expect(getNativeChatRestartRun()?.entries[1]?.userRequest?.offer).toBeDefined()
+  expect(button('2 chats resumed')).toBeDefined()
+})
+it('does not auto-resume from a superseded successful launch read', async () => {
+  const old = Promise.withResolvers<unknown>()
+  let reads = 0
+  rpc.mockImplementation(async (_target, method) => {
+    if (method === 'agentSession.restartResumable') {
+      return reads++ === 0 ? old.promise : { sessions: [], failed: [] }
+    }
+    return { sessions: [], failed: [], continued: [] }
+  })
+  const settings = useAppStore.getState().settings
+  if (!settings) {
+    throw new Error('missing settings')
+  }
+  useAppStore.setState({ settings: { ...settings, nativeChatResumeWorkOnRestart: true } })
+  await surfaces()
+  await act(async () => refreshNativeChatRestartOffer())
+  await act(async () => old.resolve({ sessions: [failure('b')], failed: [] }))
+  expect(
+    rpc.mock.calls.filter(([, method]) => method === 'agentSession.restartContinue')
+  ).toHaveLength(0)
+  expect(getNativeChatRestartOffer().candidates).toEqual([])
+})
+
+it('rejects a read issued before a later Continue action begins', async () => {
+  fakeHost()
+  await surfaces()
+  const old = Promise.withResolvers<unknown>()
+  rpc.mockImplementationOnce(() => old.promise)
+  const reading = refreshNativeChatRestartOffer()
+  await act(async () => button('Resume 2 chats').click())
+  await act(async () => {
+    old.resolve({ sessions: [failure('b')], failed: [] })
+    await reading
+  })
+  expect(getNativeChatRestartOffer().candidates).toEqual([])
+  expect(getNativeChatRestartRun()?.continued).toHaveLength(2)
+})
+it('rejects a read issued during Dismiss after that action settles', async () => {
+  const host = fakeHost({}, (id) => (id === 'a' ? 'continued' : 'unknown'))
+  await surfaces()
+  await act(async () => button('Resume 2 chats').click())
+  const reply = Promise.withResolvers<unknown>()
+  rpc.mockImplementationOnce(() => reply.promise)
+  const dismissal = dismissNativeChatRestartOffer(['b'])
+  const old = Promise.withResolvers<unknown>()
+  rpc.mockImplementationOnce(() => old.promise)
+  const reading = refreshNativeChatRestartOffer()
+  host.state.failed = []
+  await act(async () => {
+    reply.resolve({ sessions: [], failed: [] })
+    await dismissal
+  })
+  await act(async () => {
+    old.resolve({ sessions: [], failed: [failure('b')] })
+    await reading
+  })
+  expect(getNativeChatRestartOffer().failed).toEqual([])
+  expect(getNativeChatRestartOffer().available).toBe(true)
+})
+
+it('refreshes after acceptance and Dismiss replies arrive in the same response batch', async () => {
+  const host = fakeHost({}, (id) => (id === 'a' ? 'continued' : 'unknown'))
+  visibleOwner()
+  await surfaces()
+  await act(async () => button('Resume 2 chats').click())
+  rpc.mockImplementationOnce(async () => {
+    throw new Error('reopen unavailable')
+  })
+  await act(async () => lastToastShow()?.())
+  await act(async () => button('Need you1').click())
+  await act(async () => refreshNativeChatRestartOffer())
+  const dismiss = Promise.withResolvers<unknown>()
+  rpc.mockImplementationOnce(() => dismiss.promise)
+  await act(async () => button('Dismiss "Prompt b" in workspace').click())
+  await act(async () => button('Close').click())
+  noteStructuredAgentSessionFence('b', 2)
+  const reply = Promise.withResolvers<unknown>()
+  rpc.mockImplementationOnce(() => reply.promise)
+  const sending: { sent?: ReturnType<typeof sendStructuredAgentSessionMessage> } = {}
+  await act(async () => {
+    sending.sent = sendStructuredAgentSessionMessage({
+      sessionId: 'b',
+      target: { kind: 'local' },
+      text: 'later',
+      callerKeepsText: true
+    })
+  })
+  const sent = sending.sent
+  if (!sent) {
+    throw new Error('send not admitted')
+  }
+  host.state.failed = []
+  await act(async () => {
+    reply.resolve({
+      ok: true,
+      replayed: false,
+      fence: 2,
+      cursor: { epoch: 'resume-b', sequence: 8 },
+      value: {
+        clientMessageId: sent.clientMessageId,
+        submission: source(8, { clientMessageId: sent.clientMessageId })
+      }
+    })
+    dismiss.resolve({ sessions: [], failed: [] })
+    await sent.outcome
+  })
+  expect(getNativeChatRestartRun()?.entries[1]?.userRequest?.offer).toBeDefined()
+  expect(button('2 chats resumed')).toBeDefined()
+})
