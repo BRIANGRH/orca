@@ -82,6 +82,35 @@ describe('a Claude model the verified list no longer offers', () => {
     ).toBeNull()
   })
 
+  it('takes no row the finished listing does not name, as from a built-in fallback list', () => {
+    // A live answer from before startup finished lists the built-in rows, not the account's.
+    const fallback = applyStructuredAgentSessionOptions(
+      withHostList(),
+      CLAUDE_SESSION_OPTION_CATALOG,
+      {
+        models: CLAUDE_SESSION_OPTION_CATALOG.models.map((model) => ({
+          id: model.id,
+          label: model.label,
+          isDefault: model.isDefault === true,
+          efforts: []
+        })),
+        current: { model: 'claude-gone' }
+      }
+    )
+    expect(structuredAgentSessionListedPicks(fallback, undefined, {})).toBeNull()
+  })
+
+  it.each<[string, unknown[]]>([
+    ['a null row', [null]],
+    ['a row with no efforts', [{ id: 'opus[1m]', label: 'Opus', isDefault: false }]],
+    ['no rows', []]
+  ])('keeps the model when the host answer has %s', (_name, models) => {
+    const live = stopped('claude-gone')
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a malformed host answer is the case under test.
+    const answer = { origin: 'probe', fetchedAt: 1, models } as AgentSessionModelCatalogResult
+    expect(structuredAgentSessionListedPicks(withHostList(live, answer), undefined, {})).toBeNull()
+  })
+
   it('keeps the model before any host answer', () => {
     expect(structuredAgentSessionListedPicks(fresh(), remembered, {})).toBeNull()
     expect(structuredAgentSessionListedPicks(stopped('claude-gone'), undefined, {})).toBeNull()

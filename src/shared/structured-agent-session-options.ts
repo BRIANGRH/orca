@@ -51,8 +51,9 @@ export type StructuredAgentSessionOptionState = {
    *  built-in list before the host answered (shown as the quiet placeholder); `builtin` is the
    *  same list once the host said it has none, usable but naming nothing the host may replace. */
   catalogSource: 'seed' | 'builtin' | 'host' | 'live' | null
-  /** The host's latest answer is a finished listing: not running, not failed, not absent. */
-  listVerified?: boolean
+  /** The models the host's latest answer names when it is a finished, well-formed listing: the
+   *  only rows that can stand in for a model it lacks, whatever list the picker shows. */
+  verifiedModelIds?: readonly string[]
   record: NativeChatSessionOptionRecord
   /** The permission mode the host or launch last stated; null shows no picker. */
   permissionMode: string | null
@@ -79,15 +80,40 @@ export function createStructuredAgentSessionOptionState(
 export function settleStructuredAgentSessionBuiltinCatalog(
   state: StructuredAgentSessionOptionState
 ): StructuredAgentSessionOptionState {
-  const settled = withListVerified(state, false)
+  const settled = withVerifiedModelIds(state, undefined)
   return settled.catalogSource === 'seed' ? { ...settled, catalogSource: 'builtin' } : settled
 }
 
-function withListVerified(
+function withVerifiedModelIds(
   state: StructuredAgentSessionOptionState,
-  listVerified: boolean
+  ids: readonly string[] | undefined
 ): StructuredAgentSessionOptionState {
-  return (state.listVerified ?? false) === listVerified ? state : { ...state, listVerified }
+  return String(state.verifiedModelIds) === String(ids)
+    ? state
+    : { ...state, verifiedModelIds: ids }
+}
+
+function isListedModelRow(row: unknown): row is { id: string } {
+  return (
+    typeof row === 'object' &&
+    row !== null &&
+    'id' in row &&
+    typeof row.id === 'string' &&
+    'efforts' in row &&
+    Array.isArray(row.efforts)
+  )
+}
+
+/** The ids a finished listing names; undefined for one still running, failed, empty or malformed. */
+function finishedListingIds(catalog: AgentSessionModelCatalogResult): string[] | undefined {
+  const rows: unknown = catalog.origin === 'unknown' ? null : catalog.models
+  return Array.isArray(rows) &&
+    rows.length > 0 &&
+    rows.every(isListedModelRow) &&
+    !catalog.listingInProgress &&
+    !catalog.unavailable
+    ? rows.map((row) => row.id)
+    : undefined
 }
 
 /**
@@ -102,10 +128,9 @@ export function applyStructuredAgentSessionModelCatalog(
   catalog: AgentSessionModelCatalogResult,
   options: { newLaunch: boolean }
 ): StructuredAgentSessionOptionState {
-  const listVerified =
-    catalog.origin !== 'unknown' && !catalog.listingInProgress && !catalog.unavailable
+  const verifiedModelIds = finishedListingIds(catalog)
   if (state.catalogSource === 'live') {
-    return withListVerified(state, listVerified)
+    return withVerifiedModelIds(state, verifiedModelIds)
   }
   const models =
     catalog.origin === 'unknown'
@@ -131,7 +156,7 @@ export function applyStructuredAgentSessionModelCatalog(
       ...(namesDefault ? { defaultModelIsCliDefault: true } : {})
     },
     catalogSource: 'host',
-    listVerified
+    verifiedModelIds
   }
 }
 

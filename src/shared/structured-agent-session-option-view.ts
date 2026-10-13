@@ -89,26 +89,27 @@ export function nearestAgentEffort(
     .sort((a, b) => distance(a) - distance(b) || rank(b) - rank(a))[0]
 }
 
-/** What a send moves a Claude chat to when the verified list the picker shows lacks its model
- *  (held, else recorded, else seeded): the list's default, else its first row, with the effort
- *  moved to the nearest level offered. A row named by its own id is the session's own unlisted
- *  model, not the list's. Null keeps the model. */
+/** What a send moves a Claude chat to when neither the list the picker shows nor the host's
+ *  finished listing names its model (held, else recorded, else seeded): the shown row that listing
+ *  marks default, else its first, with the effort moved to the nearest level offered. A row named
+ *  by its own id is the session's own unlisted model. Null keeps the model. */
 export function structuredAgentSessionListedPicks(
   state: StructuredAgentSessionOptionState,
   seed: Readonly<Record<string, string>> | undefined,
   held: Readonly<Record<string, string>>
 ): Record<string, string> | null {
-  const { catalog, catalogSource, record } = state
+  const { catalog, catalogSource, record, verifiedModelIds: verified = [] } = state
   const tracked = record.model?.value
   const model = held.model ?? (typeof tracked === 'string' ? tracked : seed?.model)
-  const rows = catalog?.models.filter((row) => row.label !== row.id) ?? []
+  const shown = catalog?.models.filter((row) => row.label !== row.id) ?? []
+  const rows = shown.filter((row) => verified.includes(row.id))
   if (
     record.agent !== 'claude' ||
-    !state.listVerified ||
     (catalogSource !== 'host' && catalogSource !== 'live') ||
     !model ||
     rows.length === 0 ||
-    rows.some((row) => row.id === model)
+    verified.includes(model) ||
+    shown.some((row) => row.id === model)
   ) {
     return null
   }
