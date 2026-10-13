@@ -83,3 +83,4 @@
 1 src/shared/runtime-environment-store-file.ts
 3 src/shared/secure-file.ts
 3 src/shared/secure-path-windows-acl.ts
+1 src/shared/wsl-host-deployment-store.ts
