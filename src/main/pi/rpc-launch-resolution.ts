@@ -108,6 +108,8 @@ export function resolvePiRpcInvocation(deps: {
   commandSettings?: StructuredAgentCommandSettings
   resolveCommand?: typeof resolveCliCommand
   refreshEnvironmentAfterMiss?: (askedAt: number) => Promise<void>
+  /** Where the program starts, for a PATH entry relative to it; Orca's own when absent. */
+  resolveWorkingDirectory?: () => Promise<string> | string
 }): Promise<{ command: string; env: Record<string, string> }> {
   return resolveAgainAfterRefreshOnMissingProgram(
     async () => {
@@ -121,7 +123,7 @@ export function resolvePiRpcInvocation(deps: {
       return { env, command: resolvePiRpcCommand(env, deps.commandSettings, deps.resolveCommand) }
     },
     deps.refreshEnvironmentAfterMiss,
-    ({ env }) => env.PATH ?? env.Path
+    { env: ({ env }) => env, cwd: deps.resolveWorkingDirectory }
   )
 }
 
@@ -141,7 +143,8 @@ export function piRpcLaunchPart(
       resolveEnvironment: basis.environment,
       commandSettings: basis.commandSettings(),
       resolveCommand: deps.resolveCommand,
-      refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram
+      refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram,
+      resolveWorkingDirectory: () => cwd
     })
     const previous = agentSessionProviderHandleChainHead(record.providerHandleChain)
     let sessionFile: string | undefined

@@ -107,7 +107,7 @@ async function hostShellEnvironment(): Promise<NodeJS.ProcessEnv> {
 export async function refreshHostAgentBaseEnvironmentAfterMiss(askedAt: number): Promise<void> {
   await (
     process.platform === 'win32'
-      ? readPersistedWindowsPathSegmentsAsync({ forceRefresh: true })
+      ? readPersistedWindowsPathSegmentsAsync({ forceRefresh: true, startedAfter: askedAt })
       : resolveLoginShellEnvironment({ startedAfter: askedAt })
   ).catch(() => {})
 }

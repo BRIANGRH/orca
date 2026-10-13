@@ -122,10 +122,15 @@ describe('an agent installed after the first shell capture', () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
-  it('never rereads for a program found through a relative PATH entry, and rereads once for none', async () => {
-    // A workspace `bin` on PATH: the spawn finds the program in the chat's directory, so the
-    // lookup's bare name is not a miss.
+  it('rereads only when no PATH entry has the program, a relative one searched from the chat', async () => {
+    // A workspace `bin` on PATH: the spawn finds the program in the chat's directory, where the
+    // lookup did not search, so its bare name is not a miss; an entry without it still is.
     const name = `codex-relative-${process.pid}`
+    const workspace = mkdtempSync(join(tmpdir(), 'orca-relative-path-'))
+    roots.push(workspace)
+    mkdirSync(join(workspace, 'node_modules', '.bin'), { recursive: true })
+    writeFileSync(join(workspace, 'node_modules', '.bin', name), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(workspace, 'node_modules', '.bin', name), 0o755)
     const launchFrom = async (PATH: string) => {
       const refresh = vi.fn(async (_askedAt: number) => {})
       const launch = await createCodexStructuredLaunchResolver({
@@ -133,6 +138,7 @@ describe('an agent installed after the first shell capture', () => {
           provider: 'codex',
           accountHome: { variable: 'CODEX_HOME', path: '/home/user/.codex' }
         }),
+        resolveWorkspacePath: async () => workspace,
         resolveEnvironment: async () => ({ PATH, HOME: '/home/user' }),
         refreshAfterMissingProgram: refresh,
         resolveCommand: (options) => resolveCliCommand(name, options),
@@ -140,9 +146,13 @@ describe('an agent installed after the first shell capture', () => {
       })({ identity: { ...identity, agent: 'codex' } })
       return { command: launch.command, rereads: refresh.mock.calls.length }
     }
-    expect(await launchFrom(['/usr/bin', 'node_modules/.bin'].join(delimiter))).toEqual({
+    expect(await launchFrom(['/usr/bin', join('node_modules', '.bin')].join(delimiter))).toEqual({
       command: name,
       rereads: 0
+    })
+    expect(await launchFrom(['/usr/bin', 'bin'].join(delimiter))).toEqual({
+      command: name,
+      rereads: 1
     })
     expect(await launchFrom('/usr/bin')).toEqual({ command: name, rereads: 1 })
   })

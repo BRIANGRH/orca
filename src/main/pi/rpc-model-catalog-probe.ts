@@ -41,14 +41,15 @@ export function piModelCatalogFromListing(stdout: string): AgentModelCatalogSucc
 /** Lists Pi's models with `pi --list-models`, under the binary and environment its chats run. */
 export function createPiModelCatalogProbe(deps: PiModelCatalogProbeDeps): AgentModelCatalogProbe {
   return async (accountHome, options): Promise<AgentModelCatalogSuccess> => {
+    const cwd = deps.homePath ?? homedir()
     const { env, command } = await resolvePiRpcInvocation({
       accountDir: requireLegacyAgentSessionAccountHome(accountHome).path,
       resolveEnvironment: deps.resolveEnvironment,
       commandSettings: deps.resolveCommandSettings?.(),
       resolveCommand: deps.resolveCommand,
-      refreshEnvironmentAfterMiss: deps.refreshEnvironmentAfterMiss
+      refreshEnvironmentAfterMiss: deps.refreshEnvironmentAfterMiss,
+      resolveWorkingDirectory: () => cwd
     })
-    const cwd = deps.homePath ?? homedir()
     if (!(await piRpcVersionSupported({ command, cwd, env }, deps.probeVersion))) {
       throw new Error(`pi at ${command} does not run structured chats`)
     }

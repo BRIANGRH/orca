@@ -35,6 +35,8 @@ export type CodexStructuredInvocationDeps = Pick<
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
   /** Rereads that environment when Codex is not found in it; absent never retries. */
   refreshEnvironmentAfterMiss?: (askedAt: number) => Promise<void>
+  /** Where the program starts, for a PATH entry relative to it; Orca's own when absent. */
+  resolveWorkingDirectory?: () => Promise<string> | string
 }
 
 export type CodexStructuredInvocation = {
@@ -55,7 +57,7 @@ export function resolveCodexStructuredInvocation(
   return resolveAgainAfterRefreshOnMissingProgram(
     () => readCodexStructuredInvocation(deps),
     deps.refreshEnvironmentAfterMiss,
-    ({ environment }) => environment?.PATH ?? environment?.Path
+    { env: ({ environment }) => environment, cwd: deps.resolveWorkingDirectory }
   )
 }
 
@@ -82,6 +84,7 @@ export function codexStructuredLaunchPart(
     const { command } = await resolveCodexStructuredInvocation({
       ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
       refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram,
+      resolveWorkingDirectory: basis.launchDirectory,
       resolveEnvironment: basis.environment
     })
     const environment = await basis.environment()

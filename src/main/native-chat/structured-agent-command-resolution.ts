@@ -1,4 +1,4 @@
-import { delimiter, isAbsolute } from 'node:path'
+import { delimiter, isAbsolute, resolve as resolvePath } from 'node:path'
 import type { GlobalSettings } from '../../shared/global-settings-types'
 import type { TuiAgent } from '../../shared/tui-agent'
 import {
@@ -63,25 +63,46 @@ export function resolveStructuredAgentCommand(
   return command
 }
 
-/** Whether a lookup found nothing: a bare name back from a search of absolute directories only. A
- *  relative entry (a workspace `bin`) is searched again by the spawn in its own directory. */
-function foundNothing(command: string, searchedPath: string | undefined): boolean {
-  if (isAbsolute(command) || /[\\/]/.test(command)) {
-    return false
-  }
-  return (searchedPath ?? '')
-    .split(delimiter)
-    .every((entry) => isAbsolute(entry.trim()) || !entry.trim())
+/** What a lookup searched: the env whose PATH it used, and the directory its program starts in. */
+export type ProgramSearch<T> = {
+  env: (resolved: T) => NodeJS.ProcessEnv | undefined
+  /** Orca's own working directory when absent. */
+  cwd?: () => Promise<string> | string
 }
 
-/** Resolves a launch's program from the shell snapshot. When nothing is found there (a bare name
- *  from `searchedPath`, or a Command setting naming no program), waits for a reread that started
- *  after this lookup did and resolves once more, so an agent installed before it starts. A found
+/** Whether a lookup found nothing. A bare name back may still be in a relative PATH entry (a
+ *  workspace `bin`), which the spawn searches from its own directory and the lookup did not. */
+async function foundNothing<T extends { command: string }>(
+  resolved: T,
+  search: ProgramSearch<T>
+): Promise<boolean> {
+  if (isAbsolute(resolved.command) || /[\\/]/.test(resolved.command)) {
+    return false
+  }
+  const env = search.env(resolved)
+  const relative = (env?.PATH ?? env?.Path ?? '')
+    .split(delimiter)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry && !isAbsolute(entry))
+  if (relative.length === 0) {
+    return true
+  }
+  const from = (await search.cwd?.()) ?? process.cwd()
+  const found = resolveCliCommand(resolved.command, {
+    pathEnv: relative.map((entry) => resolvePath(from, entry)).join(delimiter),
+    homePath: env?.HOME ?? env?.USERPROFILE
+  })
+  return !isAbsolute(found)
+}
+
+/** Resolves a launch's program from the shell snapshot. When nothing is found there (see
+ *  `foundNothing`, or a Command setting naming no program), waits for a reread that started after
+ *  this lookup did and resolves once more, so an agent installed before it starts. A found
  *  program never waits. */
 export async function resolveAgainAfterRefreshOnMissingProgram<T extends { command: string }>(
   resolve: () => Promise<T>,
   refreshAfterMiss: ((askedAt: number) => Promise<void>) | undefined,
-  searchedPath: (resolved: T) => string | undefined
+  search: ProgramSearch<T>
 ): Promise<T> {
   if (!refreshAfterMiss) {
     return resolve()
@@ -89,7 +110,7 @@ export async function resolveAgainAfterRefreshOnMissingProgram<T extends { comma
   const askedAt = Date.now()
   try {
     const resolved = await resolve()
-    if (!foundNothing(resolved.command, searchedPath(resolved))) {
+    if (!(await foundNothing(resolved, search))) {
       return resolved
     }
   } catch (error) {

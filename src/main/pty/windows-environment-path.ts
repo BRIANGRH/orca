@@ -19,6 +19,8 @@ type ReadWindowsPathOptions = {
   execFileSync?: ExecFileSync
   env?: NodeJS.ProcessEnv
   forceRefresh?: boolean
+  /** Joins a read in progress only if it started at or after this time; else starts one. */
+  startedAfter?: number
   platform?: NodeJS.Platform
 }
 
@@ -40,6 +42,7 @@ let persistedWindowsPathCache:
     }
   | undefined
 let pendingPersistedWindowsPathRefresh: Promise<string[]> | undefined
+let pendingPersistedWindowsPathRefreshStartedAt = 0
 let persistedWindowsPathCacheGeneration = 0
 let persistedWindowsPathReadSequence = 0
 let persistedWindowsPathCommittedSequence = 0
@@ -245,7 +248,11 @@ export async function readPersistedWindowsPathSegmentsAsync(
   ) {
     return [...persistedWindowsPathCache.segments]
   }
-  if (useProductionCache && pendingPersistedWindowsPathRefresh) {
+  if (
+    useProductionCache &&
+    pendingPersistedWindowsPathRefresh &&
+    pendingPersistedWindowsPathRefreshStartedAt >= (options.startedAfter ?? -Infinity)
+  ) {
     return [...(await pendingPersistedWindowsPathRefresh)]
   }
 
@@ -277,6 +284,7 @@ export async function readPersistedWindowsPathSegmentsAsync(
     return refresh
   }
   pendingPersistedWindowsPathRefresh = refresh
+  pendingPersistedWindowsPathRefreshStartedAt = now
   try {
     return [...(await refresh)]
   } finally {

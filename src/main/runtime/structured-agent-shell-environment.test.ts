@@ -5,7 +5,10 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as loginShell from '../startup/login-shell-environment'
 import type * as runProcessModule from '@orca/process-host'
-import { __resetPersistedWindowsPathCacheForTests } from '../pty/windows-environment-path'
+import {
+  __resetPersistedWindowsPathCacheForTests,
+  readPersistedWindowsPathSegmentsAsync
+} from '../pty/windows-environment-path'
 import { resolveAgainAfterRefreshOnMissingProgram } from '../native-chat/structured-agent-command-resolution'
 import { __setWindowsPathRegistryLoaderForTests } from '../pty/windows-path-registry-reader'
 import {
@@ -276,6 +279,36 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
     )
   })
 
+  it('answers a Windows miss with a saved PATH read started after it looked, not one before the install', async () => {
+    let machinePath = 'C:\\Windows'
+    await withSimulatedWindowsServer(
+      (key) => (key.startsWith('HKLM') ? machinePath : null),
+      async () => {
+        const resolvers = createStructuredAgentEnvironmentResolvers({
+          resolveShellEnvironmentPolicy: () => INHERIT_ALL
+        })
+        await resolvers.resolveBaseEnvironment()
+        // A read that queried the registry before the install is still going.
+        const answer = runProcessMock.getMockImplementation()!
+        const held = Promise.withResolvers<void>()
+        runProcessMock.mockImplementation(async (spec: { args: string[] }) => {
+          const result = await answer(spec)
+          await held.promise
+          return result
+        })
+        const beforeInstall = readPersistedWindowsPathSegmentsAsync({ forceRefresh: true })
+        runProcessMock.mockImplementation(answer)
+        machinePath = 'C:\\Windows;C:\\NewTool'
+        vi.advanceTimersByTime(1)
+        const miss = resolvers.refreshAfterMissingProgram(Date.now())
+        await Promise.race([miss, new Promise((resolve) => setTimeout(resolve, 500))])
+        held.resolve()
+        await Promise.all([miss, beforeInstall])
+        expect(pathSegments(await resolvers.resolveBaseEnvironment())).toContain('C:\\NewTool')
+      }
+    )
+  })
+
   it('keeps the machine PATH when the user has no saved Path value and reg.exe reads it', async () => {
     // An Orca server slot ships no registry addon, so this is the path a Windows SSH host takes.
     await withSimulatedWindowsServer(
@@ -428,7 +461,7 @@ describe('createStructuredAgentEnvironmentResolvers', () => {
             return { command: PATH === '/installed' ? '/installed/agent' : 'agent', PATH }
           },
           resolvers.refreshAfterMissingProgram,
-          ({ PATH }) => PATH
+          { env: ({ PATH }) => ({ PATH }) }
         )
         await new Promise((resolve) => setTimeout(resolve, 300))
         await rm(hold, { force: true })

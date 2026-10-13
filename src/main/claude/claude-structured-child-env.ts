@@ -21,6 +21,8 @@ export type ClaudeEnvDeps = {
   resolveCommand?: (options?: { pathEnv?: string | null; homePath?: string }) => string
   /** Refreshes the inherited env after the command was not found in it; absent never retries. */
   refreshEnvironmentAfterMiss?: (askedAt: number) => Promise<void>
+  /** Where the program starts, for a PATH entry relative to it; Orca's own when absent. */
+  resolveWorkingDirectory?: () => Promise<string> | string
   resolveEnv?: () =>
     | Promise<Record<string, string> | undefined>
     | Record<string, string>
@@ -40,9 +42,9 @@ export function resolveClaudeChildEnvSources(deps: ClaudeEnvDeps): Promise<Claud
   return resolveAgainAfterRefreshOnMissingProgram(
     () => readClaudeChildEnvSources(deps),
     deps.refreshEnvironmentAfterMiss,
-    ({ inheritedEnv, overlay }) => {
-      const env = { ...inheritedEnv, ...overlay }
-      return env.PATH ?? env.Path
+    {
+      env: ({ inheritedEnv, overlay }) => ({ ...inheritedEnv, ...overlay }),
+      cwd: deps.resolveWorkingDirectory
     }
   )
 }

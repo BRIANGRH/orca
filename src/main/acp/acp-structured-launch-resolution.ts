@@ -84,6 +84,8 @@ export type AcpLaunchInvocationDeps = {
   resolveCommandSettings?: () => StructuredAgentCommandSettings
   /** Rereads that env when the agent's program is not found in it; absent never retries. */
   refreshEnvironmentAfterMiss?: (askedAt: number) => Promise<void>
+  /** Where the program starts, for a PATH entry relative to it; Orca's own when absent. */
+  resolveWorkingDirectory?: () => Promise<string> | string
 } & Pick<AcpStructuredLaunchPartDeps, 'resolveCommand' | 'homePath' | 'inheritedEnv'>
 
 /** The binary a launch with `env` spawns: the user's Command setting when set, else the stock
@@ -157,7 +159,7 @@ export function resolveAcpLaunchInvocation(
   return resolveAgainAfterRefreshOnMissingProgram(
     () => readAcpLaunchInvocation(spec, accountHome, deps),
     deps.refreshEnvironmentAfterMiss,
-    ({ env }) => env.PATH ?? env.Path
+    { env: ({ env }) => env, cwd: deps.resolveWorkingDirectory }
   )
 }
 
@@ -196,6 +198,7 @@ export function acpStructuredLaunchPart(
         resolveLaunchEnv: () => basis.launchEnv(),
         resolveCommandSettings: basis.commandSettings,
         refreshEnvironmentAfterMiss: basis.refreshAfterMissingProgram,
+        resolveWorkingDirectory: basis.launchDirectory,
         ...(deps.resolveCommand ? { resolveCommand: deps.resolveCommand } : {}),
         ...(deps.homePath ? { homePath: deps.homePath } : {}),
         ...(deps.inheritedEnv ? { inheritedEnv: deps.inheritedEnv } : {})

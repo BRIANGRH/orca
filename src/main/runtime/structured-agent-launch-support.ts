@@ -41,6 +41,11 @@ export async function structuredAgentSupportsLaunch(
     return true
   }
   const settings = runtime.requireStore().getSettings()
+  let worktreePath: Promise<string> | undefined
+  const cwd = () =>
+    (worktreePath ??= runtime
+      .resolveRuntimeFileTarget(worktreeSelector)
+      .then((target) => target.worktree.path))
   let launch: { command: string; env: Record<string, string> }
   try {
     // Resolved as a launch resolves, sharing its refresh, so an agent installed since the shell
@@ -55,7 +60,7 @@ export async function structuredAgentSupportsLaunch(
           settings
         ),
       refreshHostAgentBaseEnvironmentAfterMiss,
-      ({ env }) => env.PATH ?? env.Path
+      { env: ({ env }) => env, cwd }
     )
   } catch (error) {
     // An unrunnable Command setting is the launch's refusal to state, not a terminal.
@@ -64,8 +69,7 @@ export async function structuredAgentSupportsLaunch(
     }
     throw error
   }
-  const cwd = (await runtime.resolveRuntimeFileTarget(worktreeSelector)).worktree.path
-  return check.supportsVersion({ ...launch, cwd })
+  return check.supportsVersion({ ...launch, cwd: await cwd() })
 }
 
 /** `agentSession.createSupport` on this host: every refusal it can know before spawning. The
