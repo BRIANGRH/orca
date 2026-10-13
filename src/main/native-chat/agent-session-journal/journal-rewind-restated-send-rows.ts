@@ -3,12 +3,16 @@
 // with the rows that first recorded it, copied verbatim, and each append record the provider kept
 // where it sat, so a kept message is never appended again.
 
-import { readAgentSessionFailureFact } from '../../../shared/agent-session-failure'
+import {
+  isSubmissionRejectionFact,
+  readAgentSessionFailureFact
+} from '../../../shared/agent-session-failure'
+import { agentSessionFailureWords } from '../../../shared/agent-session-failure-words'
 import type {
   AgentJournalMessageItem,
   AgentSessionJournalProviderHandle
 } from '../../../shared/agent-session-journal-types'
-import { buildJournalSubmissionRow, journalRowBase } from './journal-row-builders'
+import { buildJournalSubmissionRow, journalDispatchRowBuilder } from './journal-row-builders'
 import type { JournalReducerState } from './journal-reducer'
 import type { JournalRow } from './journal-row-schema'
 import type { JournalReplacementItem } from './journal-epoch-replacement'
@@ -29,9 +33,24 @@ export function journalRestatedSendRows(input: {
   if (!submission || item.body.kind !== 'message' || submission.dispatchState !== 'rejected') {
     return []
   }
+  // `rewindRestatedSends` admits only a send whose rejection this build reads.
+  const fact = readAgentSessionFailureFact(submission.rejection)
+  if (!fact || !isSubmissionRejectionFact(fact)) {
+    return []
+  }
   const body: AgentJournalMessageItem = item.body
   const { clientMessageId } = submission
-  const rows: RowBuilder[] = [
+  const dispatch = journalDispatchRowBuilder(() => input.state, {
+    clientMessageId,
+    fence,
+    state: 'rejected',
+    ...agentSessionFailureWords(fact, { surface: 'rejection' }),
+    ...(submission.keptAsQueuedMessageId !== undefined
+      ? { keptAsQueuedMessageId: submission.keptAsQueuedMessageId }
+      : {}),
+    ...(submission.recovered ? { recovered: submission.recovered } : {})
+  })
+  return [
     (seq, ts) => ({
       ...buildJournalSubmissionRow({
         state: input.state,
@@ -50,24 +69,10 @@ export function journalRestatedSendRows(input: {
       }),
       // As stored, a newer build's kind too.
       ...(submission.source !== undefined ? { source: { kind: submission.source.kind } } : {})
-    })
+    }),
+    // The words as stored, which named the agent; the fact alone cannot.
+    (seq, ts) => ({ ...dispatch(seq, ts), reason: submission.reason })
   ]
-  // A fact this build cannot read is left off: the stored reason still classifies it.
-  const rejection = readAgentSessionFailureFact(submission.rejection)
-  rows.push((seq, ts) => ({
-    kind: 'dispatch',
-    clientMessageId,
-    state: 'rejected',
-    providerItemId: null,
-    reason: submission.reason,
-    ...(rejection ? { rejection } : {}),
-    ...(submission.keptAsQueuedMessageId !== undefined
-      ? { keptAsQueuedMessageId: submission.keptAsQueuedMessageId }
-      : {}),
-    ...journalRowBase(input.state.epoch, seq, fence, ts),
-    ...(submission.recovered ? { recovered: submission.recovered } : {})
-  }))
-  return rows
 }
 
 /** The append records that sat just after `item`. */
