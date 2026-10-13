@@ -194,7 +194,7 @@ describe('adopting a provider conversation on create', () => {
       const transcriptPath = join(root, 'rollout.jsonl')
       if (kind === 'oversized') {
         await writeCodexRollout(transcriptPath, 'original turn')
-        await truncate(transcriptPath, 16 * 1024 * 1024 + 1)
+        await truncate(transcriptPath, legacyImport.MAX_LEGACY_IMPORT_SOURCE_BYTES + 1)
       } else if (kind === 'empty' || kind === 'invalid') {
         await writeFile(transcriptPath, kind === 'empty' ? '' : 'not json\n')
       }

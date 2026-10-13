@@ -43,10 +43,14 @@ export type LegacyImportOptions = ResolveSessionFileOptions & {
   /** Resolve directly to this file, skipping path discovery. */
   filePath?: string
   limits?: JournalPayloadLimits
+  /** Source size bound; defaults to MAX_LEGACY_IMPORT_SOURCE_BYTES. */
+  maxSourceBytes?: number
   decodedMessageIdentities?: true
 }
 
-const MAX_LEGACY_IMPORT_SOURCE_BYTES = 16 * 1024 * 1024
+// Why: long Claude sessions reach hundreds of MB; blocks are bounded on import, so a 365 MB source
+// measured 1.4 s and ~44 MB stored.
+export const MAX_LEGACY_IMPORT_SOURCE_BYTES = 512 * 1024 * 1024
 /** A roster is a status list; an imported one is as untrusted as any other block. */
 const MAX_LEGACY_IMPORT_SUBAGENTS = 64
 
@@ -88,6 +92,7 @@ export async function prepareLegacyTranscriptImport(input: {
 }): Promise<{ ok: true; items: JournalReplacementItem[] } | { ok: false; error: string }> {
   const options = input.options ?? {}
   const limits = options.limits ?? DEFAULT_JOURNAL_PAYLOAD_LIMITS
+  const maxSourceBytes = options.maxSourceBytes ?? MAX_LEGACY_IMPORT_SOURCE_BYTES
   const transcriptAgent = resolveNativeChatTranscriptAgent(input.agent)
   if (!transcriptAgent || transcriptAgent === 'opencode') {
     return { ok: false, error: `Unsupported agent for journal import: ${input.agent}` }
@@ -103,10 +108,10 @@ export async function prepareLegacyTranscriptImport(input: {
   // later records; callers can retry after reducing the source or quota.
   try {
     const sourceBytes = (await stat(filePath)).size
-    if (sourceBytes > MAX_LEGACY_IMPORT_SOURCE_BYTES) {
+    if (sourceBytes > maxSourceBytes) {
       return {
         ok: false,
-        error: `Legacy transcript exceeds the ${MAX_LEGACY_IMPORT_SOURCE_BYTES}-byte import bound`
+        error: `Legacy transcript exceeds the ${maxSourceBytes}-byte import bound`
       }
     }
   } catch (err) {
@@ -120,6 +125,7 @@ export async function prepareLegacyTranscriptImport(input: {
       transcriptAgent,
       agent: input.agent,
       sessionId: input.sessionId,
+      maxSourceBytes,
       decodedMessageIdentities: options.decodedMessageIdentities
     })
   } catch (err) {
@@ -158,6 +164,7 @@ async function decodeWithIdentities(input: {
   transcriptAgent: keyof typeof TRANSCRIPT_DECODERS
   agent: AgentType
   sessionId: string
+  maxSourceBytes: number
   decodedMessageIdentities?: true
 }): Promise<{ messages: NativeChatMessage[]; identities: AgentJournalItemIdentity[] }> {
   const tracker = createLegacyIdentityTracker({
@@ -194,7 +201,7 @@ async function decodeWithIdentities(input: {
       return message
     },
     true,
-    MAX_LEGACY_IMPORT_SOURCE_BYTES
+    input.maxSourceBytes
   )
   return { messages, identities }
 }

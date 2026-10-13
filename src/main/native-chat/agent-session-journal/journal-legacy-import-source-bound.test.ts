@@ -47,7 +47,7 @@ describe('legacy import source byte bound', () => {
     const result = await prepareLegacyTranscriptImport({
       agent: 'claude',
       sessionId: 'source-bound',
-      options: { filePath }
+      options: { filePath, maxSourceBytes: SOURCE_LIMIT_BYTES }
     })
 
     expect(result).toEqual({

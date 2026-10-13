@@ -3,7 +3,7 @@ import { AGENT_JOURNAL_THREAD_SCOPE } from '../../../shared/agent-session-journa
 // results by identity read off the same raw lines. Fixtures are shaped like the
 // files the providers actually write.
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,10 @@ import type { AgentSessionProviderHandle } from '../../../shared/agent-session-p
 import type { NativeChatMessage } from '../../../shared/native-chat-types'
 import type * as TranscriptLineDecoders from '../transcript-line-decoders'
 import { createLegacyIdentityTracker } from './journal-legacy-identity'
-import { importLegacyTranscriptIntoJournal } from './journal-legacy-import'
+import {
+  importLegacyTranscriptIntoJournal,
+  MAX_LEGACY_IMPORT_SOURCE_BYTES
+} from './journal-legacy-import'
 import { DEFAULT_JOURNAL_PAYLOAD_LIMITS } from './journal-payload-bounds'
 import { openAgentSessionJournal } from './journal-store-factory'
 import type { AgentSessionJournal } from './journal-store'
@@ -488,7 +491,9 @@ describe('import failures', () => {
       database: openTestJournalHostDatabase(journalDir)
     })
     const filePath = join(root, 'oversized-source.jsonl')
-    await writeFile(filePath, 'x'.repeat(16 * 1024 * 1024 + 1), 'utf8')
+    // Sparse: stat reports the size without writing it.
+    await writeFile(filePath, '')
+    await truncate(filePath, MAX_LEGACY_IMPORT_SOURCE_BYTES + 1)
     const epoch = journal.epoch
 
     await expect(
@@ -501,7 +506,7 @@ describe('import failures', () => {
       })
     ).resolves.toMatchObject({
       ok: false,
-      error: `Legacy transcript exceeds the ${16 * 1024 * 1024}-byte import bound`
+      error: `Legacy transcript exceeds the ${MAX_LEGACY_IMPORT_SOURCE_BYTES}-byte import bound`
     })
     expect(journal.epoch).toBe(epoch)
     expect(journal.snapshot().items).toEqual([])
