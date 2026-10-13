@@ -152,21 +152,17 @@ async function clear(): Promise<void> {
   ).toMatchObject({ ok: true, value: { command: 'clear', state: 'completed' } })
 }
 
-/** The texts the desktop (`rejectedInPlace`) and the phone draw, in that order. */
-async function transcripts(): Promise<string[][]> {
+/** The texts every client draws. */
+async function transcript(): Promise<string[]> {
   const page = await rig.host.history({ sessionId: SESSION, direction: 'tail' })
   if (!page.ok) {
     throw new Error('history refused')
   }
-  return [true, false].map((rejectedInPlace) =>
-    projectStructuredAgentSessionMessages(page.page.items, [], page.page.submissions, {
-      rejectedInPlace
-    }).map(
-      (message) =>
-        `${message.blocks.map((block) => ('text' in block ? block.text : '')).join('')}${
-          message.stoppedBeforeStart ? ' (stopped)' : ''
-        }`
-    )
+  return projectStructuredAgentSessionMessages(page.page.items, [], page.page.submissions).map(
+    (message) =>
+      `${message.blocks.map((block) => ('text' in block ? block.text : '')).join('')}${
+        message.stoppedBeforeStart ? ' (stopped)' : ''
+      }`
   )
 }
 
@@ -200,10 +196,7 @@ describe.each([
     }
   }
 
-  const shown = (...rows: string[]) => {
-    const each = [...(cleared ? ['Context cleared'] : []), ...rows]
-    return [each, each]
-  }
+  const shown = (...rows: string[]) => [...(cleared ? ['Context cleared'] : []), ...rows]
 
   /** A rewind after a /clear rebuilds in place; one without starts a new epoch. */
   function expectRebuildPath(epochBefore: string): void {
@@ -218,7 +211,7 @@ describe.each([
     await rewindTo(next)
 
     expectRebuildPath(epoch)
-    expect(await transcripts()).toEqual(shown('A (stopped)', 'Stopped manually'))
+    expect(await transcript()).toEqual(shown('A (stopped)', 'Stopped manually'))
     await expectStillStopped(stopped)
     expect(appendedIds()).toEqual([stopped])
     await nextSend('C')
@@ -235,7 +228,7 @@ describe.each([
     await rewindTo(later)
 
     expectRebuildPath(epoch)
-    expect(await transcripts()).toEqual(shown('A (stopped)', 'Stopped manually', 'B'))
+    expect(await transcript()).toEqual(shown('A (stopped)', 'Stopped manually', 'B'))
     await expectStillStopped(stopped)
     expect(appendedIds()).toEqual([stopped])
     await nextSend('D')
@@ -254,7 +247,7 @@ describe.each([
 
     await rewindTo(mail)
 
-    expect(await transcripts()).toEqual(shown('A (stopped)', 'Stopped manually'))
+    expect(await transcript()).toEqual(shown('A (stopped)', 'Stopped manually'))
     await expectStillStopped(stopped)
     expect(appendedIds()).toEqual([])
     await nextSend('D')
@@ -308,7 +301,7 @@ describe.each([
 
     await rewindTo(first)
 
-    expect(await transcripts()).toEqual(shown())
+    expect(await transcript()).toEqual(shown())
     await nextSend('D')
     expect(dispatched()).toEqual(['B', '[A] -> C', 'D'])
   })

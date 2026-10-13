@@ -164,15 +164,13 @@ function working(): boolean {
   return isStructuredAgentSessionMainAgentWorking(journal().activeTurnId(), journal().submissions())
 }
 
-/** The texts a client draws: desktop (`rejectedInPlace`) or phone. */
-async function transcript(rejectedInPlace: boolean): Promise<string[]> {
+/** The texts every client draws. */
+async function transcript(): Promise<string[]> {
   const page = await rig.host.history({ sessionId: SESSION, direction: 'tail' })
   if (!page.ok) {
     throw new Error('history refused')
   }
-  return projectStructuredAgentSessionMessages(page.page.items, [], page.page.submissions, {
-    rejectedInPlace
-  }).map(
+  return projectStructuredAgentSessionMessages(page.page.items, [], page.page.submissions).map(
     (message) =>
       `${message.blocks.map((block) => ('text' in block ? block.text : '')).join('')}${
         message.stoppedBeforeStart ? ' (stopped)' : ''
@@ -202,14 +200,12 @@ describe("stopped messages go into the agent's own log ahead of the next send", 
         ...agentSessionFailureWords(agentSessionFailureFact('cancelled'), { surface: 'rejection' })
       })
     }
-    for (const rejectedInPlace of [true, false]) {
-      expect(await transcript(rejectedInPlace)).toEqual([
-        'first (stopped)',
-        'second (stopped)',
-        'Stopped manually',
-        'what did I send?'
-      ])
-    }
+    expect(await transcript()).toEqual([
+      'first (stopped)',
+      'second (stopped)',
+      'Stopped manually',
+      'what did I send?'
+    ])
   })
 
   it('appends nothing again once the agent took them', async () => {
@@ -395,13 +391,7 @@ describe("stopped messages go into the agent's own log ahead of the next send", 
     expect(working()).toBe(false)
     const page = await rig.host.history({ sessionId: SESSION, direction: 'tail' })
     expect(page.ok && page.page.submissions.some((entry) => 'carries' in entry)).toBe(false)
-    for (const rejectedInPlace of [true, false]) {
-      expect(await transcript(rejectedInPlace)).toEqual([
-        'first (stopped)',
-        'Stopped manually',
-        'carrier'
-      ])
-    }
+    expect(await transcript()).toEqual(['first (stopped)', 'Stopped manually', 'carrier'])
   })
 
   it('a real /clear bounds what is owed: what was stopped before it is never appended', async () => {
