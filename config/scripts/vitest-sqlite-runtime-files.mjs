@@ -259,6 +259,7 @@ export const SQLITE_RUNTIME_INCLUDE = [
   'src/main/ssh/orcad-migration-delta-snapshot.test.ts',
   'src/main/ssh/orcad-migration-snapshot-resume.test.ts',
   'src/main/ssh/orcad-migration-source-fence.test.ts',
+  'src/main/ssh/orcad-migration-ssh-relay-source.test.ts',
   'src/main/ssh/orcad-runtime-conversion.test.ts',
   'src/main/ssh/orcad-unreachable-setup-release.test.ts',
   'src/main/ssh/ssh-target-orcad-preflight.test.ts',
