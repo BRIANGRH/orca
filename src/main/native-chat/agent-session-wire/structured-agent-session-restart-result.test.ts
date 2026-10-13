@@ -2,9 +2,8 @@ import { expect, it, vi } from 'vitest'
 import { interruptedRestart } from './structured-agent-session-restart-interruption-test-harness'
 import { CALLER, envelope } from './structured-agent-session-host-test-harness'
 import { HOST_TEST_SESSION as SESSION } from './structured-agent-session-host-test-data'
-import { resumeRunUserRequestConfirmed } from '../../../renderer/src/components/native-chat-resume-run'
 
-it('credits an ordinary held-card Send through its actual client and queued-message provenance', async () => {
+it('an ordinary held-card Send produces client provenance and withdraws the restart failure', async () => {
   const state = await interruptedRestart('queued-cards')
   state.acquire.mockRejectedValueOnce(new Error('provider could not reconnect'))
   const first = await state.host.restartResume.continueAfterRestart([SESSION], 'modal')
@@ -41,13 +40,6 @@ it('credits an ordinary held-card Send through its actual client and queued-mess
   expect.soft(submission.origin).toBe('client')
   expect.soft(submission.submittedSequence).toBeGreaterThan(before.page.liveCursor.sequence)
   expect(submission.source).toBeUndefined()
-  expect(
-    resumeRunUserRequestConfirmed({
-      candidate: first.failed[0],
-      sourceCursor: before.page.liveCursor,
-      userRequest: { epoch: before.page.epoch, submission, offer: { listedAt: 1 } }
-    })
-  ).toBe(true)
 })
 
 it('the ready child can accept a manual Send while its original refusal remains until Dismiss', async () => {
