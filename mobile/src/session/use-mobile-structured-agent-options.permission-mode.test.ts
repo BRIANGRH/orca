@@ -1,10 +1,14 @@
 import { createElement } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { describe, expect, it, vi } from 'vitest'
-import type { AgentSessionOptionsResult } from '../../../src/shared/agent-session-wire'
+import type {
+  AgentSessionOptionsResult,
+  AgentSessionStatusSummary
+} from '../../../src/shared/agent-session-wire'
 import type { RpcClient } from '../transport/rpc-client'
 import type { StructuredAgentSessionMutate } from './mobile-structured-agent-session-rpc'
 import { useMobileStructuredAgentOptions } from './use-mobile-structured-agent-options'
+import { useMobileStructuredSessionOptionStamp } from './use-mobile-structured-session-option-stamp'
 
 function optionsFor(permissionMode?: string): AgentSessionOptionsResult {
   return {
@@ -45,13 +49,18 @@ function optionsClient(...modes: (string | undefined)[]) {
 }
 
 type Controller = ReturnType<typeof useMobileStructuredAgentOptions>
-type ProbeProps = { client: RpcClient; fence: number; optionStamp: string; agent?: string }
+type ProbeProps = { client: RpcClient; fence: number; optionStamp?: string; agent?: string }
 
 const mutate: StructuredAgentSessionMutate = vi.fn()
 
 async function mountOptions(props: ProbeProps) {
   const rendered: { current: Controller | null } = { current: null }
   function Probe(probe: ProbeProps): null {
+    const hostStamp = useMobileStructuredSessionOptionStamp({
+      client: probe.client,
+      sessionId: 'session-1',
+      enabled: probe.optionStamp === undefined
+    })
     rendered.current = useMobileStructuredAgentOptions({
       agent: probe.agent ?? 'codex',
       client: probe.client,
@@ -59,7 +68,7 @@ async function mountOptions(props: ProbeProps) {
       enabled: true,
       fence: probe.fence,
       mutate,
-      optionStamp: probe.optionStamp
+      optionStamp: probe.optionStamp ?? hostStamp
     })
     return null
   }
@@ -103,6 +112,60 @@ async function mountOptions(props: ProbeProps) {
 }
 
 describe('the permission mode on the phone', () => {
+  it('refreshes a mounted reader when the host publishes an inherited default change without a send', async () => {
+    let mode = 'ask'
+    let reads = 0
+    let emit: (frame: unknown) => void = () => {}
+    const summary: AgentSessionStatusSummary = {
+      sessionId: 'session-1',
+      workspaceId: 'workspace-1',
+      agent: 'codex',
+      status: 'idle',
+      latestPrompt: 'hello',
+      updatedAt: 1,
+      permissionMode: mode
+    }
+    const fallback = optionsClient().client
+    const client: RpcClient = {
+      ...fallback,
+      subscribe: (method, _params, onFrame) => {
+        if (method === 'agentSession.subscribeStatus') {
+          emit = onFrame
+          emit({ type: 'snapshot', sessions: [summary] })
+        }
+        return () => {}
+      },
+      sendRequest: async (method, params, options) => {
+        if (method !== 'agentSession.options') {
+          return fallback.sendRequest(method, params, options)
+        }
+        reads += 1
+        return {
+          id: 'options',
+          ok: true as const,
+          result: optionsFor(mode),
+          _meta: { runtimeId: 'host' }
+        }
+      }
+    }
+    const options = await mountOptions({ client, fence: 1 })
+    expect(options.permission()).toBe('ask')
+    const before = reads
+    mode = 'full-access'
+    await act(async () => {
+      emit({ type: 'status', session: { ...summary, permissionMode: mode } })
+    })
+    expect(options.permission()).toBe('full-access')
+    expect(reads).toBe(before + 1)
+    mode = 'ask'
+    await act(async () => {
+      emit({ type: 'status', session: { ...summary, permissionMode: mode } })
+    })
+    expect(options.permission()).toBe('ask')
+    expect(reads).toBe(before + 2)
+    await options.unmount()
+  })
+
   it('re-reads once when the host status moves, so a desktop pick shows here', async () => {
     const rpc = optionsClient('ask', 'full-access')
     const options = await mountOptions({

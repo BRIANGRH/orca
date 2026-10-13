@@ -1,4 +1,5 @@
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
+import { newChatPermissionMode } from '../../../shared/agent-chat-permission-mode'
 import {
   deferredStructuredAgentSessionLogger,
   type StructuredAgentSessionLogger
@@ -20,6 +21,7 @@ export function createStructuredAgentSessionHostStatusFeed(args: {
     logger: StructuredAgentSessionLogger
     onSessionStatusChanged?: StructuredAgentSessionStatusFeedDeps['onStatusChanged']
     statusSink?: StructuredAgentSessionStatusSink
+    newChatPermissionMode?: () => unknown
   }
   onAgentStarted?: (sessionId: string) => void
   onChildWorkChanged?: (sessionId: string) => void
@@ -27,6 +29,10 @@ export function createStructuredAgentSessionHostStatusFeed(args: {
   return new StructuredAgentSessionStatusFeed({
     sessions: args.sessions,
     getRecord: (sessionId) => args.deps().store.getRecord(sessionId),
+    permissionModeDefault: (agent) => {
+      const read = args.deps().newChatPermissionMode
+      return read ? newChatPermissionMode(agent, read()) : null
+    },
     now: args.now,
     logger: deferredStructuredAgentSessionLogger(() => args.deps().logger),
     onStatusChanged: (summary, options) => args.deps().onSessionStatusChanged?.(summary, options),

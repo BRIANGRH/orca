@@ -238,6 +238,12 @@ export class OrcaRuntimeWithGetWorktreePs extends OrcaRuntimeWithStartTuiIdleVis
       resolveAgentCommandSettings: () => this.requireStore().getSettings(),
       resolveNewChatPermissionMode: () =>
         this.requireStore().getSettings().nativeChatPermissionMode,
+      onNewChatPermissionModeChanged: (listener) =>
+        this.requireStore().onSettingsChanged?.((updates) => {
+          if ('nativeChatPermissionMode' in updates) {
+            listener()
+          }
+        }) ?? (() => {}),
       resolveCodexAccountKind: (home) =>
         resolveStructuredCodexAccountKind(home, this.requireStore().getSettings()),
       resolveAgentAccountHome: (agent) => this.resolveStructuredAgentAccountHome(agent),

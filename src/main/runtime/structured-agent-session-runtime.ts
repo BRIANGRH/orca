@@ -129,6 +129,8 @@ export type StructuredAgentSessionRuntimeDeps = {
   resolveAgentCommandSettings?: () => StructuredAgentCommandSettings
   /** Settings → Chat → Permissions, which a chat saved without a mode runs. */
   resolveNewChatPermissionMode?: () => unknown
+  /** One host-settings listener, released when this runtime stops. */
+  onNewChatPermissionModeChanged?: (listener: () => void) => () => void
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
   /** Which login-shell variables Codex and Claude children inherit; absent inherits all. */
   resolveShellEnvironmentPolicy?: () => NativeChatShellEnvironmentPolicy
@@ -366,12 +368,16 @@ async function installOnJournal(
         logger: deps.logger
       })
     : undefined
+  const stopPermissionModeUpdates = deps.onNewChatPermissionModeChanged?.(
+    host.publishInheritedPermissionModes
+  )
   return {
     host,
     adapter,
     journalDatabase,
     waitForRecovery: lifecycle.drain,
     stopBackgroundWork: () => {
+      stopPermissionModeUpdates?.()
       stopVisualsSweep?.()
       modelCatalog?.stop()
     }

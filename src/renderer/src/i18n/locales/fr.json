@@ -117,8 +117,8 @@
   },
   "settings": {
     "chat": {
-      "permissionsTitle": "Autorisations pour les nouveaux chats",
-      "permissionsDescription": "S’applique uniquement aux nouveaux chats. Les agents ouverts dans un terminal utilisent Paramètres → Agents → Autorisations des agents.",
+      "permissionsTitle": "Autorisations par défaut des chats",
+      "permissionsDescription": "S’applique aux nouveaux chats et aux anciens sans choix d’autorisation enregistré. Les choix enregistrés dans les chats et les réponses en cours conservent leurs autorisations. Les agents dans un terminal utilisent Paramètres → Agents → Autorisations des agents.",
       "description": "Choisissez l’apparence et le nom des chats.",
       "names": {
         "title": "Noms des chats",

@@ -16,8 +16,8 @@
   },
   "settings": {
     "chat": {
-      "permissionsTitle": "새 채팅의 권한",
-      "permissionsDescription": "새 채팅에만 적용됩니다. 터미널에서 여는 에이전트는 설정 → 에이전트 → 에이전트 권한을 사용합니다.",
+      "permissionsTitle": "채팅 기본 권한",
+      "permissionsDescription": "새 채팅과 권한 선택이 저장되지 않은 이전 채팅에 적용됩니다. 채팅에 저장된 선택과 진행 중인 응답은 현재 권한을 유지합니다. 터미널 에이전트는 설정 → 에이전트 → 에이전트 권한을 사용합니다.",
       "description": "채팅 모양과 이름 지정 방식을 선택하세요.",
       "names": {
         "title": "채팅 이름",

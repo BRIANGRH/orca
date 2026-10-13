@@ -79,8 +79,9 @@ export function MobileNativeChatSessionOptionPickers({
   }
 
   const applyOption = (descriptor: SessionOptionDescriptor, value: SessionOptionValue): void => {
-    // Re-picking the tracked value is a no-op — never re-dispatch it.
+    // A permission pick saves the chat's choice even when it matches the inherited mode.
     if (
+      descriptor !== permission &&
       descriptor.valueSource !== 'unknown' &&
       descriptor.kind.type === 'select' &&
       descriptor.kind.currentValue === value

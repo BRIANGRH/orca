@@ -144,12 +144,10 @@ export function NativeChatComposerPermissionPicker({
       agent={agent ?? null}
       disabled={!descriptor.settable}
       onSelect={(mode) => {
-        if (mode !== current) {
-          // The pick shows at once, so nothing marks it pending.
-          runSessionOptionSurfaceCall(mode, NO_PENDING_MARK, () =>
-            surface.setOption(AGENT_CHAT_PERMISSION_MODE_OPTION_ID, mode)
-          )
-        }
+        // Re-picking an inherited mode saves the chat's own choice too.
+        runSessionOptionSurfaceCall(mode, NO_PENDING_MARK, () =>
+          surface.setOption(AGENT_CHAT_PERMISSION_MODE_OPTION_ID, mode)
+        )
       }}
     />
   )

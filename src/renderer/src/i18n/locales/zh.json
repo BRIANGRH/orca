@@ -16,8 +16,8 @@
   },
   "settings": {
     "chat": {
-      "permissionsTitle": "新聊天的权限",
-      "permissionsDescription": "仅适用于新聊天。在终端中打开的智能体使用设置 → 智能体 → 智能体权限。",
+      "permissionsTitle": "默认聊天权限",
+      "permissionsDescription": "适用于新聊天和未保存权限选择的旧聊天。已保存的聊天权限选择和正在进行的回复保持原有权限。终端中的智能体使用设置 → 智能体 → 智能体权限。",
       "description": "选择聊天的外观和命名方式。",
       "names": {
         "title": "聊天名称",

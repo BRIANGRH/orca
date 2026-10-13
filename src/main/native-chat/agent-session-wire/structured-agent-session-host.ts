@@ -349,6 +349,7 @@ export class StructuredAgentSessionHost {
   /** Turns that settle, and prompts raised, from now on. Live-only: nothing missed is replayed. */
   subscribeTurnCompletions = this.clientDelivery.subscribeTurnCompletions
   readStatusSummary = this.clientDelivery.readStatusSummary
+  publishInheritedPermissionModes = this.clientDelivery.publishInheritedPermissionModes
 
   /** Test rigs only: the collaborators the host builds itself, typed, for tests that drive them. */
   collaboratorsForTests = () => ({

@@ -12,6 +12,7 @@ import type { StructuredAgentSessionStatusObserverOptions } from './structured-a
 // republishes them.
 
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
+import type { AgentChatPermissionMode } from '../../../shared/agent-chat-permission-mode'
 import type {
   AgentSessionStatusEvent,
   AgentSessionStatusSummary
@@ -52,6 +53,7 @@ type StatusFeedSession = {
 export type StructuredAgentSessionStatusFeedDeps = {
   sessions: ReadonlyMap<string, StatusFeedSession>
   getRecord: (sessionId: string) => AgentSessionRecord | null
+  permissionModeDefault?: (agent: string) => AgentChatPermissionMode | null
   now: () => number
   /** Where a failing sink or observer is reported; neither may cost subscribers their event. */
   logger: StructuredAgentSessionLogger
@@ -230,6 +232,7 @@ export class StructuredAgentSessionStatusFeed {
       state: projection.state,
       stopping: projection.stopping,
       childWork: this.childWorkFields(sessionId, session.params.provider),
+      permissionModeDefault: this.deps.permissionModeDefault?.(session.params.provider),
       now: this.deps.now
     })
     const publication = this.published.get(sessionId)

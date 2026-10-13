@@ -16,8 +16,8 @@
   },
   "settings": {
     "chat": {
-      "permissionsTitle": "新しいチャットの権限",
-      "permissionsDescription": "新しいチャットにのみ適用されます。ターミナルで開くAgentには、設定 → Agent → Agentの権限が適用されます。",
+      "permissionsTitle": "チャットの既定の権限",
+      "permissionsDescription": "新しいチャットと権限の選択が保存されていない古いチャットに適用されます。チャットに保存された選択と実行中の応答の権限は変わりません。ターミナルのAgentには、設定 → Agent → Agentの権限が適用されます。",
       "description": "チャットの外観と名前の付け方を選びます。",
       "names": {
         "title": "チャット名",

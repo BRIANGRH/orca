@@ -221,7 +221,7 @@ describe('NativeChatComposerPermissionPicker', () => {
     expect(container.innerHTML).toBe('')
   })
 
-  it('writes a new pick through the option surface, and skips the current one', () => {
+  it('writes both the displayed mode and a different pick through the option surface', () => {
     const options = surface()
     render(
       <NativeChatComposerPermissionPicker
@@ -231,7 +231,7 @@ describe('NativeChatComposerPermissionPicker', () => {
       />
     )
     fireEvent.click(option('ask'))
-    expect(options.setOption).not.toHaveBeenCalled()
+    expect(options.setOption).toHaveBeenCalledWith('permissionMode', 'ask')
     // A write that waits behind a starting agent leaves the pill usable.
     options.setOption.mockImplementation(() => new Promise(() => {}))
     fireEvent.click(option('full-access'))

@@ -220,6 +220,28 @@ describe('structured agent-session runtime install', () => {
     vi.restoreAllMocks()
   })
 
+  it('owns one permission-default subscription and releases it on stop', async () => {
+    stateDirectory = await mkdtemp(join(tmpdir(), 'orca-structured-runtime-'))
+    const stop = vi.fn()
+    const subscribe = vi.fn((_listener: () => void) => stop)
+    const deps = {
+      logger: createStructuredAgentSessionLogger(),
+      stateDirectory,
+      hostId: HOST_ID,
+      claimKeyId: 'key-1',
+      resolveWorkspacePath: async () => stateDirectory!,
+      resolveLaunchArgs: () => [],
+      resolveClaudeAuthPolicy: () => ({ account: 'managed' as const }),
+      resolveEnvironment: async () => ({}),
+      onNewChatPermissionModeChanged: subscribe
+    }
+    const host = await ensureStructuredAgentSessionHost(deps)
+    expect(await ensureStructuredAgentSessionHost(deps)).toBe(host)
+    expect(subscribe).toHaveBeenCalledExactlyOnceWith(host.publishInheritedPermissionModes)
+    await stopStructuredAgentSessionRuntime()
+    expect(stop).toHaveBeenCalledOnce()
+  })
+
   it('holds stop until the model catalog has written its coalesced save', async () => {
     stateDirectory = await mkdtemp(join(tmpdir(), 'orca-structured-runtime-'))
     await ensureStructuredAgentSessionHost({

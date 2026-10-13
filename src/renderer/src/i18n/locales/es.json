@@ -16,8 +16,8 @@
   },
   "settings": {
     "chat": {
-      "permissionsTitle": "Permisos para chats nuevos",
-      "permissionsDescription": "Se aplica solo a chats nuevos. Los agentes que abres en una terminal usan Configuración → Agentes → Permisos de agentes.",
+      "permissionsTitle": "Permisos predeterminados de chat",
+      "permissionsDescription": "Se aplica a chats nuevos y antiguos sin una elección de permisos guardada. Las elecciones guardadas en cada chat y las respuestas en curso conservan sus permisos. Los agentes en una terminal usan Configuración → Agentes → Permisos de agentes.",
       "description": "Elige cómo se ven y se nombran los chats.",
       "names": {
         "title": "Nombres de chats",

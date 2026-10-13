@@ -28,6 +28,13 @@ it.each([undefined, 'ask', 'full-access'] as const)(
       expect(container.querySelector('#chat-permissions')).toBeNull()
       expect(screen.queryByRole('button')).toBeNull()
     } else {
+      expect(screen.getByText('Default chat permissions')).toBeTruthy()
+      expect(
+        screen.getByText(/new chats and older chats with no saved permission choice/)
+      ).toBeTruthy()
+      expect(
+        screen.getByText(/Saved chat choices and running replies keep their permissions/)
+      ).toBeTruthy()
       expect(
         screen.getByRole('button', {
           name: `Permissions ${mode === 'ask' ? 'Ask for approval' : 'Full access'}`

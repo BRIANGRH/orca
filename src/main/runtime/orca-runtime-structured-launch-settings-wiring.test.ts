@@ -46,4 +46,38 @@ describe('execution host structured launch settings wiring', () => {
     expect(deps?.resolveClaudeCommand?.()).toBe(resolveCliCommand('claude'))
     expect(deps?.resolveCodexCommand?.()).toBe(resolveCliCommand('codex'))
   })
+
+  it('reads and watches the owning host chat default without observing unrelated settings', async () => {
+    installed.mockClear()
+    const settings: Partial<GlobalSettings> = { nativeChatPermissionMode: 'ask' }
+    const listeners = new Set<(updates: Partial<GlobalSettings>) => void>()
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the mocked installer only uses these settings operations.
+    const runtime = new OrcaRuntimeService({
+      getSettings: () => settings,
+      onSettingsChanged: (listener: (updates: Partial<GlobalSettings>) => void) => {
+        listeners.add(listener)
+        return () => {
+          listeners.delete(listener)
+        }
+      }
+    } as never)
+    await runtime.ensureStructuredAgentSessionHost()
+    const deps = installed.mock.calls[0]?.[0]
+    const changed = vi.fn()
+    const stop = deps?.onNewChatPermissionModeChanged?.(changed)
+    expect(listeners.size).toBe(1)
+    expect(deps?.resolveNewChatPermissionMode?.()).toBe('ask')
+    for (const listener of listeners) {
+      listener({ theme: 'dark' })
+    }
+    expect(changed).not.toHaveBeenCalled()
+    settings.nativeChatPermissionMode = 'full-access'
+    for (const listener of listeners) {
+      listener({ nativeChatPermissionMode: 'full-access' })
+    }
+    expect(changed).toHaveBeenCalledOnce()
+    expect(deps?.resolveNewChatPermissionMode?.()).toBe('full-access')
+    stop?.()
+    expect(listeners.size).toBe(0)
+  })
 })

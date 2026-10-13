@@ -304,6 +304,20 @@ describe('MobileNativeChatSessionOptionPickers', () => {
     expect(setOption).toHaveBeenCalledWith('permissionMode', 'full-access')
     expect(renderer!.root.findAllByType('BottomDrawer')).toEqual([])
   })
+
+  it('writes the displayed permission mode so an inherited choice can be saved', async () => {
+    mount([PERMISSION_DESCRIPTOR])
+    await act(async () => pill('Permissions').props.onPress())
+    const selected = renderer!.root.find(
+      (node) =>
+        node.type === 'Pressable' &&
+        node.props.accessibilityRole === 'radio' &&
+        node.props.accessibilityState?.checked === true
+    )
+    await act(async () => selected.props.onPress())
+    expect(setOption).toHaveBeenCalledWith('permissionMode', 'ask')
+    expect(renderer!.root.findAllByType('BottomDrawer')).toEqual([])
+  })
 })
 
 const PERMISSION_DESCRIPTOR: SessionOptionDescriptor = {

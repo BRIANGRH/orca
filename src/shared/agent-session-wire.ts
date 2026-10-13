@@ -248,7 +248,7 @@ export type AgentSessionStatusSummary = {
   latestPrompt: string
   /** Provider model in force for the next turn; absent until the host has read the options. */
   model?: string
-  /** The chat's saved permission mode; a client re-reads options when it or `model` moves. */
+  /** Saved choice or inherited host default intent; clients re-read options for model support. */
   permissionMode?: string
   /** The tool the running turn is inside, else the last one it used. Absent unless `status`
    *  is 'working'. */

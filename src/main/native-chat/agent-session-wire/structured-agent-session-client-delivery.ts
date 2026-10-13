@@ -1,4 +1,5 @@
 import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
+import { agentChatPermissionModes } from '../../../shared/agent-chat-permission-mode'
 import { AgentSessionRefusalError } from '../../../shared/agent-session-wire-refusals'
 import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
@@ -90,6 +91,29 @@ export class StructuredAgentSessionClientDelivery {
   }
 
   publishStatus = (sessionId: string): void => this.statusFeed.publish(sessionId)
+
+  /** Settings move inherited intent without a journal edge or a child restart. */
+  publishInheritedPermissionModes = (): void => {
+    const { store, logger } = this.deps()
+    for (const [sessionId] of this.sessions) {
+      try {
+        const record = store.getRecord(sessionId)
+        if (
+          record &&
+          (record.options?.permissionMode ?? null) === null &&
+          agentChatPermissionModes(record.provider)
+        ) {
+          this.statusFeed.publish(sessionId, undefined, { replay: true })
+        }
+      } catch (error) {
+        logger.warn('refreshing inherited chat permissions failed', {
+          scope: 'permission-mode-status',
+          sessionId,
+          error
+        })
+      }
+    }
+  }
 
   publishConversationName = (sessionId: string): void =>
     this.statusFeed.publishConversationName(sessionId)

@@ -1,5 +1,7 @@
 // Database opening and lifecycle fixtures exercise Node SQLite behavior.
 export const SQLITE_DATABASE_RUNTIME_INCLUDE = [
+  'src/main/native-chat/agent-session-wire/structured-agent-session-inherited-permission.test.ts',
+  'tests/e2e/structured-chat-inherited-permission.unit.test.ts',
   'src/main/ai-vault-search/session-search-file-write.test.ts',
   'src/main/ai-vault-search/session-search-live-transcript.test.ts',
   'src/main/ai-vault/session-scanner-devin-contention.test.ts',
