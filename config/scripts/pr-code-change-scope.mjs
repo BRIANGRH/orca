@@ -585,7 +585,7 @@ function jobDetector(job) {
       return (files) =>
         files.some(
           (file) =>
-            file !== 'src/main/codex/codex-app-server-client.test.ts' &&
+            !/^src\/main\/codex\/codex-app-server-(client|session)\.test\.ts(?!.)/s.test(file) &&
             matchesPrefix(file, CODEX_INDEX_HEAL_CONTRACT_PREFIXES)
         )
     case 'xterm_patch_sync':

@@ -79,3 +79,29 @@ it('skips only tests, after successful detection, and retains all other mobile g
     expect(steps.find((step) => step.name === name).if).toBeUndefined()
   }
 })
+
+it('overlaps both typechecks with tests and collects their failures before the summary', () => {
+  const workflow = parse(
+    readFileSync(new URL('../../.github/workflows/mobile.yml', import.meta.url), 'utf8')
+  )
+  const steps = workflow.jobs.verify.steps
+  const install = steps.findIndex((step) => step.name === 'Install dependencies')
+  const test = steps.findIndex((step) => step.name === 'Test')
+  const summary = steps.findIndex((step) => step.name === 'Summarize RPC recording changes')
+  const waits = steps.filter((step) => step.wait !== undefined)
+  expect(waits).toHaveLength(1)
+  const [wait] = waits
+  expect(wait.wait).toEqual(['production-types', 'test-types'])
+  expect(wait.if).toBeUndefined()
+  expect(steps.indexOf(wait)).toBeGreaterThan(test)
+  expect(steps.indexOf(wait)).toBeLessThan(summary)
+  for (const id of wait.wait) {
+    const step = steps.find((candidate) => candidate.id === id)
+    expect(step.background).toBe(true)
+    expect(step['continue-on-error']).toBeUndefined()
+    expect(step.if).toBeUndefined()
+    expect(steps.indexOf(step)).toBeGreaterThan(install)
+    expect(steps.indexOf(step)).toBeLessThan(test)
+    expect(step.run).toMatch(/^node /)
+  }
+})
