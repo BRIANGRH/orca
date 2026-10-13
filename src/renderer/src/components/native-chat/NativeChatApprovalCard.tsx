@@ -60,7 +60,7 @@ export function NativeChatApprovalCard({
   const escape = onCancel ?? (isSubmitting ? undefined : onCollapse)
 
   return (
-    <div className="min-h-0 shrink overflow-hidden bg-chat-canvas">
+    <div className="chat-canvas-layer min-h-0 shrink overflow-hidden bg-chat-canvas">
       <div className="mx-auto flex h-full min-h-0 max-h-full w-full max-w-(--chat-content-max-width) px-3 pt-2 pb-1 sm:px-4">
         <div
           ref={cardRef}

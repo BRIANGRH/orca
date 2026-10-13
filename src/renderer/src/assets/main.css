@@ -1109,6 +1109,22 @@ html.native-shell .app-layout {
   );
 }
 
+/* Why: the chat root already paints the translucent fill; inner canvas layers would stack an opaque copy. */
+[data-app-background] [data-native-chat-root] .chat-canvas-layer {
+  background: transparent;
+}
+
+/* Why: over a terminal pane the pane root already paints the terminal fill, so the cover and its chat
+   add none, and the covered xterm is hidden so its glyphs cannot show through. */
+[data-app-background] .native-chat-pane-shell,
+[data-app-background] .native-chat-pane-shell [data-native-chat-root] {
+  background: transparent;
+}
+
+[data-app-background] .pane:has(> .native-chat-pane-shell) > .xterm-container {
+  visibility: hidden;
+}
+
 .titlebar-traffic-light-pad {
   width: calc(80px / var(--ui-zoom-factor, 1));
   flex-shrink: 0;
