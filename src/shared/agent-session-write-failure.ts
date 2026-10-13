@@ -10,6 +10,7 @@ import {
 import type { AgentSessionRewindReason } from './agent-session-rewind'
 import type { AgentSessionArgumentProblem } from './agent-session-argument-problem'
 import type { TuiAgent } from './tui-agent'
+import type { CodexInstallationProblem } from './codex-cli-installation'
 import {
   isAgentSessionWireRefusalCode,
   readAgentSessionRefusalReference,
@@ -78,6 +79,7 @@ type DurableRefusalFacts = {
     account?: AgentSessionAccountKind
     argumentProblem?: AgentSessionArgumentProblem
     agent?: TuiAgent
+    codexInstallation?: CodexInstallationProblem
   }
   agent_session_operation_unknown: { rewindReason?: AgentSessionRewindReason }
   /** A snapshot from when it was refused; see `agentSessionOwnerVerdictAllowsFreshOperationId`. */
@@ -85,7 +87,13 @@ type DurableRefusalFacts = {
 }
 
 const DURABLE_FACT_KEYS: Partial<Record<AgentSessionWireRefusalCode, readonly string[]>> = {
-  agent_session_operation_invalid: ['rewindReason', 'account', 'argumentProblem', 'agent'],
+  agent_session_operation_invalid: [
+    'rewindReason',
+    'account',
+    'argumentProblem',
+    'agent',
+    'codexInstallation'
+  ],
   agent_session_operation_unknown: ['rewindReason'],
   agent_session_ownership_unknown: ['ownerVerdict']
 } satisfies { [C in keyof DurableRefusalFacts]: readonly (keyof DurableRefusalFacts[C])[] }

@@ -24,6 +24,13 @@ const {
   verifyPackagedMainRuntimeDeps
 } = require('./packaged-runtime-node-modules.cjs')
 const { verifyLinuxGlibcFloor } = require('./scripts/verify-linux-glibc-floor.cjs')
+const {
+  verifyPackagedWindowsAgentHook
+} = require('./scripts/verify-packaged-windows-agent-hook.cjs')
+const {
+  ensureBundledWaylandClipboard,
+  finalizePackagedWaylandClipboard
+} = require('./wayland-clipboard-resources.cjs')
 const { writeMacBuildCompatibility } = require('./scripts/mac-build-compatibility.cjs')
 const {
   MOBILE_WEB_BUNDLE_DIR,
@@ -375,12 +382,19 @@ module.exports = {
   },
   // electron-builder calls this with the context alone. The second parameter is the bundle root,
   // so a test can point the guard at a scratch bundle instead of needing the repo's out/ built.
-  beforePack: (context, mobileWebBundleDir = MOBILE_WEB_BUNDLE_DIR) => {
+  beforePack: (
+    context,
+    mobileWebBundleDir = MOBILE_WEB_BUNDLE_DIR,
+    ensureWaylandClipboard = ensureBundledWaylandClipboard
+  ) => {
     assertPackagedNativeVariantsInstalled(context.electronPlatformName, context.arch)
     assertBundledRipgrepInstalled()
     assertProcessHostOutputBuilt()
     assertOrcadTemplateBuilt()
     assertMobileWebBundleBuilt(mobileWebBundleDir)
+    if (context.electronPlatformName === 'linux') {
+      ensureWaylandClipboard(context.arch)
+    }
   },
   afterPack: async (context) => {
     const resourcesDir =
@@ -429,6 +443,7 @@ module.exports = {
     if (context.electronPlatformName === 'linux') {
       // Why the arch is passed: symbol-version checks pass happily on a wrong-architecture binary,
       // so a cross-built slice could ship the host's pty.node and only fail at runtime.
+      finalizePackagedWaylandClipboard(resourcesDir)
       verifyLinuxGlibcFloor(context.appOutDir, {
         targetArch: { 1: 'x64', 3: 'arm64' }[context.arch]
       })
@@ -444,6 +459,7 @@ module.exports = {
     const canExecuteTargetArch = context.arch === hostArchEnum || context.arch === 4
     if (context.electronPlatformName === 'win32') {
       verifyPackagedWindowsNodePty(resourcesDir, context.arch, { canExecuteTargetArch })
+      verifyPackagedWindowsAgentHook(resourcesDir, context.arch)
     }
     verifySkillsCliRuntime(join(resourcesDir, 'app.asar.unpacked', 'out'), resourcesDir, {
       executeCommands: canExecuteTargetArch
@@ -533,6 +549,12 @@ module.exports = {
       {
         from: 'native/windows-cli-launcher/.build/orca.exe',
         to: 'bin/orca.exe'
+      },
+      // Why resources/bin: SignPath signs every unsigned PE under win-unpacked, and the hook
+      // installer copies this signed file into ~/.orca/agent-hooks (#20913).
+      {
+        from: 'native/windows-agent-hook/.build/orca-agent-hook.exe',
+        to: 'bin/orca-agent-hook.exe'
       },
       {
         from: 'node_modules/agent-browser/bin/agent-browser-win32-x64.exe',
@@ -671,6 +693,10 @@ module.exports = {
       ...commonExtraResources,
       ...createPackagedRuntimeNodeModuleResources('linux'),
       linuxSpeechNativeResource,
+      {
+        from: 'native/wayland-clipboard/.build/${arch}/orca-wayland-clipboard',
+        to: 'bin/orca-wayland-clipboard'
+      },
       {
         from: 'resources/linux/bin/orca-ide',
         to: 'bin/orca-ide'

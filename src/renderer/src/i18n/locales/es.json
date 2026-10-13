@@ -16,6 +16,8 @@
   },
   "settings": {
     "chat": {
+      "permissionsTitle": "Permisos para chats nuevos",
+      "permissionsDescription": "Se aplica solo a chats nuevos. Los agentes que abres en una terminal usan Configuración → Agentes → Permisos de agentes.",
       "description": "Elige cómo se ven y se nombran los chats.",
       "names": {
         "title": "Nombres de chats",
@@ -4065,7 +4067,12 @@
             "ariaLabel": "{{value0}} chats disponibles para reanudar",
             "tooltip": "Abrir chats interrumpidos disponibles para reanudar",
             "resumingProgressLabel": "Reanudando chats {{value0}}/{{value1}}",
-            "resumingProgressAria": "Reanudando chats, {{value0}} de {{value1}} listos. Haz clic para ver los detalles."
+            "resumingProgressAria": "Reanudando chats, {{value0}} de {{value1}} listos. Haz clic para ver los detalles.",
+            "resumedLabelOne": "1 chat reanudado",
+            "resumedLabel": "{{value0}} chats reanudados",
+            "resumedAriaOne": "1 chat reanudado. Haz clic para verlo.",
+            "resumedAria": "{{value0}} chats reanudados. Haz clic para verlos.",
+            "resumedTooltip": "Chats que Orca reanudó tras el reinicio. Haz clic para verlos."
           },
           "RuntimeHostStatusRow": {
             "previous_connection_closed": "La conexión anterior cerrada.",
@@ -11076,7 +11083,7 @@
           "sourceControlAiDefaults": "Las recetas, prompts y valores predeterminados de revisión alojada se comparten en este cliente; las elecciones de modelo y el descubrimiento quedan limitados al host donde se ejecuta el agente.",
           "projectOnThisHost": "Proyecto en este host",
           "repositorySourceControlAi": "Estas anulaciones se aplican a la configuración de este proyecto y heredan los valores predeterminados de Source Control AI del cliente hasta que se personalicen.",
-          "agentLaunchDefaults": "El agente predeterminado, las anulaciones de comandos, los argumentos de CLI y el entorno de lanzamiento son preferencias del cliente. Los lanzamientos por SSH y servidor remoto siguen validando la disponibilidad del host en tiempo de ejecución.",
+          "agentLaunchDefaults": "El agente predeterminado, los comandos personalizados, los argumentos de la CLI y el entorno de inicio se guardan en el host seleccionado.",
           "clientDefaultProjectScopes": "Predeterminado del cliente + ámbitos de proyecto",
           "terminalQuickCommands": "Los comandos se guardan en este cliente y luego se limitan globalmente o a una configuración de proyecto para que se ejecuten desde el contexto de terminal seleccionado.",
           "hostOverride": "Anulación del host",
@@ -17529,7 +17536,8 @@
         "expandNode": "Expandir {{value0}}",
         "selectMachine": "Seleccionar todos los chats en {{value0}}",
         "sshHost": "SSH",
-        "done": "Listo"
+        "done": "Listo",
+        "resultListLabel": "Chats de esta reanudación"
       },
       "NativeChatResumeOutcomeRow": {
         "openChat": "Abrir chat",
@@ -17635,7 +17643,11 @@
         "resumedTitleOne": "{{value0}} de 1 chat reanudado",
         "resumingTitleOne": "Reanudando 1 chat",
         "resumingTitle": "Reanudando {{value0}} chats",
-        "description": "Cada chat se restaura con todo su contexto y se le pide que revise dónde se detuvo. Puedes cerrar esto; la barra de estado sigue el progreso."
+        "description": "Cada chat se restaura con todo su contexto y se le pide que revise dónde se detuvo. Puedes cerrar esto; la barra de estado sigue el progreso.",
+        "finished": "Estos chats estaban trabajando cuando Orca se cerró. Orca restauró cada uno donde se detuvo, con todo su contexto, y pidió al agente que revisara lo que estaba haciendo antes de continuar. Tus propios mensajes no se reenviaron.",
+        "finishedUpdate": "Estos chats estaban trabajando cuando Orca instaló una actualización. Orca restauró cada uno donde se detuvo, con todo su contexto, y pidió al agente que revisara lo que estaba haciendo antes de continuar. Tus propios mensajes no se reenviaron.",
+        "finishedPartial": "Estos chats estaban trabajando cuando Orca se cerró. Los que Orca reanudó se restauraron donde se detuvieron, con todo su contexto, y se les pidió revisar lo que estaban haciendo antes de continuar. Tus propios mensajes no se reenviaron. Consulta la lista para ver los chats que aún necesitan atención o que se pueden reanudar.",
+        "finishedPartialUpdate": "Estos chats estaban trabajando cuando Orca instaló una actualización. Los que Orca reanudó se restauraron donde se detuvieron, con todo su contexto, y se les pidió revisar lo que estaban haciendo antes de continuar. Tus propios mensajes no se reenviaron. Consulta la lista para ver los chats que aún necesitan atención o que se pueden reanudar."
       },
       "NativeChatResumeRunStatusIcon": {
         "waitingForReply": "Esperando respuesta",
@@ -17655,6 +17667,11 @@
         "attention": "Requieren tu atención",
         "running": "En curso desde hace {{value0}}",
         "filter": "Mostrar chats"
+      },
+      "NativeChatResumeAutoNote": {
+        "resuming": "Reanudando automáticamente tras el reinicio.",
+        "resumed": "Reanudados automáticamente tras el reinicio.",
+        "changeInSettings": "Cambiar en Ajustes"
       }
     },
     "i18n": {
@@ -17739,6 +17756,7 @@
         "couldNotStart": "{{agent}} no pudo iniciarse.",
         "editSavedArguments": "Edítalos en Ajustes > Agentes > Argumentos.",
         "couldNotRestart": "{{agent}} no pudo reiniciarse.",
+        "codexCliTooOld": "Codex {{installedVersion}} es demasiado antiguo para los chats. Actualiza a {{minimumVersion}} o una versión posterior.",
         "notSignedIn": "{{agent}} no ha iniciado sesión.",
         "claudeSystemNotSignedIn": "Claude no ha iniciado sesión. Ejecuta `{{loginCommand}}` o elige una cuenta en los ajustes de Cuentas de Claude.",
         "claudeManagedNotSignedIn": "Esta cuenta de Claude no ha iniciado sesión. Vuelve a iniciar sesión en la configuración de Cuentas de Claude.",
@@ -17762,8 +17780,8 @@
         "chooseClaudeAccountThenSend": "Elija o agregue una en la configuración de Cuentas de Claude y vuelva a enviar su mensaje.",
         "providerExitedRow": "{{agent}} se detuvo mientras esta respuesta estaba en curso. Puede continuar en esta conversación.",
         "providerExitedRejection": "{{agent}} se detuvo antes de que se enviara este mensaje.",
-        "providerRejected": "El proveedor no aceptó este mensaje.",
-        "providerRejectedQuoted": "El proveedor no aceptó este mensaje: {{detail}}.",
+        "providerRejected": "{{agent}} no aceptó este mensaje.",
+        "providerRejectedQuoted": "{{agent}} no aceptó este mensaje: {{detail}}.",
         "attachmentEmpty": "Una imagen de este mensaje está vacía, así que el mensaje no se envió.",
         "attachmentTooLarge": "Una imagen de este mensaje es demasiado grande, así que el mensaje no se envió.",
         "attachmentLargerThan": "Una imagen de este mensaje supera los {{size}} MB, así que el mensaje no se envió.",
@@ -17977,6 +17995,19 @@
         "attachmentOwnerChanged": "Este espacio de trabajo cambió de host durante la conexión; vuelve a soltar los archivos.",
         "attachmentUnreadable": "No se pudieron leer los archivos soltados.",
         "tooManyAttachments": "Adjunta {{value0}} archivos o menos a la vez.",
+        "permissions": "Permisos",
+        "permissionAsk": "Pedir aprobación",
+        "permissionAskDescription": "Pregunta antes de ediciones y comandos que tu configuración no permite",
+        "permissionAskCodexDescription": "Edita archivos y ejecuta comandos en este espacio de trabajo; pregunta antes de cualquier otra cosa",
+        "permissionAskSharedDescription": "Pregunta antes de ediciones o comandos que aún no tiene permitidos",
+        "permissionAcceptEdits": "Aceptar ediciones",
+        "permissionAcceptEditsDescription": "Aprueba ediciones y comandos de archivos; pregunta por lo demás",
+        "permissionAuto": "Aprobar por mí",
+        "permissionAutoDescription": "Revisa las solicitudes de aprobación por ti",
+        "permissionFullAccess": "Acceso total",
+        "permissionFullAccessDescription": "Nunca pregunta antes de ediciones o comandos",
+        "permissionFullAccessCodexDescription": "Nunca pregunta; puede editar cualquier archivo y usar la red",
+        "permissionFullAccessSharedDescription": "Nunca pregunta antes de ediciones o comandos",
         "pasteFailed": "Error al pegar.",
         "commandAttachmentsUnsupported": "Quita los archivos adjuntos antes de usar un comando de la sesión de chat."
       },
@@ -18097,8 +18128,11 @@
       },
       "transcriptLabel": "Conversación",
       "toggle": {
-        "showTerminal": "Mostrar terminal",
-        "showChat": "Mostrar vista de chat"
+        "showTerminal": "Mostrar terminal"
+      },
+      "resumeInNewChat": {
+        "notSavedYet": "{{agent}} aún no ha guardado esta conversación. Inténtalo de nuevo cuando responda.",
+        "cannotResume": "Esta conversación de {{agent}} no se puede reanudar en un chat nativo."
       },
       "state": {
         "loading": {
@@ -18309,7 +18343,8 @@
         "one": "1 archivo modificado",
         "many": "{{count}} archivos modificados",
         "partial": "Diff parcial",
-        "recorded": "Totales de las ediciones registradas en este turno."
+        "showDiff": "Mostrar diferencias",
+        "hideDiff": "Ocultar diferencias"
       },
       "notices": {
         "contextCleared": "Contexto borrado",
@@ -18348,6 +18383,8 @@
         "subtitle": "Los archivos se añaden a tu mensaje como rutas que el agente puede leer."
       },
       "copyCode": "Copiar código",
+      "wrapLines": "Ajustar líneas",
+      "disableLineWrap": "Desactivar ajuste de línea",
       "context": {
         "unavailable": "El uso del contexto aún no se conoce. Estará disponible cuando el agente vuelva a responder.",
         "summary": "Contexto: {{used}} / {{window}} tokens ({{percent}} %), estimado a partir de la última respuesta.",
@@ -19513,5 +19550,16 @@
   },
   "projectField": {
     "updateFailed": "No se pudo actualizar el campo del proyecto"
-  }
+  },
+  "settings.agents.environmentName": "Nombre de la variable de entorno",
+  "settings.agents.environmentValue": "Valor de {{name}}",
+  "settings.agents.savedEnvironment": "Valor guardado · escribe para reemplazarlo",
+  "settings.agents.newEnvironment": "Valor",
+  "settings.agents.removeEnvironment": "Eliminar",
+  "settings.agents.loadingHost": "Cargando la configuración de agentes…",
+  "settings.agents.updateHost": "Actualiza este servidor para editar su configuración de inicio de agentes.",
+  "settings.agents.readFailed": "No se pudo leer la configuración de agentes. Comprueba la conexión con el host e inténtalo de nuevo.",
+  "settings.agents.saveFailed": "No se pudo guardar la configuración de agentes. Comprueba la conexión con el host e inténtalo de nuevo.",
+  "settings.agents.hostDefaults": "Valores predeterminados para nuevos agentes en el host seleccionado.",
+  "settings.agents.save": "Guardar"
 }

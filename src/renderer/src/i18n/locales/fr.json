@@ -117,6 +117,8 @@
   },
   "settings": {
     "chat": {
+      "permissionsTitle": "Autorisations pour les nouveaux chats",
+      "permissionsDescription": "S’applique uniquement aux nouveaux chats. Les agents ouverts dans un terminal utilisent Paramètres → Agents → Autorisations des agents.",
       "description": "Choisissez l’apparence et le nom des chats.",
       "names": {
         "title": "Noms des chats",
@@ -4183,7 +4185,12 @@
             "checkTooltip": "Chats qu'Orca n'a pas pu reprendre, ou dont il n'a pas pu confirmer la reprise, après le redémarrage. Cliquez pour plus de détails.",
             "resumingTooltip": "Restauration des conversations interrompues et demande de poursuite…",
             "resumingProgressLabel": "Reprise des discussions {{value0}}/{{value1}}",
-            "resumingProgressAria": "Reprise des discussions, {{value0}} sur {{value1}} terminées. Cliquez pour voir les détails."
+            "resumingProgressAria": "Reprise des discussions, {{value0}} sur {{value1}} terminées. Cliquez pour voir les détails.",
+            "resumedLabelOne": "1 discussion reprise",
+            "resumedLabel": "{{value0}} discussions reprises",
+            "resumedAriaOne": "1 discussion reprise. Cliquez pour la voir.",
+            "resumedAria": "{{value0}} discussions reprises. Cliquez pour les voir.",
+            "resumedTooltip": "Discussions reprises par Orca après le redémarrage. Cliquez pour les voir."
           },
           "provider": {
             "extra": {
@@ -11160,7 +11167,7 @@
           "sourceControlAiDefaults": "Recettes, prompts et valeurs par défaut de hosted review sont partagés par ce client ; les choix de modèle et la découverte restent limités à l'hôte où l'agent s'exécute.",
           "projectOnThisHost": "Projet sur cette machine",
           "repositorySourceControlAi": "Ces substitutions s'appliquent à cette configuration de projet et héritent des valeurs par défaut IA du contrôle source côté client tant qu'elles ne sont pas personnalisées.",
-          "agentLaunchDefaults": "L'agent par défaut, les substitutions de commandes, les arguments CLI et l'environnement de lancement sont des préférences du client. Les lancements SSH et serveur distant valident toujours la disponibilité de l'hôte à l'exécution.",
+          "agentLaunchDefaults": "L’agent par défaut, les commandes personnalisées, les arguments de la CLI et l’environnement de lancement sont enregistrés sur l’hôte sélectionné.",
           "clientDefaultProjectScopes": "Par défaut du client + portées projet",
           "terminalQuickCommands": "Les commandes sont enregistrées sur ce client, puis définies globalement ou pour une configuration de projet afin de s'exécuter depuis le contexte de terminal sélectionné.",
           "hostOverride": "Substitution par hôte",
@@ -17650,7 +17657,8 @@
         "expandNode": "Développer {{value0}}",
         "selectMachine": "Sélectionner toutes les discussions sur {{value0}}",
         "sshHost": "SSH",
-        "done": "Terminé"
+        "done": "Terminé",
+        "resultListLabel": "Discussions de cette reprise"
       },
       "linear-issue-attribute-filter-coverage-notice": {
         "statusPartialTeamCoverage": "Filtrage des statuts des équipes {{value0}} sur {{value1}} : les problèmes des équipes restantes ne sont pas inclus.",
@@ -17737,7 +17745,11 @@
         "resumedTitleOne": "{{value0}} discussion sur 1 reprise",
         "resumingTitleOne": "Reprise d’une discussion",
         "resumingTitle": "Reprise de {{value0}} discussions",
-        "description": "Chaque discussion est restaurée avec tout son contexte, et l’agent vérifie où il s’était arrêté. Vous pouvez fermer cette fenêtre ; la barre d’état suit la progression."
+        "description": "Chaque discussion est restaurée avec tout son contexte, et l’agent vérifie où il s’était arrêté. Vous pouvez fermer cette fenêtre ; la barre d’état suit la progression.",
+        "finished": "Ces discussions étaient en cours quand Orca s’est fermé. Orca a restauré chacune là où elle s’était arrêtée, avec tout son contexte, et a demandé à l’agent de vérifier ce qu’il faisait avant de continuer. Vos propres messages n’ont pas été renvoyés.",
+        "finishedUpdate": "Ces discussions étaient en cours quand Orca a installé une mise à jour. Orca a restauré chacune là où elle s’était arrêtée, avec tout son contexte, et a demandé à l’agent de vérifier ce qu’il faisait avant de continuer. Vos propres messages n’ont pas été renvoyés.",
+        "finishedPartial": "Ces discussions étaient en cours quand Orca s’est fermé. Celles qu’Orca a reprises ont été restaurées là où elles s’étaient arrêtées, avec tout leur contexte, et invitées à vérifier ce qu’elles faisaient avant de continuer. Vos propres messages n’ont pas été renvoyés. Consultez la liste pour voir les discussions qui nécessitent encore votre attention ou qui peuvent être reprises.",
+        "finishedPartialUpdate": "Ces discussions étaient en cours quand Orca a installé une mise à jour. Celles qu’Orca a reprises ont été restaurées là où elles s’étaient arrêtées, avec tout leur contexte, et invitées à vérifier ce qu’elles faisaient avant de continuer. Vos propres messages n’ont pas été renvoyés. Consultez la liste pour voir les discussions qui nécessitent encore votre attention ou qui peuvent être reprises."
       },
       "NativeChatResumeRunStatusIcon": {
         "waitingForReply": "En attente de réponse",
@@ -17757,6 +17769,11 @@
         "attention": "À traiter",
         "running": "En cours depuis {{value0}}",
         "filter": "Afficher les discussions"
+      },
+      "NativeChatResumeAutoNote": {
+        "resuming": "Reprise automatique après le redémarrage.",
+        "resumed": "Reprises automatiquement après le redémarrage.",
+        "changeInSettings": "Modifier dans les paramètres"
       }
     },
     "i18n": {
@@ -17841,6 +17858,7 @@
         "couldNotStart": "{{agent}} n'a pas pu démarrer.",
         "editSavedArguments": "Modifiez-les dans Paramètres > Agents > Arguments.",
         "couldNotRestart": "{{agent}} n'a pas pu redémarrer.",
+        "codexCliTooOld": "Codex {{installedVersion}} est trop ancien pour les conversations. Mettez-le à jour vers {{minimumVersion}} ou une version ultérieure.",
         "notSignedIn": "{{agent}} n’est pas connecté.",
         "claudeSystemNotSignedIn": "Claude n’est pas connecté. Exécutez `{{loginCommand}}`, ou choisissez un compte dans les paramètres des Comptes Claude.",
         "claudeManagedNotSignedIn": "Ce compte Claude n’est pas connecté. Reconnectez-vous dans les paramètres des Comptes Claude.",
@@ -17864,8 +17882,8 @@
         "chooseClaudeAccountThenSend": "Choisissez-en un ou ajoutez-en un dans les paramètres Comptes Claude, puis renvoyez votre message.",
         "providerExitedRow": "{{agent}} s'est arrêté pendant que cette réponse était en cours. Vous pouvez continuer dans cette conversation.",
         "providerExitedRejection": "{{agent}} s'est arrêté avant l'envoi de ce message.",
-        "providerRejected": "Le fournisseur n'a pas accepté ce message.",
-        "providerRejectedQuoted": "Le fournisseur n'a pas accepté ce message : {{detail}}.",
+        "providerRejected": "{{agent}} n'a pas accepté ce message.",
+        "providerRejectedQuoted": "{{agent}} n'a pas accepté ce message : {{detail}}.",
         "attachmentEmpty": "Une image de ce message est vide, le message n'a donc pas été envoyé.",
         "attachmentTooLarge": "Une image de ce message est trop volumineuse, le message n'a donc pas été envoyé.",
         "attachmentLargerThan": "Une image de ce message dépasse {{size}} Mo, le message n'a donc pas été envoyé.",
@@ -18079,6 +18097,19 @@
         "attachmentOwnerChanged": "Cet espace de travail a changé d'hôte lors de la connexion : supprimez à nouveau les fichiers.",
         "attachmentUnreadable": "Impossible de lire les fichiers supprimés.",
         "tooManyAttachments": "Joignez {{value0}} fichiers maximum à la fois.",
+        "permissions": "Autorisations",
+        "permissionAsk": "Demander l’approbation",
+        "permissionAskDescription": "Demande avant les modifications et commandes que vos réglages n'autorisent pas",
+        "permissionAskCodexDescription": "Modifie des fichiers et exécute des commandes dans cet espace de travail ; demande avant toute autre action",
+        "permissionAskSharedDescription": "Demande avant les modifications ou commandes qui ne sont pas déjà autorisées",
+        "permissionAcceptEdits": "Accepter les modifications",
+        "permissionAcceptEditsDescription": "Approuve les modifications et commandes de fichiers ; demande pour le reste",
+        "permissionAuto": "Approuver pour moi",
+        "permissionAutoDescription": "Examine les demandes d’approbation pour vous",
+        "permissionFullAccess": "Accès complet",
+        "permissionFullAccessDescription": "Ne demande jamais avant les modifications ou les commandes",
+        "permissionFullAccessCodexDescription": "Ne demande jamais ; peut modifier n’importe quel fichier et utiliser le réseau",
+        "permissionFullAccessSharedDescription": "Ne demande jamais avant les modifications ou les commandes",
         "pasteFailed": "Échec du collage.",
         "commandAttachmentsUnsupported": "Retirez les pièces jointes avant d'utiliser une commande de session de chat."
       },
@@ -18199,8 +18230,11 @@
       },
       "transcriptLabel": "Conversation",
       "toggle": {
-        "showTerminal": "Afficher le terminal",
-        "showChat": "Afficher la vue chat"
+        "showTerminal": "Afficher le terminal"
+      },
+      "resumeInNewChat": {
+        "notSavedYet": "{{agent}} n'a pas encore enregistré cette conversation. Réessayez après sa réponse.",
+        "cannotResume": "Cette conversation {{agent}} ne peut pas être reprise dans un chat natif."
       },
       "state": {
         "loading": {
@@ -18278,7 +18312,8 @@
         "one": "1 fichier modifié",
         "many": "{{count}} a modifié les fichiers",
         "partial": "Différence partielle",
-        "recorded": "Totaux des modifications enregistrées à ce tour."
+        "showDiff": "Afficher les différences",
+        "hideDiff": "Masquer les différences"
       },
       "receipt": {
         "unavailable": "Réponse sélectionnée indisponible",
@@ -18392,6 +18427,8 @@
         "subtitle": "Les fichiers sont ajoutés à votre message sous forme de chemins que l'agent peut lire."
       },
       "copyCode": "Copier le code",
+      "wrapLines": "Retour à la ligne",
+      "disableLineWrap": "Désactiver le retour à la ligne",
       "context": {
         "unavailable": "L'utilisation du contexte n'est pas encore connue. Elle sera disponible après la prochaine réponse de l'agent.",
         "summary": "Contexte : {{used}} / {{window}} tokens ({{percent}} %), estimation basée sur la dernière réponse.",
@@ -19514,5 +19551,16 @@
   },
   "projectField": {
     "updateFailed": "Échec de la mise à jour du champ du projet"
-  }
+  },
+  "settings.agents.environmentName": "Nom de la variable d’environnement",
+  "settings.agents.environmentValue": "Valeur de {{name}}",
+  "settings.agents.savedEnvironment": "Valeur enregistrée · saisir pour remplacer",
+  "settings.agents.newEnvironment": "Valeur",
+  "settings.agents.removeEnvironment": "Supprimer",
+  "settings.agents.loadingHost": "Chargement des paramètres des agents…",
+  "settings.agents.updateHost": "Mettez ce serveur à jour pour modifier ses paramètres de lancement des agents.",
+  "settings.agents.readFailed": "Impossible de lire les paramètres des agents. Vérifiez la connexion à l’hôte et réessayez.",
+  "settings.agents.saveFailed": "Impossible d’enregistrer les paramètres des agents. Vérifiez la connexion à l’hôte et réessayez.",
+  "settings.agents.hostDefaults": "Paramètres par défaut des nouveaux agents sur l’hôte sélectionné.",
+  "settings.agents.save": "Enregistrer"
 }
