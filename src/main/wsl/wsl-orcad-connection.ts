@@ -26,6 +26,7 @@ import {
 } from './wsl-orcad-deploy'
 import type { WslOrcadHostTarget } from './wsl-orcad-host-target'
 import { createWslOrcadHostTransport } from './wsl-orcad-host-transport'
+import { trackWslOrcadHostEnvironment } from './wsl-orcad-host-environments'
 import {
   listenWslOrcadStdioBridge,
   type WslOrcadStdioBridgeOptions
@@ -166,6 +167,7 @@ export class WslOrcadConnectionManager {
     }
     this.active.delete(key)
     await entry.forward.close()
+    trackWslOrcadHostEnvironment(entry.connection, null)
     this.dependencies.onChange?.(entry.connection.distro, null, { state: 'closed' })
   }
 
@@ -221,6 +223,7 @@ export class WslOrcadConnectionManager {
     if (current) {
       this.active.delete(key)
       await current.forward.close()
+      trackWslOrcadHostEnvironment(current.connection, null)
       this.dependencies.onChange?.(distro, null, status.pending)
     }
     const forward = await this.listen(transport, {
@@ -262,6 +265,7 @@ export class WslOrcadConnectionManager {
         }
       }
       this.active.set(key, entry)
+      trackWslOrcadHostEnvironment(entry.connection, entry.connection)
       this.dependencies.onChange?.(distro, entry.connection, status.ready)
       return entry.connection
     } catch (error) {
@@ -287,6 +291,7 @@ export class WslOrcadConnectionManager {
       entry.connection = { ...entry.connection, pairingOffer, fullVersion, pid }
       this.active.set(key, entry)
     }
+    trackWslOrcadHostEnvironment(entry.connection, entry.connection)
     if (changed || announce) {
       this.dependencies.onChange?.(entry.connection.distro, entry.connection, announce ?? READY)
     }
