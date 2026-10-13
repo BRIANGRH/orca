@@ -1,3 +1,15 @@
+import type { AppBackgroundScope } from './app-background-settings'
+
+export type AppBackgroundGlobalSettings = {
+  /** Main-owned `<uuid>.<ext>` under userData/appearance; written only by appBackground:commit. */
+  appBackgroundImageId?: string | null
+  appBackgroundScope?: AppBackgroundScope
+  appBackgroundImageOpacity?: number
+  appBackgroundBlur?: number
+  /** Chrome surface opacity; only applies while a background image is set. */
+  appBackgroundPanelOpacity?: number
+}
+
 export type AppBackgroundPickRejection =
   | 'tooLarge'
   | 'unsupportedType'

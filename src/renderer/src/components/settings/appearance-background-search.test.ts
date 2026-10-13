@@ -12,6 +12,7 @@ function appearanceNavEntries(isWebClient: boolean) {
     isWindowsTerminalHost: false,
     isWebClient,
     nativeChatEnabled: false,
+    hostQueuesMessages: false,
     managedBrowserCreationEnabled: false,
     mobileEmulatorCreationEnabled: false,
     isDev: false,
