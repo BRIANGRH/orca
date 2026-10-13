@@ -78,8 +78,8 @@ function descriptionFrom(lines: readonly string[]): ReactNode {
 // Why: a short outcome reads best with its action beside it; the toaster's default wraps actions below.
 const INLINE_ACTION_CLASS_NAMES = {
   content: '!basis-0',
-  actionButton:
-    '!m-0 !self-center !rounded-md !border !border-border !bg-transparent !text-popover-foreground hover:!bg-accent'
+  // Only placement: the button keeps the toaster's own look, like every other toast action.
+  actionButton: '!m-0 !self-center'
 }
 
 // A lone title centres with the taller button; a description keeps the icon on the title's line.
