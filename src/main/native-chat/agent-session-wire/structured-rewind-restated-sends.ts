@@ -11,6 +11,7 @@ import type { AgentJournalSubmission } from '../../../shared/agent-session-journ
 import type { JournalReplacementItem } from '../agent-session-journal/journal-epoch-replacement'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { JournalStoppedHistory } from '../agent-session-journal/journal-stopped-message-appends'
+import type { StructuredAgentSessionLogger } from './structured-agent-session-logger'
 import { rewindBoundaryIndex, rewindProviderKey } from './structured-rewind-boundary'
 
 /** The stopped sends, keyed by each one's own item id, which its retained row keeps. */
@@ -43,7 +44,8 @@ export function rewindRestatedSends(journal: RewindJournal): RewindRestatedSends
 export function withRewindRestatedSends(
   items: readonly JournalReplacementItem[],
   journal: RewindJournal,
-  target: { threadId: string; turnId: string } | null
+  target: { threadId: string; turnId: string } | null,
+  log: { logger: Pick<StructuredAgentSessionLogger, 'warn'>; sessionId: string }
 ): JournalReplacementItem[] {
   const sends = rewindRestatedSends(journal)
   const { items: rows, submissions } = journal.snapshot()
@@ -70,7 +72,17 @@ export function withRewindRestatedSends(
     const after = rebuilt.findLastIndex(
       (item) => (sequences.get(agentJournalItemKey(item.identity)) ?? Infinity) < record.sequence
     )
-    const anchor = rebuilt[after === -1 ? rebuilt.length - 1 : after]!
+    if (after === -1) {
+      // A covered message's bubble always precedes its record; anchoring it anywhere else would
+      // let a later rewind drop it and append the message twice.
+      log.logger.warn('a kept stopped-message append has no row before it; not restated', {
+        scope: 'stopped-history',
+        sessionId: log.sessionId,
+        appendId
+      })
+      continue
+    }
+    const anchor = rebuilt[after]!
     anchor.appendsAfter = [...(anchor.appendsAfter ?? []), { appendId, messageIds }]
   }
   return rebuilt
