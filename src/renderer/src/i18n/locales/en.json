@@ -184,6 +184,8 @@
   },
   "settings": {
     "chat": {
+      "permissionsTitle": "Permissions for new chats",
+      "permissionsDescription": "Applies to new chats only. Agents you open in a terminal use Settings → Agents → Agent Permissions.",
       "description": "Choose how chats look and behave.",
       "names": {
         "title": "Chat names",
@@ -519,6 +521,18 @@
             "07f788de83": "WebSocket"
           }
         }
+      },
+      "pairingSecurity": {
+        "hide": "Hide",
+        "storedCodeInsecureOrigin": "This browser keeps a reusable pairing code, because this page is plain http on another machine. Anyone who can read this browser’s storage could use it. For a safer pairing, open Orca over https, at localhost on this computer, or through an SSH tunnel, and pair again.",
+        "storedCodeNoEd25519": "This browser keeps a reusable pairing code, because it cannot create secure sign-in keys (Ed25519). Use a current browser and pair again for a safer pairing.",
+        "sessionInsecureOrigin": "This pairing lasts only while this tab is open, because this page is plain http on another machine. For a pairing this browser remembers, open Orca over https, at localhost on this computer, or through an SSH tunnel.",
+        "sessionNoEd25519": "This pairing lasts only while this tab is open, because this browser cannot create secure sign-in keys (Ed25519). Use a current browser for a pairing it remembers."
+      },
+      "runtimeAuth": {
+        "insecureOrigin": "Orca refused to pair from this page: it is plain http on another machine, so anyone on the network path could replace it and take the pairing code. Open the web client over https, at localhost on this computer, or through an SSH tunnel. To allow it anyway, the server operator can restart Orca with ORCA_ALLOW_INSECURE_WEB_PAIRING=1.",
+        "deviceDowngraded": "This Orca server no longer supports this browser’s sign-in key (it may have been downgraded). Update the server, or pair this browser again.",
+        "unauthorized": "Unauthorized. Pair this web client again."
       }
     },
     "store": {
@@ -2142,7 +2156,8 @@
         "expandNode": "Expand {{value0}}",
         "selectMachine": "Select all chats on {{value0}}",
         "sshHost": "SSH",
-        "done": "Done"
+        "done": "Done",
+        "resultListLabel": "Chats in this resume"
       },
       "StarNagCard": {
         "92b0f9d921": "is authenticated and try again.",
@@ -3228,7 +3243,8 @@
           }
         },
         "dialog": {
-          "f26c4baeda": "Close"
+          "f26c4baeda": "Close",
+          "minimize": "Minimize"
         },
         "repo": {
           "multi": {
@@ -4330,7 +4346,12 @@
             "checkTooltip": "Chats Orca couldn’t resume, or couldn’t confirm it resumed, after the restart. Click for details.",
             "resumingTooltip": "Restoring interrupted chats and asking them to carry on…",
             "resumingProgressLabel": "Resuming chats {{value0}}/{{value1}}",
-            "resumingProgressAria": "Resuming chats, {{value0}} of {{value1}} done. Click to open details."
+            "resumingProgressAria": "Resuming chats, {{value0}} of {{value1}} done. Click to open details.",
+            "resumedLabelOne": "1 chat resumed",
+            "resumedLabel": "{{value0}} chats resumed",
+            "resumedAriaOne": "1 chat resumed. Click to see it.",
+            "resumedAria": "{{value0}} chats resumed. Click to see them.",
+            "resumedTooltip": "Chats Orca resumed after the restart. Click to see them."
           },
           "StatusBarUsageChangeNotices": {
             "compactTitle": "Usage display is now compact",
@@ -4751,7 +4772,6 @@
           "statusUpdateAvailable": "Update available",
           "statusCantUpdate": "Skipped",
           "cantUpdateReason": "Orca left this skill out of the update command.",
-          "skippedReasonUnrecognized": "The copy here doesn’t match the official version — it may be modified, or a different skill with the same name. Orca left it out of the update so it won’t overwrite it. Remove it if you want Orca to update this skill.",
           "skippedReasonReadOnly": "This copy is in a read-only location, so Orca left it out of the update. Change its permissions to let Orca update it.",
           "skippedReasonInaccessible": "Orca couldn’t read this copy, so it left the skill out of the update.",
           "skippedReasonInRepo": "This is a project skill, not a global one — Orca only updates your global skills, so it left this out of the update.",
@@ -4759,7 +4779,6 @@
           "skippedReasonExternalLink": "This copy is a shortcut pointing outside Orca’s skill folders, so Orca left it out of the update.",
           "skippedReasonBrokenLink": "This copy is a shortcut to something that no longer exists, so Orca left it out — you can safely delete it.",
           "chipCurrent": "Current",
-          "chipUnrecognized": "Unrecognized",
           "chipInaccessible": "Inaccessible",
           "chipDuplicate": "Duplicate",
           "chipExternalLink": "External link",
@@ -4768,7 +4787,6 @@
           "chipInRepo": "In a repo",
           "chipPluginCache": "Plugin cache",
           "tipCurrent": "This copy matches the current official version.",
-          "tipUnrecognized": "This copy doesn’t match any official version — it may be modified, or a different skill with the same name.",
           "tipInaccessible": "Orca couldn’t read this copy (a permissions or file error).",
           "tipDuplicate": "A separate copy of this skill, installed apart from the main one.",
           "tipExternalLink": "A shortcut pointing outside Orca’s skill folders.",
@@ -4776,11 +4794,7 @@
           "tipReadOnly": "This copy is in a read-only location.",
           "tipInRepo": "This copy lives inside a project, not your global skills.",
           "tipPluginCache": "This copy is managed by a plugin.",
-          "skippedReasonDuplicate": "This is a separate copy, so the update won’t reach it — the command only refreshes the main copy. Remove this copy, then reinstall the skill so this location follows the main one.",
-          "skippedReasonNewer": "This copy is a later version than the one this build of Orca ships, so Orca left it alone rather than roll it back. Updating Orca will bring the two back in line.",
-          "skippedReasonStaleRecord": "The skills updater has no usable record of this copy, so it reports the skill as already up to date and changes nothing. Reinstall it to bring the record back in line: {{value0}}",
-          "chipNewer": "Newer",
-          "tipNewer": "This copy is a later version than the one this build of Orca ships."
+          "skippedReasonDuplicate": "This is a separate copy, so the update won’t reach it — the command only refreshes the main copy. Remove this copy, then reinstall the skill so this location follows the main one."
         },
         "SkillFreshnessUpdateDialog": {
           "title": "Update skills",
@@ -4821,14 +4835,20 @@
           "scanOutsideRoot": "Orca skipped this plugin path because it points outside the plugin cache.",
           "scanIoErrorWithCode": "Orca could not read this plugin path ({{value0}}).",
           "scanIoError": "Orca could not read this plugin path.",
-          "scanIssueLimit": "Orca found too many skipped plugin folders to list individually."
+          "scanIssueLimit": "Orca found too many skipped plugin folders to list individually.",
+          "unselectedForeignOne": "1 skill not installed by Orca is unselected.",
+          "unselectedForeignMany": "{{value0}} skills not installed by Orca are unselected."
         },
         "SkillUpdateResultRows": {
           "stillOutdated": "Still out of date after the update ran."
         },
         "SkillUpdateRow": {
           "oneLocation": "1 location",
-          "manyLocations": "{{value0}} locations"
+          "manyLocations": "{{value0}} locations",
+          "notFromOrca": "Not from Orca",
+          "notFromOrcaSourceTip": "Installed from {{value0}}. Selecting it replaces it with Orca’s version.",
+          "notFromOrcaNoRecordTip": "No Orca install record for this copy. Selecting it replaces it with Orca’s version.",
+          "includeSkill": "Include {{value0}}"
         },
         "SkillFreshnessStatusPill": {
           "updateAvailable": "Update available",
@@ -5322,8 +5342,7 @@
         "AddProjectFromFolderDialog": {
           "7d1f51678c": "Add Project",
           "7726a16374": "Cancel",
-          "046751dbfb": "Add this folder as a separate Orca project.",
-          "e643b30398": "Project added on SSH host"
+          "046751dbfb": "Add this folder as a separate Orca project."
         },
         "AddRepoCreateStep": {
           "0ae45b8238": "my-project",
@@ -5340,7 +5359,6 @@
           "5e97f0c4b9": "Project created",
           "2c12db1511": "Project already added",
           "875dda0995": "Enter a host parent path.",
-          "ssh_parent_manual": "Enter an SSH parent path.",
           "45b7c26034": "Create project",
           "85085d74d2": "Creating…"
         },
@@ -5382,13 +5400,9 @@
           "e52454b7f6": "Open as Folder"
         },
         "AddRepoRemoteStep": {
-          "5b205b5281": "Stop scan",
           "6680289908": "/home/user/project",
           "ef410aa881": "Host path",
-          "0416bde073": "Add in Settings",
-          "df6fbcf880": "No SSH targets configured.",
           "44637f43bd": "SSH target",
-          "80557be85a": "Choose a connected SSH target and enter the path to a Git repository.",
           "serverDescription": "Choose an SSH host that {{server}} connects to, and enter the path to a Git repository on it.",
           "serverEmpty": "{{server}} has no SSH hosts yet.",
           "serverAddHost": "Add SSH host",
@@ -5396,10 +5410,7 @@
           "007651bdf9": "Navigate to a directory and click Select to choose it.",
           "dd3ff65486": "Browse remote filesystem",
           "36d427bb66": "Add project on SSH host",
-          "35831a7312": "Adding...",
-          "lockedDescription": "Enter the path to a Git repository on {{value0}}.",
-          "lockedDisconnected": "{{value0}} is disconnected.",
-          "93e0221434": "Connect"
+          "35831a7312": "Adding..."
         },
         "AddRepoServerStartStep": {
           "ae990c86a0": "Back to add options",
@@ -6131,12 +6142,8 @@
                   "serverSshTitle": "Project on this server's SSH host",
                   "serverSshDescription": "Open a project folder from an SSH host this server connects to",
                   "serverSshUpdate": "Update this server to add projects on its SSH hosts",
-                  "sshCreateUnavailable": "Not available for SSH hosts yet",
-                  "3d162cc76f": "Project on SSH host",
                   "fb4fc5380e": "Local project, Git repo, or folder with many repos",
                   "2281fdc8c7": "Browse folder",
-                  "sshBrowseTitle": "Open project on SSH host",
-                  "sshBrowseDescription": "Existing Git repository or folder on this SSH host",
                   "runtimeBrowseDescription": "Existing Git repository or folder on this host"
                 }
               }
@@ -11334,7 +11341,7 @@
           "sourceControlAiDefaults": "Recipes, prompts, and hosted-review defaults are shared by this client; model choices and discovery stay scoped to the host where the agent runs.",
           "projectOnThisHost": "Project on this host",
           "repositorySourceControlAi": "These overrides apply to this project setup and inherit the client Source Control AI defaults until customized.",
-          "agentLaunchDefaults": "Default agent, command overrides, CLI arguments, and launch environment are client preferences. SSH and remote server launches still validate host availability at run time.",
+          "agentLaunchDefaults": "Default agent, command overrides, CLI arguments, and launch environment are saved on the selected host.",
           "clientDefaultProjectScopes": "Client default + project scopes",
           "terminalQuickCommands": "Commands are saved on this client, then scoped globally or to a project setup so they run from the selected terminal context.",
           "hostOverride": "Host override",
@@ -12583,7 +12590,7 @@
           }
         },
         "sshHostServer": {
-          "sourceChanged": "Changed on an older Orca: runs the relay until it is moved to its managed server again.",
+          "sourceChanged": "An older version of Orca changed this host’s projects. Move those changes to its managed server, or keep the server’s version, to connect again.",
           "deploying": "Setting up a managed Orca server…",
           "converting": "Moving this host’s projects to its managed Orca server…",
           "connecting": "Connecting to the managed Orca server…",
@@ -17895,7 +17902,11 @@
         "resumingTitleOne": "Resuming 1 chat",
         "resumingTitle": "Resuming {{value0}} chats",
         "description": "Each chat is restored with its full context and asked to check where it stopped. You can close this; the status bar keeps track.",
-        "resumedTitleOne": "Resumed {{value0}} of 1 chat"
+        "resumedTitleOne": "Resumed {{value0}} of 1 chat",
+        "finished": "These chats were working when Orca closed. Orca restored each one where it stopped, with its full context, and asked the agent to check what it was doing before carrying on. Your own prompts weren’t re-sent.",
+        "finishedUpdate": "These chats were working when Orca installed an update. Orca restored each one where it stopped, with its full context, and asked the agent to check what it was doing before carrying on. Your own prompts weren’t re-sent.",
+        "finishedPartial": "These chats were working when Orca closed. The ones Orca resumed were restored where they stopped, with their full context, and asked to check what they were doing before carrying on. Your own prompts weren’t re-sent. Check the list for chats that still need attention or can be resumed.",
+        "finishedPartialUpdate": "These chats were working when Orca installed an update. The ones Orca resumed were restored where they stopped, with their full context, and asked to check what they were doing before carrying on. Your own prompts weren’t re-sent. Check the list for chats that still need attention or can be resumed."
       },
       "NativeChatResumeRunStatusIcon": {
         "waitingForReply": "Waiting for a reply",
@@ -17915,6 +17926,11 @@
         "attention": "Need you",
         "running": "Running {{value0}}",
         "filter": "Show chats"
+      },
+      "NativeChatResumeAutoNote": {
+        "resuming": "Resuming automatically after the restart.",
+        "resumed": "Resumed automatically after the restart.",
+        "changeInSettings": "Change in Settings"
       }
     },
     "i18n": {
@@ -18041,6 +18057,7 @@
         "sendAgainToTryOnceMore": "Send your message again to try once more.",
         "couldNotStart": "{{agent}} couldn't start.",
         "couldNotRestart": "{{agent}} couldn't restart.",
+        "codexCliTooOld": "Codex {{installedVersion}} is too old for chats. Update to {{minimumVersion}} or newer.",
         "notSignedIn": "{{agent}} is not signed in.",
         "claudeSystemNotSignedIn": "Claude isn't signed in. Run `{{loginCommand}}`, or choose an account in Claude Accounts settings.",
         "claudeManagedNotSignedIn": "This Claude account isn't signed in. Sign in again in Claude Accounts settings.",
@@ -18064,8 +18081,8 @@
         "chooseClaudeAccountThenSend": "Choose or add one in Claude Accounts settings, then send your message again.",
         "providerExitedRow": "{{agent}} stopped while this response was in progress. You can continue in this conversation.",
         "providerExitedRejection": "{{agent}} stopped before this message was sent.",
-        "providerRejected": "The provider did not accept this message.",
-        "providerRejectedQuoted": "The provider did not accept this message: {{detail}}.",
+        "providerRejected": "{{agent}} didn't accept this message.",
+        "providerRejectedQuoted": "{{agent}} didn't accept this message: {{detail}}.",
         "attachmentEmpty": "An image on this message is empty, so the message was not sent.",
         "attachmentTooLarge": "An image on this message is too large, so the message was not sent.",
         "attachmentLargerThan": "An image on this message is larger than {{size}} MB, so the message was not sent.",
@@ -18210,7 +18227,8 @@
         "one": "1 changed file",
         "many": "{{count}} changed files",
         "partial": "Partial diff",
-        "recorded": "Totals from recorded edits in this turn."
+        "showDiff": "Show diff",
+        "hideDiff": "Hide diff"
       },
       "receipt": {
         "unavailable": "Selected answer unavailable",
@@ -18283,7 +18301,6 @@
         "imageSaving": "Saving pasted image…",
         "worktreeNotReady": "Worktree not ready — try again in a moment.",
         "pasteUnavailable": "Can't paste — this chat isn't accepting input right now.",
-        "uploadingAttachments": "Uploading {{value0}} file(s) to remote…",
         "model": "Model",
         "effort": "Effort",
         "fastMode": "Fast mode",
@@ -18323,6 +18340,19 @@
         "attachmentOwnerChanged": "This workspace changed hosts while attaching — drop the files again.",
         "attachmentUnreadable": "Couldn't read the dropped files.",
         "tooManyAttachments": "Attach {{value0}} or fewer files at a time.",
+        "permissions": "Permissions",
+        "permissionAsk": "Ask for approval",
+        "permissionAskDescription": "Asks before edits and commands your settings don't allow",
+        "permissionAskCodexDescription": "Edits files and runs commands in this workspace; asks before anything else",
+        "permissionAskSharedDescription": "Asks before edits or commands it isn't already allowed to make",
+        "permissionAcceptEdits": "Accept edits",
+        "permissionAcceptEditsDescription": "Approves file edits and file commands; asks for the rest",
+        "permissionAuto": "Approve for me",
+        "permissionAutoDescription": "Reviews approval requests for you",
+        "permissionFullAccess": "Full access",
+        "permissionFullAccessDescription": "Never asks before edits or commands",
+        "permissionFullAccessCodexDescription": "Never asks; can edit any file and use the network",
+        "permissionFullAccessSharedDescription": "Never asks before edits or commands",
         "pasteFailed": "Paste failed.",
         "commandAttachmentsUnsupported": "Remove attachments before using a chat-session command."
       },
@@ -18492,8 +18522,11 @@
       },
       "transcriptLabel": "Conversation",
       "toggle": {
-        "showTerminal": "Show terminal",
-        "showChat": "Show chat view"
+        "showTerminal": "Show terminal"
+      },
+      "resumeInNewChat": {
+        "notSavedYet": "{{agent}} hasn't saved this conversation yet. Try again after it replies.",
+        "cannotResume": "This {{agent}} conversation can't be resumed in a native chat."
       },
       "state": {
         "loading": {
@@ -18610,6 +18643,8 @@
         "subtitle": "Files are added to your message as paths the agent can read."
       },
       "copyCode": "Copy code",
+      "wrapLines": "Wrap lines",
+      "disableLineWrap": "Disable line wrap",
       "context": {
         "unavailable": "Context usage is not known yet. It becomes available after the agent next responds.",
         "summary": "Context: {{used}} / {{window}} tokens ({{percent}}%), estimated from the last response.",
@@ -19069,7 +19104,15 @@
         "inlineVisualsCopy": "Let the agent show charts, diagrams and mockups inside its replies. Applies to newly started chats.",
         "inlineVisualsToggleLabel": "Toggle inline visuals",
         "queueFollowUpsCopy": "Messages you send while the agent is working wait as cards you can steer, edit, or delete. Messages with images send right away.",
-        "queueFollowUpsToggleLabel": "Toggle queue follow-ups"
+        "queueFollowUpsToggleLabel": "Toggle queue follow-ups",
+        "behaviorTitle": "Behavior",
+        "resumeSearchUpdate": "update",
+        "resumeSearchRelaunch": "relaunch",
+        "queueSearchQueue": "queue",
+        "queueSearchSteer": "steer",
+        "shellEnvSearchVariables": "environment variables",
+        "shellEnvSearchPath": "PATH",
+        "shellEnvSearchProxy": "proxy"
       }
     },
     "agentChildRow": {
@@ -19196,14 +19239,15 @@
       "eyebrow": "New",
       "title": "Native chat got an upgrade",
       "chatModeNote": "New agent tabs still open in the terminal, as before.",
-      "chatModeLabel": "Turn on chat mode",
-      "chatModeHint": "New agent tabs open as chat instead.",
+      "okay": "Okay",
+      "enableNow": "Enable Now",
+      "enableError": "Could not enable chat mode.",
       "intro": "New chats with supported agents now open in the upgraded chat view. To move between chat and CLI, open {{panel}} in the right sidebar:",
       "resumeInNativeChat": "{{action}} opens a supported CLI conversation in native chat.",
       "resumeInCli": "{{action}} copies a Claude or Codex chat into a new CLI session. The original chat stays as it is.",
       "settingsInstruction": "Manage Chat UI in",
       "settingsLink": "Settings → Experimental",
-      "gotIt": "Got it"
+      "gotIt": "Got It"
     },
     "voice": {
       "demoPrompt": "Review this diff for edge cases and add tests for anything you find.",
@@ -19480,6 +19524,38 @@
       "learnMore": "Learn more",
       "dontShowAgain": "Don't show again",
       "dismiss": "Dismiss"
+    },
+    "newerDaemonBanner": {
+      "failedTitle": "Couldn't reopen this terminal",
+      "title": "This terminal was opened in a newer version of Orca",
+      "resumableBody": "Reopen it here to keep working. Your agent session will resume.",
+      "reopening": "Reopening…",
+      "tryAgain": "Try again",
+      "reopenTerminal": "Reopen {{count}} terminals",
+      "reopenTerminal_one": "Reopen terminal",
+      "reopenTerminal_other": "Reopen {{count}} terminals",
+      "reopened": "Reopened {{count}} terminals",
+      "reopened_one": "Reopened {{count}} terminal",
+      "reopened_other": "Reopened {{count}} terminals",
+      "resumed": "{{count}} agent sessions resumed.",
+      "resumed_one": "{{count}} agent session resumed.",
+      "resumed_other": "{{count}} agent sessions resumed."
+    },
+    "severedDaemonBanner": {
+      "unknownCount": "its running terminals",
+      "count": "{{count}} running terminals",
+      "unverifiable": "Orca could not verify the terminal service process, so nothing was stopped.",
+      "alreadyReplaced": "The terminal service was already replaced; nothing was stopped.",
+      "restarted": "Terminal service restarted.",
+      "failed": "Restart failed.",
+      "title": "Terminal service is running without its program files",
+      "body": "The terminal service on this computer started from an AppImage that is no longer mounted. It still runs {{sessions}}, but it can crash at any moment. Until you restart it, new terminals are not kept when Orca quits.",
+      "restart": "Restart terminal daemon",
+      "dismiss": "Dismiss",
+      "confirmTitle": "Restart the terminal daemon?",
+      "confirmBody": "Restarting ends every process running in {{sessions}}. Agents that support resume can be resumed afterwards; shells and other jobs cannot and must be started again. Do this when your agents are idle.",
+      "cancel": "Cancel",
+      "confirm": "Restart and end processes"
     }
   },
   "fileExplorer": {
@@ -19728,6 +19804,17 @@
       "updateRuntimeSafely": "Update the remote runtime to safely change workspace links"
     }
   },
+  "settings.agents.environmentName": "Environment variable name",
+  "settings.agents.environmentValue": "Value for {{name}}",
+  "settings.agents.savedEnvironment": "Saved value · enter to replace",
+  "settings.agents.newEnvironment": "Value",
+  "settings.agents.removeEnvironment": "Remove",
+  "settings.agents.loadingHost": "Loading agent settings…",
+  "settings.agents.updateHost": "Update this server to edit its agent launch settings.",
+  "settings.agents.readFailed": "Couldn’t read agent settings. Check the host connection and try again.",
+  "settings.agents.saveFailed": "Couldn’t save agent settings. Check the host connection and try again.",
+  "settings.agents.hostDefaults": "Defaults for new agents on the selected host.",
+  "settings.agents.save": "Save",
   "tabHoverCard": {
     "browser": "Browser",
     "editor": "Editor",

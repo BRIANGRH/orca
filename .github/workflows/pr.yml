@@ -50,6 +50,7 @@ jobs:
       managed_hook_node18: ${{ steps.readiness.outputs.reused != 'true' && steps.filter.outputs.managed_hook_node18 }}
       package: ${{ steps.readiness.outputs.reused != 'true' && steps.filter.outputs.package }}
       package_windows: ${{ steps.readiness.outputs.reused != 'true' && steps.filter.outputs.package_windows }}
+      layout_oracle: ${{ steps.readiness.outputs.reused != 'true' && steps.filter.outputs.layout_oracle }}
       e2e_should_run: ${{ steps.e2e_filter.outputs.should_run }}
       test_files: ${{ steps.e2e_filter.outputs.test_files }}
       e2e_run_changed: ${{ steps.e2e_filter.outputs.e2e_run_changed }}
@@ -75,6 +76,7 @@ jobs:
             /.github/scripts/check-root-directory-entries.mjs
             /config/scripts/check-readme-local-links.mjs
             /config/scripts/pr-code-change-scope.mjs
+            /config/scripts/pr-layout-oracle-route.mjs
             /config/scripts/pr-e2e-source-routing.mjs
             /config/scripts/ci-e2e-job-selection.mjs
             /config/scripts/pr-ready-check-reuse.mjs
@@ -217,6 +219,17 @@ jobs:
           if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
           bun --bun run check:process-host-imports
 
+      - name: Check main-process sync launches
+        if: '!cancelled()'
+        id: main-sync-spawn-ratchet
+        background: true
+        env:
+          PREFLIGHT_PHASE_SELECTED: ${{ needs.code_paths.outputs.static_analysis == 'true' }}
+          PREFLIGHT_PRIOR_SUCCESS: ${{ job.status == 'success' }}
+        run: |
+          if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
+          bun --bun run check:main-sync-spawn-ratchet
+
       # Keep each check in its own log while sharing this runner.
       - name: Lint
         if: '!cancelled()'
@@ -288,7 +301,7 @@ jobs:
           PREFLIGHT_PRIOR_SUCCESS: ${{ job.status == 'success' }}
         run: |
           if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
-          pnpm run typecheck:ci
+          pnpm run typecheck:ci --bun-concurrency=2 --bun-threads=2
 
       - name: Check Zustand selector fan-out budget
         if: needs.code_paths.outputs.static_analysis == 'true'
@@ -346,7 +359,7 @@ jobs:
 
       - name: Check compatibility-folder imports
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:compat-boundary-imports
+        run: bun config/scripts/check-compat-boundary-imports.mjs
 
       - name: Check Node runtime pin
         if: needs.code_paths.outputs.static_analysis == 'true'
@@ -354,6 +367,7 @@ jobs:
 
       # Why: extraction writes sorted evidence to an isolated temporary path,
       # so feature PRs need one normalized AST pass rather than a three-OS matrix.
+      # Use preflight's pinned Bun even when the optional local pin differs.
       - name: Verify localization extraction
         if: '!cancelled()'
         id: localization-extraction
@@ -370,7 +384,7 @@ jobs:
             scope="$(node config/scripts/localization-extraction-change-scope.mjs "$RUNNER_TEMP/localization-changes")" && [ "$scope" = false ]; then
             echo "Localization extraction inputs are unchanged."
           else
-            pnpm run verify:localization-extraction
+            bun config/scripts/verify-localization-extraction.mjs
           fi
 
       # Why both: the ratchet proves nothing reachable from the runtime imports electron,
@@ -468,6 +482,8 @@ jobs:
       - wait: typecheck
 
       - wait: process-host-imports
+
+      - wait: main-sync-spawn-ratchet
 
       - wait: unit-plan
 
@@ -1108,7 +1124,7 @@ jobs:
           status=0
           pnpm run build:cli || status=1
 
-          scripts=(build:relay build:electron-vite:parallel)
+          scripts=(build:wsl-guest build:electron-vite:parallel)
           pids=()
           for script in "${scripts[@]}"; do
             pnpm run "$script" &
@@ -1234,6 +1250,38 @@ jobs:
         run: >-
           pnpm exec vitest run --config config/vitest.config.ts
           config/scripts/nsis-process-check.test.mjs
+          config/scripts/idle-cpu-process-sampling.test.mjs
+
+      - name: Cache Windows CLI launcher
+        uses: actions/cache@v5
+        with:
+          # Why the cargo directories ride along: a hit on .build skips the build
+          # entirely, but a miss otherwise recompiles the resource crate from a
+          # cold registry.
+          path: |
+            native/windows-cli-launcher/.build
+            native/windows-cli-launcher/target
+            native/windows-agent-hook/.build
+            native/windows-agent-hook/target
+            ~/.cargo/registry
+          key: windows-cli-launcher-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/windows-cli-launcher/**', 'native/windows-agent-hook/**', 'config/scripts/build-windows-cli-launcher.mjs', 'config/scripts/build-windows-agent-hook.mjs', 'config/scripts/windows-rust-executable-build.mjs', 'resources/build/icon.ico', 'package.json') }}
+
+      # Why an explicit step rather than trusting the runner image: the packaged
+      # CLI launcher is a native Rust binary, and a host without cargo fails deep
+      # inside electron-builder's native hook instead of here.
+      - name: Ensure the Rust toolchain for the Windows CLI launcher
+        shell: pwsh
+        run: |
+          if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+            rustup toolchain install stable --profile minimal
+            rustup default stable
+          }
+          cargo --version
+
+      # Why before the tests: the orca-agent-hook.exe suites then share one prebuilt binary rather
+      # than each starting its own build mid-run.
+      - name: Build the Windows agent hook
+        run: node config/scripts/build-windows-agent-hook.mjs
 
       - name: Test Windows-specific boundaries
         run: >-
@@ -1246,6 +1294,7 @@ jobs:
           config/scripts/verify-packaged-node-pty-job-ownership.test.mjs
           config/scripts/windows-pe-machine.test.mjs
           config/scripts/build-windows-cli-launcher.test.mjs
+          config/scripts/verify-packaged-windows-agent-hook.test.mjs
           config/scripts/script-module-dependencies.test.mjs
           src/main/windows-registry-addon.test.ts
           config/scripts/windows-process-tree-gyp-path.test.mjs
@@ -1264,11 +1313,15 @@ jobs:
           src/shared/__tests__/process-host/windows-cmd-shim-resolution.test.ts
           src/shared/__tests__/process-host/windows-cmd-shim-resolution.win32.test.ts
           src/main/agent-hooks/windows-hook-payload-delivery.test.ts
+          src/main/agent-hooks/managed-hook-stdin-lifecycle.test.ts
           src/main/jcode/hook-gate-script.test.ts
           src/main/agent-hooks/windows-direct-cmd-hook-command.test.ts
+          src/main/agent-hooks/windows-native-hook-exe-hosts.test.ts
+          src/main/claude/windows-native-hook-registration.test.ts
           src/main/agent-hooks/windows-cmd-hook-command-unicode.test.ts
           src/main/agent-hooks/windows-batch-hook-launcher.test.ts
           src/main/agent-hooks/windows-powershell-hook-launcher.test.ts
+          src/main/claude/claude-status-line-windows.test.ts
           src/main/codex/windows-hook-command.test.ts
           src/main/codex/windows-hook-upgrade.test.ts
           src/main/codex/hook-service-managed-install.test.ts
@@ -1278,6 +1331,7 @@ jobs:
           src/main/windows/windows-host-job.win32.test.ts
           src/main/windows/windows-process-tree-command-line-patch.test.ts
           src/main/windows/windows-process-table-native-addon.win32.test.ts
+          src/main/daemon/daemon-pid-identity-native.win32.test.ts
           src/main/persistence/profile-state/profile-state-access-windows-native.win32.test.ts
           src/main/windows-live-tree-kill.win32.test.ts
           src/main/wsl/wsl-runner.test.ts
@@ -1306,30 +1360,6 @@ jobs:
       # Why the :parallel variant: identical to build:release except the three
       # electron-vite targets overlap instead of running back to back. The Linux package
       # job already packages and smoke-tests an AppImage built that way.
-      - name: Cache Windows CLI launcher
-        uses: actions/cache@v5
-        with:
-          # Why the cargo directories ride along: a hit on .build skips the build
-          # entirely, but a miss otherwise recompiles the resource crate from a
-          # cold registry.
-          path: |
-            native/windows-cli-launcher/.build
-            native/windows-cli-launcher/target
-            ~/.cargo/registry
-          key: windows-cli-launcher-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/windows-cli-launcher/**', 'config/scripts/build-windows-cli-launcher.mjs', 'resources/build/icon.ico', 'package.json') }}
-
-      # Why an explicit step rather than trusting the runner image: the packaged
-      # CLI launcher is a native Rust binary, and a host without cargo fails deep
-      # inside electron-builder's native hook instead of here.
-      - name: Ensure the Rust toolchain for the Windows CLI launcher
-        shell: pwsh
-        run: |
-          if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-            rustup toolchain install stable --profile minimal
-            rustup default stable
-          }
-          cargo --version
-
       - name: Build package inputs
         run: pnpm run build:release:parallel
 
@@ -1377,6 +1407,29 @@ jobs:
       run_changed_e2e: ${{ needs.code_paths.outputs.e2e_run_changed != 'false' }}
       needs_build: ${{ needs.code_paths.outputs.e2e_needs_build != 'false' }}
 
+  # Why its own required job, apart from `e2e`: the rest of the suite is red on main, but the
+  # layout oracle is green there, and its known-on-main list absorbs today's findings. Only the two
+  # oracle specs run, through the same reusable workflow: the window spec in the changed-spec lane,
+  # the headless spec in the orcad lane on both serve hosts.
+  layout_oracle:
+    name: layout oracle
+    needs: [code_paths, preflight]
+    if: >-
+      !cancelled() &&
+      needs.code_paths.result == 'success' &&
+      needs.code_paths.outputs.layout_oracle == 'true' &&
+      needs.preflight.result == 'success'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/e2e.yml
+    with:
+      # Why the merge commit, unlike `e2e`: a gate must test what lands on main, not a stale head.
+      ref: ${{ github.sha }}
+      test_files: '["tests/e2e/workspace-layout-oracle-headless.spec.ts","tests/e2e/workspace-layout-oracle.spec.ts"]'
+      run_changed_e2e: true
+      needs_build: true
+      artifact_suffix: -layout-oracle
+
   # Why this is not in verify's needs: it is the first PR-gate run of a harness whose reliability
   # is only known from nightly main runs (20/20 green, 2026-08-09..2026-08-29, p50 3m25s). It
   # reports a red X on the PR without blocking, exactly like `e2e` above. Deliberately no
@@ -1417,6 +1470,7 @@ jobs:
       - managed_hook_node18
       - package
       - package_windows
+      - layout_oracle
     # Evaluating job results only needs the lightweight container runner.
     runs-on: ubuntu-slim
     timeout-minutes: 5
@@ -1456,6 +1510,8 @@ jobs:
           PACKAGE_SHOULD_RUN: ${{ needs.code_paths.outputs.package }}
           PACKAGE_WINDOWS: ${{ needs.package_windows.result }}
           PACKAGE_WINDOWS_SHOULD_RUN: ${{ needs.code_paths.outputs.package_windows }}
+          LAYOUT_ORACLE: ${{ needs.layout_oracle.result }}
+          LAYOUT_ORACLE_SHOULD_RUN: ${{ needs.code_paths.outputs.layout_oracle }}
         run: |
           if [ "$CODE_PATHS" != "success" ]; then
             exit 1
@@ -1490,4 +1546,5 @@ jobs:
           check_job managed_hook_node18 "$MANAGED_HOOK_NODE18" "$MANAGED_HOOK_NODE18_SHOULD_RUN"
           check_job package "$PACKAGE" "$PACKAGE_SHOULD_RUN"
           check_job package_windows "$PACKAGE_WINDOWS" "$PACKAGE_WINDOWS_SHOULD_RUN"
+          check_job layout_oracle "$LAYOUT_ORACLE" "$LAYOUT_ORACLE_SHOULD_RUN"
           exit "$failed"

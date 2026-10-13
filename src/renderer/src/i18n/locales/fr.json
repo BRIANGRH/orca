@@ -117,6 +117,8 @@
   },
   "settings": {
     "chat": {
+      "permissionsTitle": "Autorisations pour les nouveaux chats",
+      "permissionsDescription": "S’applique uniquement aux nouveaux chats. Les agents ouverts dans un terminal utilisent Paramètres → Agents → Autorisations des agents.",
       "description": "Choisissez l’apparence et le nom des chats.",
       "names": {
         "title": "Noms des chats",
@@ -3115,7 +3117,8 @@
           }
         },
         "dialog": {
-          "f26c4baeda": "Fermer"
+          "f26c4baeda": "Fermer",
+          "minimize": "Réduire"
         },
         "repo": {
           "multi": {
@@ -4183,7 +4186,12 @@
             "checkTooltip": "Chats qu'Orca n'a pas pu reprendre, ou dont il n'a pas pu confirmer la reprise, après le redémarrage. Cliquez pour plus de détails.",
             "resumingTooltip": "Restauration des conversations interrompues et demande de poursuite…",
             "resumingProgressLabel": "Reprise des discussions {{value0}}/{{value1}}",
-            "resumingProgressAria": "Reprise des discussions, {{value0}} sur {{value1}} terminées. Cliquez pour voir les détails."
+            "resumingProgressAria": "Reprise des discussions, {{value0}} sur {{value1}} terminées. Cliquez pour voir les détails.",
+            "resumedLabelOne": "1 discussion reprise",
+            "resumedLabel": "{{value0}} discussions reprises",
+            "resumedAriaOne": "1 discussion reprise. Cliquez pour la voir.",
+            "resumedAria": "{{value0}} discussions reprises. Cliquez pour les voir.",
+            "resumedTooltip": "Discussions reprises par Orca après le redémarrage. Cliquez pour les voir."
           },
           "provider": {
             "extra": {
@@ -4605,7 +4613,6 @@
           "statusUpdateAvailable": "Mise à jour disponible",
           "statusCantUpdate": "Ignoré",
           "cantUpdateReason": "Orca a exclu ce skill de la commande de mise à jour.",
-          "skippedReasonUnrecognized": "La copie ici ne correspond pas à la version officielle — elle a peut-être été modifiée, ou il s'agit d'un autre skill portant le même nom. Orca l'a exclue de la mise à jour pour ne pas l'écraser. Supprimez-la si vous voulez qu'Orca mette à jour ce skill.",
           "skippedReasonReadOnly": "Cette copie se trouve dans un emplacement en lecture seule, donc Orca l'a exclue de la mise à jour. Modifiez ses permissions pour permettre à Orca de la mettre à jour.",
           "skippedReasonInaccessible": "Orca n'a pas pu lire cette copie, il a donc exclu le skill de la mise à jour.",
           "skippedReasonInRepo": "C'est un skill de projet, pas un skill global — Orca ne met à jour que vos skills globaux, il a donc exclu celui-ci de la mise à jour.",
@@ -4613,7 +4620,6 @@
           "skippedReasonExternalLink": "Cette copie est un raccourci pointant hors des dossiers de skills d'Orca, donc Orca l'a exclue de la mise à jour.",
           "skippedReasonBrokenLink": "Cette copie est un raccourci vers quelque chose qui n'existe plus, donc Orca l'a exclue — vous pouvez la supprimer sans risque.",
           "chipCurrent": "Actuel",
-          "chipUnrecognized": "Non reconnu",
           "chipInaccessible": "Inaccessible",
           "chipDuplicate": "Doublon",
           "chipExternalLink": "Lien externe",
@@ -4622,7 +4628,6 @@
           "chipInRepo": "Dans un dépôt",
           "chipPluginCache": "Cache de plugins",
           "tipCurrent": "Cette copie correspond à la version officielle actuelle.",
-          "tipUnrecognized": "Cette copie ne correspond à aucune version officielle — elle a peut-être été modifiée, ou il s'agit d'un autre skill portant le même nom.",
           "tipInaccessible": "Orca n'a pas pu lire cette copie (erreur de permissions ou de fichier).",
           "tipDuplicate": "Une copie séparée de ce skill, installée à part de la principale.",
           "tipExternalLink": "Un raccourci pointant hors des dossiers de skills d'Orca.",
@@ -4630,11 +4635,7 @@
           "tipReadOnly": "Cette copie se trouve dans un emplacement en lecture seule.",
           "tipInRepo": "Cette copie vit dans un projet, pas dans vos skills globaux.",
           "tipPluginCache": "Cette copie est gérée par un plugin.",
-          "skippedReasonDuplicate": "Il s'agit d'une copie séparée : la mise à jour ne l'atteindra pas — la commande ne rafraîchit que la copie principale. Supprimez cette copie puis réinstallez le skill pour que cet emplacement suive le principal.",
-          "skippedReasonNewer": "Cette copie est plus récente que celle fournie avec cette build d'Orca ; Orca l'a donc laissée telle quelle plutôt que de la rétrograder. La mise à jour d'Orca remettra les deux en phase.",
-          "skippedReasonStaleRecord": "Le programme de mise à jour des skills n'a aucun enregistrement exploitable pour cette copie ; il signale donc le skill comme déjà à jour sans rien modifier. Réinstallez-le pour remettre l'enregistrement en cohérence : {{value0}}",
-          "chipNewer": "Plus récent",
-          "tipNewer": "Cette copie est plus récente que celle fournie avec cette build d'Orca."
+          "skippedReasonDuplicate": "Il s'agit d'une copie séparée : la mise à jour ne l'atteindra pas — la commande ne rafraîchit que la copie principale. Supprimez cette copie puis réinstallez le skill pour que cet emplacement suive le principal."
         },
         "SkillFreshnessUpdateDialog": {
           "title": "Mettre à jour les skills",
@@ -4675,14 +4676,20 @@
           "scanOutsideRoot": "Orca a ignoré ce chemin de plugin car il pointe hors du cache de plugins.",
           "scanIoErrorWithCode": "Orca n'a pas pu lire ce chemin de plugin ({{value0}}).",
           "scanIoError": "Orca n'a pas pu lire ce chemin de plugin.",
-          "scanIssueLimit": "Orca a trouvé trop de dossiers de plugins ignorés pour pouvoir les lister un par un."
+          "scanIssueLimit": "Orca a trouvé trop de dossiers de plugins ignorés pour pouvoir les lister un par un.",
+          "unselectedForeignOne": "1 skill non installé par Orca n’est pas sélectionné.",
+          "unselectedForeignMany": "{{value0}} skills non installés par Orca ne sont pas sélectionnés."
         },
         "SkillUpdateResultRows": {
           "stillOutdated": "Toujours pas à jour après l'exécution de la mise à jour."
         },
         "SkillUpdateRow": {
           "oneLocation": "1 emplacement",
-          "manyLocations": "{{value0}} emplacements"
+          "manyLocations": "{{value0}} emplacements",
+          "notFromOrca": "Hors Orca",
+          "notFromOrcaSourceTip": "Installé depuis {{value0}}. Le sélectionner le remplace par la version d’Orca.",
+          "notFromOrcaNoRecordTip": "Aucune trace d’installation par Orca pour cette copie. La sélectionner la remplace par la version d’Orca.",
+          "includeSkill": "Inclure {{value0}}"
         },
         "SkillFreshnessStatusPill": {
           "updateAvailable": "Mise à jour disponible",
@@ -5176,8 +5183,7 @@
         "AddProjectFromFolderDialog": {
           "7d1f51678c": "Ajouter un projet",
           "7726a16374": "Annuler",
-          "046751dbfb": "Ajoutez ce dossier comme projet Orca distinct.",
-          "e643b30398": "Projet ajouté sur l'hôte SSH"
+          "046751dbfb": "Ajoutez ce dossier comme projet Orca distinct."
         },
         "AddRepoCreateStep": {
           "0ae45b8238": "my-project",
@@ -5194,7 +5200,6 @@
           "5e97f0c4b9": "Projet créé",
           "2c12db1511": "Projet déjà ajouté",
           "875dda0995": "Saisissez un chemin parent sur l'hôte.",
-          "ssh_parent_manual": "Saisissez un chemin parent SSH.",
           "45b7c26034": "Créer le projet",
           "85085d74d2": "Création…"
         },
@@ -5236,13 +5241,9 @@
           "e52454b7f6": "Ouvrir comme dossier"
         },
         "AddRepoRemoteStep": {
-          "5b205b5281": "Interrompre l'analyse",
           "6680289908": "/home/user/project",
           "ef410aa881": "Chemin sur l'hôte",
-          "0416bde073": "Ajouter dans les paramètres",
-          "df6fbcf880": "Aucune cible SSH configurée.",
           "44637f43bd": "Cible SSH",
-          "80557be85a": "Choisissez une cible SSH connectée et saisissez le chemin vers un dépôt Git.",
           "serverDescription": "Choisissez un hôte SSH auquel {{server}} se connecte, puis saisissez le chemin d’un dépôt Git sur cet hôte.",
           "serverEmpty": "{{server}} n’a pas encore d’hôte SSH.",
           "serverAddHost": "Ajouter un hôte SSH",
@@ -5250,10 +5251,7 @@
           "007651bdf9": "Naviguez jusqu'à un répertoire et cliquez sur Sélectionner pour le choisir.",
           "dd3ff65486": "Parcourir le système de fichiers distant",
           "36d427bb66": "Ajouter un projet sur l'hôte SSH",
-          "35831a7312": "Ajout...",
-          "lockedDescription": "Saisissez le chemin vers un dépôt Git sur {{value0}}.",
-          "lockedDisconnected": "{{value0}} est déconnecté.",
-          "93e0221434": "Se connecter"
+          "35831a7312": "Ajout..."
         },
         "AddRepoServerStartStep": {
           "ae990c86a0": "Retour aux options d'ajout",
@@ -5985,12 +5983,8 @@
                   "serverSshTitle": "Projet sur un hôte SSH de ce serveur",
                   "serverSshDescription": "Ouvrir un dossier de projet depuis un hôte SSH auquel ce serveur se connecte",
                   "serverSshUpdate": "Mettez ce serveur à jour pour ajouter des projets sur ses hôtes SSH",
-                  "sshCreateUnavailable": "Pas encore disponible pour les hôtes SSH",
-                  "3d162cc76f": "Projet sur hôte SSH",
                   "fb4fc5380e": "Projet local, dépôt Git ou dossier contenant plusieurs dépôts",
                   "2281fdc8c7": "Parcourir le dossier",
-                  "sshBrowseTitle": "Ouvrir un projet sur l'hôte SSH",
-                  "sshBrowseDescription": "Dépôt Git existant ou dossier sur cet hôte SSH",
                   "runtimeBrowseDescription": "Dépôt Git existant ou dossier sur cette machine"
                 }
               }
@@ -11174,7 +11168,7 @@
           "sourceControlAiDefaults": "Recettes, prompts et valeurs par défaut de hosted review sont partagés par ce client ; les choix de modèle et la découverte restent limités à l'hôte où l'agent s'exécute.",
           "projectOnThisHost": "Projet sur cette machine",
           "repositorySourceControlAi": "Ces substitutions s'appliquent à cette configuration de projet et héritent des valeurs par défaut IA du contrôle source côté client tant qu'elles ne sont pas personnalisées.",
-          "agentLaunchDefaults": "L'agent par défaut, les substitutions de commandes, les arguments CLI et l'environnement de lancement sont des préférences du client. Les lancements SSH et serveur distant valident toujours la disponibilité de l'hôte à l'exécution.",
+          "agentLaunchDefaults": "L’agent par défaut, les commandes personnalisées, les arguments de la CLI et l’environnement de lancement sont enregistrés sur l’hôte sélectionné.",
           "clientDefaultProjectScopes": "Par défaut du client + portées projet",
           "terminalQuickCommands": "Les commandes sont enregistrées sur ce client, puis définies globalement ou pour une configuration de projet afin de s'exécuter depuis le contexte de terminal sélectionné.",
           "hostOverride": "Substitution par hôte",
@@ -12474,7 +12468,7 @@
           }
         },
         "sshHostServer": {
-          "sourceChanged": "Modifié sur une version plus ancienne d'Orca : exécute le relais jusqu'à ce qu'il soit de nouveau déplacé vers son serveur géré.",
+          "sourceChanged": "Une version plus ancienne d'Orca a modifié les projets de cet hôte. Déplacez ces modifications vers son serveur géré, ou conservez la version du serveur, pour vous reconnecter.",
           "deploying": "Configuration d'un serveur Orca géré…",
           "converting": "Déplacement des projets de cet hôte vers son serveur Orca géré…",
           "connecting": "Connexion au serveur Orca géré…",
@@ -17664,7 +17658,8 @@
         "expandNode": "Développer {{value0}}",
         "selectMachine": "Sélectionner toutes les discussions sur {{value0}}",
         "sshHost": "SSH",
-        "done": "Terminé"
+        "done": "Terminé",
+        "resultListLabel": "Discussions de cette reprise"
       },
       "linear-issue-attribute-filter-coverage-notice": {
         "statusPartialTeamCoverage": "Filtrage des statuts des équipes {{value0}} sur {{value1}} : les problèmes des équipes restantes ne sont pas inclus.",
@@ -17751,7 +17746,11 @@
         "resumedTitleOne": "{{value0}} discussion sur 1 reprise",
         "resumingTitleOne": "Reprise d’une discussion",
         "resumingTitle": "Reprise de {{value0}} discussions",
-        "description": "Chaque discussion est restaurée avec tout son contexte, et l’agent vérifie où il s’était arrêté. Vous pouvez fermer cette fenêtre ; la barre d’état suit la progression."
+        "description": "Chaque discussion est restaurée avec tout son contexte, et l’agent vérifie où il s’était arrêté. Vous pouvez fermer cette fenêtre ; la barre d’état suit la progression.",
+        "finished": "Ces discussions étaient en cours quand Orca s’est fermé. Orca a restauré chacune là où elle s’était arrêtée, avec tout son contexte, et a demandé à l’agent de vérifier ce qu’il faisait avant de continuer. Vos propres messages n’ont pas été renvoyés.",
+        "finishedUpdate": "Ces discussions étaient en cours quand Orca a installé une mise à jour. Orca a restauré chacune là où elle s’était arrêtée, avec tout son contexte, et a demandé à l’agent de vérifier ce qu’il faisait avant de continuer. Vos propres messages n’ont pas été renvoyés.",
+        "finishedPartial": "Ces discussions étaient en cours quand Orca s’est fermé. Celles qu’Orca a reprises ont été restaurées là où elles s’étaient arrêtées, avec tout leur contexte, et invitées à vérifier ce qu’elles faisaient avant de continuer. Vos propres messages n’ont pas été renvoyés. Consultez la liste pour voir les discussions qui nécessitent encore votre attention ou qui peuvent être reprises.",
+        "finishedPartialUpdate": "Ces discussions étaient en cours quand Orca a installé une mise à jour. Celles qu’Orca a reprises ont été restaurées là où elles s’étaient arrêtées, avec tout leur contexte, et invitées à vérifier ce qu’elles faisaient avant de continuer. Vos propres messages n’ont pas été renvoyés. Consultez la liste pour voir les discussions qui nécessitent encore votre attention ou qui peuvent être reprises."
       },
       "NativeChatResumeRunStatusIcon": {
         "waitingForReply": "En attente de réponse",
@@ -17771,6 +17770,11 @@
         "attention": "À traiter",
         "running": "En cours depuis {{value0}}",
         "filter": "Afficher les discussions"
+      },
+      "NativeChatResumeAutoNote": {
+        "resuming": "Reprise automatique après le redémarrage.",
+        "resumed": "Reprises automatiquement après le redémarrage.",
+        "changeInSettings": "Modifier dans les paramètres"
       }
     },
     "i18n": {
@@ -17855,6 +17859,7 @@
         "couldNotStart": "{{agent}} n'a pas pu démarrer.",
         "editSavedArguments": "Modifiez-les dans Paramètres > Agents > Arguments.",
         "couldNotRestart": "{{agent}} n'a pas pu redémarrer.",
+        "codexCliTooOld": "Codex {{installedVersion}} est trop ancien pour les conversations. Mettez-le à jour vers {{minimumVersion}} ou une version ultérieure.",
         "notSignedIn": "{{agent}} n’est pas connecté.",
         "claudeSystemNotSignedIn": "Claude n’est pas connecté. Exécutez `{{loginCommand}}`, ou choisissez un compte dans les paramètres des Comptes Claude.",
         "claudeManagedNotSignedIn": "Ce compte Claude n’est pas connecté. Reconnectez-vous dans les paramètres des Comptes Claude.",
@@ -17878,8 +17883,8 @@
         "chooseClaudeAccountThenSend": "Choisissez-en un ou ajoutez-en un dans les paramètres Comptes Claude, puis renvoyez votre message.",
         "providerExitedRow": "{{agent}} s'est arrêté pendant que cette réponse était en cours. Vous pouvez continuer dans cette conversation.",
         "providerExitedRejection": "{{agent}} s'est arrêté avant l'envoi de ce message.",
-        "providerRejected": "Le fournisseur n'a pas accepté ce message.",
-        "providerRejectedQuoted": "Le fournisseur n'a pas accepté ce message : {{detail}}.",
+        "providerRejected": "{{agent}} n'a pas accepté ce message.",
+        "providerRejectedQuoted": "{{agent}} n'a pas accepté ce message : {{detail}}.",
         "attachmentEmpty": "Une image de ce message est vide, le message n'a donc pas été envoyé.",
         "attachmentTooLarge": "Une image de ce message est trop volumineuse, le message n'a donc pas été envoyé.",
         "attachmentLargerThan": "Une image de ce message dépasse {{size}} Mo, le message n'a donc pas été envoyé.",
@@ -18048,7 +18053,6 @@
         "imagePasteFailed": "Échec du collage de l'image.",
         "worktreeNotReady": "Worktree pas encore prêt — réessayez dans un instant.",
         "pasteUnavailable": "Impossible de coller — ce chat n'accepte pas de saisie pour le moment.",
-        "uploadingAttachments": "Envoi de {{value0}} fichier(s) vers le distant…",
         "model": "Modèle",
         "effort": "Effort",
         "fastMode": "Mode rapide",
@@ -18089,6 +18093,19 @@
         "attachmentOwnerChanged": "Cet espace de travail a changé d'hôte lors de la connexion : supprimez à nouveau les fichiers.",
         "attachmentUnreadable": "Impossible de lire les fichiers supprimés.",
         "tooManyAttachments": "Joignez {{value0}} fichiers maximum à la fois.",
+        "permissions": "Autorisations",
+        "permissionAsk": "Demander l’approbation",
+        "permissionAskDescription": "Demande avant les modifications et commandes que vos réglages n'autorisent pas",
+        "permissionAskCodexDescription": "Modifie des fichiers et exécute des commandes dans cet espace de travail ; demande avant toute autre action",
+        "permissionAskSharedDescription": "Demande avant les modifications ou commandes qui ne sont pas déjà autorisées",
+        "permissionAcceptEdits": "Accepter les modifications",
+        "permissionAcceptEditsDescription": "Approuve les modifications et commandes de fichiers ; demande pour le reste",
+        "permissionAuto": "Approuver pour moi",
+        "permissionAutoDescription": "Examine les demandes d’approbation pour vous",
+        "permissionFullAccess": "Accès complet",
+        "permissionFullAccessDescription": "Ne demande jamais avant les modifications ou les commandes",
+        "permissionFullAccessCodexDescription": "Ne demande jamais ; peut modifier n’importe quel fichier et utiliser le réseau",
+        "permissionFullAccessSharedDescription": "Ne demande jamais avant les modifications ou les commandes",
         "pasteFailed": "Échec du collage.",
         "commandAttachmentsUnsupported": "Retirez les pièces jointes avant d'utiliser une commande de session de chat."
       },
@@ -18209,8 +18226,11 @@
       },
       "transcriptLabel": "Conversation",
       "toggle": {
-        "showTerminal": "Afficher le terminal",
-        "showChat": "Afficher la vue chat"
+        "showTerminal": "Afficher le terminal"
+      },
+      "resumeInNewChat": {
+        "notSavedYet": "{{agent}} n'a pas encore enregistré cette conversation. Réessayez après sa réponse.",
+        "cannotResume": "Cette conversation {{agent}} ne peut pas être reprise dans un chat natif."
       },
       "state": {
         "loading": {
@@ -18288,7 +18308,8 @@
         "one": "1 fichier modifié",
         "many": "{{count}} a modifié les fichiers",
         "partial": "Différence partielle",
-        "recorded": "Totaux des modifications enregistrées à ce tour."
+        "showDiff": "Afficher les différences",
+        "hideDiff": "Masquer les différences"
       },
       "receipt": {
         "unavailable": "Réponse sélectionnée indisponible",
@@ -18402,6 +18423,8 @@
         "subtitle": "Les fichiers sont ajoutés à votre message sous forme de chemins que l'agent peut lire."
       },
       "copyCode": "Copier le code",
+      "wrapLines": "Retour à la ligne",
+      "disableLineWrap": "Désactiver le retour à la ligne",
       "context": {
         "unavailable": "L'utilisation du contexte n'est pas encore connue. Elle sera disponible après la prochaine réponse de l'agent.",
         "summary": "Contexte : {{used}} / {{window}} tokens ({{percent}} %), estimation basée sur la dernière réponse.",
@@ -19524,5 +19547,16 @@
   },
   "projectField": {
     "updateFailed": "Échec de la mise à jour du champ du projet"
-  }
+  },
+  "settings.agents.environmentName": "Nom de la variable d’environnement",
+  "settings.agents.environmentValue": "Valeur de {{name}}",
+  "settings.agents.savedEnvironment": "Valeur enregistrée · saisir pour remplacer",
+  "settings.agents.newEnvironment": "Valeur",
+  "settings.agents.removeEnvironment": "Supprimer",
+  "settings.agents.loadingHost": "Chargement des paramètres des agents…",
+  "settings.agents.updateHost": "Mettez ce serveur à jour pour modifier ses paramètres de lancement des agents.",
+  "settings.agents.readFailed": "Impossible de lire les paramètres des agents. Vérifiez la connexion à l’hôte et réessayez.",
+  "settings.agents.saveFailed": "Impossible d’enregistrer les paramètres des agents. Vérifiez la connexion à l’hôte et réessayez.",
+  "settings.agents.hostDefaults": "Paramètres par défaut des nouveaux agents sur l’hôte sélectionné.",
+  "settings.agents.save": "Enregistrer"
 }

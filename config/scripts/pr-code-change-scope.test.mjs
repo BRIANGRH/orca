@@ -141,6 +141,7 @@ describe('per-job path classification', () => {
   })
 
   it('runs the Codex index-heal contract only when the heal or its transport changes', () => {
+    expectClassification(['src/main/codex/codex-app-server-session.test.ts'], {})
     expectClassification(['src/main/codex/codex-session-index-heal.ts'], {
       codex_index_heal_contract: true,
       package: true,
@@ -294,7 +295,8 @@ describe('per-job path classification', () => {
     )
     for (const file of [
       'src/main/runtime/structured-session-login-shell-test-harness.ts',
-      'src/main/runtime/structured-session-child-identity-env.ts'
+      'src/main/runtime/structured-session-child-env.ts',
+      'src/main/runtime/structured-session-child-env.test-support.ts'
     ]) {
       expectClassification([file], {
         shell_contracts: true,
@@ -394,7 +396,9 @@ describe('per-job path classification', () => {
       expectClassification([file], {
         'cross-version-wire': true,
         package: true,
-        package_windows: true
+        package_windows: true,
+        // The session-tabs RPC publishes layout, so the layout oracle gates it too.
+        layout_oracle: file === 'src/main/runtime/rpc/methods/session-tabs.ts'
       })
     }
     expectClassification(

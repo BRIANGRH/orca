@@ -124,7 +124,7 @@ export class StructuredAgentSessionHost {
       ensureProviderChild: (sessionId, startedFor) =>
         agentStart.ensureStructuredAgentSessionAgent(this.attachContext(), sessionId, startedFor),
       // Put to rest like an idle agent: the stop writes nothing, and the next start is new.
-      stopSignedOutAgent: (id) => this.lifetime.stopAgent(id, { cause: 'evict', resting: true }),
+      stopOutgrownAgent: (id) => this.lifetime.stopAgent(id, { cause: 'evict', resting: true }),
       clientDelivery: this.clientDelivery
     })
     this.restore = reveal.createStructuredAgentSessionHostRestore(deps, {
@@ -175,6 +175,8 @@ export class StructuredAgentSessionHost {
   private now = (): number => this.deps.now?.() ?? Date.now()
 
   hasSession = (sessionId: string): boolean => this.sessions.has(sessionId)
+  hasLoadedProviders = (): boolean =>
+    [...this.sessions.values()].some(({ child }) => child !== null)
   sessionAgent = (sessionId: string) => this.deps.store.getRecord(sessionId)?.provider ?? null
 
   handleAdapterEvent = (event: Parameters<StructuredAgentSessionEventRecovery['handle']>[0]) =>

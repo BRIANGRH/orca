@@ -16,6 +16,8 @@
   },
   "settings": {
     "chat": {
+      "permissionsTitle": "新聊天的权限",
+      "permissionsDescription": "仅适用于新聊天。在终端中打开的智能体使用设置 → 智能体 → 智能体权限。",
       "description": "选择聊天的外观和命名方式。",
       "names": {
         "title": "聊天名称",
@@ -3010,7 +3012,8 @@
           }
         },
         "dialog": {
-          "f26c4baeda": "关闭"
+          "f26c4baeda": "关闭",
+          "minimize": "最小化"
         },
         "repo": {
           "multi": {
@@ -4077,7 +4080,12 @@
             "checkTooltip": "重启后 Orca 未能恢复或未能确认已恢复的聊天。点击查看详情。",
             "resumingTooltip": "正在恢复中断的聊天并请它们继续…",
             "resumingProgressLabel": "正在恢复聊天 {{value0}}/{{value1}}",
-            "resumingProgressAria": "正在恢复聊天，已完成 {{value0}}/{{value1}}。点击查看详情。"
+            "resumingProgressAria": "正在恢复聊天，已完成 {{value0}}/{{value1}}。点击查看详情。",
+            "resumedLabelOne": "已恢复 1 个聊天",
+            "resumedLabel": "已恢复 {{value0}} 个聊天",
+            "resumedAriaOne": "已恢复 1 个聊天。点击查看。",
+            "resumedAria": "已恢复 {{value0}} 个聊天。点击查看。",
+            "resumedTooltip": "重启后 Orca 恢复的聊天。点击查看。"
           },
           "provider": {
             "extra": {
@@ -4583,9 +4591,8 @@
         "SkillFreshnessRow": {
           "statusUpdateAvailable": "有更新",
           "statusCantUpdate": "无法更新",
-          "cantUpdateReason": "此技能安装在 Orca 无法安全更新的位置，因此 npx skills update 命令不会更改它。",
+          "cantUpdateReason": "此技能安装在 Orca 无法安全更新的位置，因此 更新命令不会更改它。",
           "chipCurrent": "最新",
-          "chipUnrecognized": "无法识别",
           "chipInaccessible": "无法访问",
           "chipDuplicate": "重复",
           "chipExternalLink": "外部链接",
@@ -4594,26 +4601,20 @@
           "chipInRepo": "在仓库中",
           "chipPluginCache": "插件缓存",
           "tipCurrent": "这里的技能已是最新，更新不会更改它。",
-          "tipUnrecognized": "这里的技能内容与任何官方版本都不匹配，因此 Orca 无法安全更新它。请移除或替换此处的内容以允许更新。",
           "tipInaccessible": "Orca 无法读取这里的技能（权限或文件错误），因此无法检查或更新它。",
-          "tipDuplicate": "此技能除主副本外还安装在这里，因此 npx skills update 命令无法访问它。请移除它以允许更新。",
+          "tipDuplicate": "此技能除主副本外还安装在这里，因此 更新命令无法访问它。请移除它以允许更新。",
           "tipExternalLink": "这是一个指向 Orca 技能文件夹之外的快捷方式；更新不会跟随它。",
           "tipBrokenLink": "这是一个指向已不存在内容的快捷方式，可以安全删除。",
           "tipReadOnly": "这里的技能位于只读位置，需更改其权限后才能更新。",
           "tipInRepo": "这里的技能位于某个项目内，而非全局技能；Orca 只更新全局技能。",
           "tipPluginCache": "这里的技能由插件管理；请改为更新插件。",
-          "skippedReasonUnrecognized": "此处的副本与官方版本不一致 — 它可能被修改过，或是同名但内容不同的技能。Orca 将其排除在更新之外，以免覆盖它。如果您希望 Orca 更新此技能，请删除它。",
           "skippedReasonReadOnly": "此副本位于只读位置，因此 Orca 未将其纳入更新。请更改其权限，让 Orca 更新它。",
           "skippedReasonInaccessible": "Orca 无法读取此副本，因此未将该技能纳入更新。",
           "skippedReasonInRepo": "这是项目技能而非全局技能 — Orca 只更新您的全局技能，因此将其排除在更新之外。",
           "skippedReasonPluginCache": "此技能由插件管理，因此 Orca 未将其纳入更新 — 请改为更新插件。",
           "skippedReasonExternalLink": "此副本是指向 Orca 技能文件夹之外的快捷方式，因此 Orca 未将其纳入更新。",
           "skippedReasonBrokenLink": "此副本是指向已不存在内容的快捷方式，因此 Orca 将其排除 — 您可以放心删除。",
-          "skippedReasonDuplicate": "这是独立的副本，因此更新不会触及它 — 该命令只刷新主副本。请删除此副本并重新安装技能，使此位置跟随主副本。",
-          "skippedReasonNewer": "此副本的版本比当前 Orca 版本内置的更新，因此 Orca 未动它，以免回退。更新 Orca 后两者将恢复一致。",
-          "skippedReasonStaleRecord": "技能更新器没有此副本的有效记录，因此它报告技能已是最新且不做任何更改。请重新安装，使记录恢复一致：{{value0}}",
-          "chipNewer": "Newer",
-          "tipNewer": "此副本的版本比当前 Orca 版本内置的更新。"
+          "skippedReasonDuplicate": "这是独立的副本，因此更新不会触及它 — 该命令只刷新主副本。请删除此副本并重新安装技能，使此位置跟随主副本。"
         },
         "SkillFreshnessUpdateDialog": {
           "title": "更新技能",
@@ -4654,7 +4655,9 @@
           "scanOutsideRoot": "此插件路径指向插件缓存之外，Orca 已将其跳过。",
           "scanIoErrorWithCode": "Orca 无法读取此插件路径（{{value0}}）。",
           "scanIoError": "Orca 无法读取此插件路径。",
-          "scanIssueLimit": "被跳过的插件文件夹过多，Orca 无法逐一列出。"
+          "scanIssueLimit": "被跳过的插件文件夹过多，Orca 无法逐一列出。",
+          "unselectedForeignOne": "有 1 个非 Orca 安装的技能未选中。",
+          "unselectedForeignMany": "有 {{value0}} 个非 Orca 安装的技能未选中。"
         },
         "SkillFreshnessStatusPill": {
           "updateAvailable": "有可用更新",
@@ -4669,8 +4672,12 @@
           "stillOutdated": "更新运行后仍为过期状态。"
         },
         "SkillUpdateRow": {
-          "oneLocation": "1 location",
-          "manyLocations": "{{value0}} locations"
+          "oneLocation": "1 个位置",
+          "manyLocations": "{{value0}} 个位置",
+          "notFromOrca": "非 Orca 安装",
+          "notFromOrcaSourceTip": "安装自 {{value0}}。选中后会替换为 Orca 的版本。",
+          "notFromOrcaNoRecordTip": "此副本没有 Orca 安装记录。选中后会替换为 Orca 的版本。",
+          "includeSkill": "包含 {{value0}}"
         },
         "host": {
           "local": "此机器",
@@ -5051,8 +5058,7 @@
         "AddProjectFromFolderDialog": {
           "7d1f51678c": "添加项目",
           "7726a16374": "取消",
-          "046751dbfb": "将此文件夹添加为单独的 Orca 项目。",
-          "e643b30398": "添加了远程项目"
+          "046751dbfb": "将此文件夹添加为单独的 Orca 项目。"
         },
         "AddRepoCreateStep": {
           "0ae45b8238": "my-project",
@@ -5070,8 +5076,7 @@
           "fe1e616c5b": "创建项目需要 Git。",
           "c234df77f7": "创建前请选择或输入服务器父文件夹。",
           "3a13f6e88b": "未选择位置",
-          "6ed14c0281": "未选择服务器文件夹",
-          "ssh_parent_manual": "输入 SSH 父路径。"
+          "6ed14c0281": "未选择服务器文件夹"
         },
         "AddRepoNestedImportStep": {
           "496f68cf8c": "扫描存储库。单击停止。",
@@ -5096,13 +5101,9 @@
           "e52454b7f6": "作为文件夹打开"
         },
         "AddRepoRemoteStep": {
-          "5b205b5281": "停止扫描",
           "6680289908": "/home/user/project",
           "ef410aa881": "远程路径",
-          "0416bde073": "在设置中添加",
-          "df6fbcf880": "未配置 SSH 目标。",
           "44637f43bd": "SSH 目标",
-          "80557be85a": "选择已连接的 SSH 目标并输入 Git 存储库的路径。",
           "serverDescription": "选择 {{server}} 连接的 SSH 主机，并输入该主机上 Git 仓库的路径。",
           "serverEmpty": "{{server}} 还没有 SSH 主机。",
           "serverAddHost": "添加 SSH 主机",
@@ -5110,10 +5111,7 @@
           "007651bdf9": "导航到目录并单击“选择”以选择它。",
           "dd3ff65486": "浏览远程文件系统",
           "36d427bb66": "添加远程项目",
-          "35831a7312": "添加...",
-          "lockedDescription": "输入 {{value0}} 上 Git 仓库的路径。",
-          "lockedDisconnected": "{{value0}} 已断开连接。",
-          "93e0221434": "连接"
+          "35831a7312": "添加..."
         },
         "AddRepoServerStartStep": {
           "ae990c86a0": "返回添加选项",
@@ -5863,12 +5861,8 @@
                   "serverSshTitle": "此服务器 SSH 主机上的项目",
                   "serverSshDescription": "从此服务器连接的 SSH 主机打开项目文件夹",
                   "serverSshUpdate": "更新此服务器后才能在其 SSH 主机上添加项目",
-                  "3d162cc76f": "远程项目",
                   "fb4fc5380e": "本地项目、Git 仓库或包含多个仓库的文件夹",
                   "2281fdc8c7": "浏览文件夹",
-                  "sshCreateUnavailable": "SSH 主机暂不可用",
-                  "sshBrowseTitle": "在 SSH 主机上打开项目",
-                  "sshBrowseDescription": "此 SSH 主机上的现有 Git 仓库或文件夹",
                   "runtimeBrowseDescription": "此主机上的现有 Git 仓库或文件夹"
                 }
               }
@@ -11090,7 +11084,7 @@
           "sourceControlAiDefaults": "方案、提示和托管评审默认值由此客户端共享；模型选择和发现则限定在智能体运行的主机内。",
           "projectOnThisHost": "此主机上的项目",
           "repositorySourceControlAi": "这些覆盖项应用于此项目设置，并继承客户端的源代码管理 AI 默认值，直至自定义。",
-          "agentLaunchDefaults": "默认智能体、命令覆盖、CLI 参数和启动环境是客户端偏好。SSH 和远程服务器启动仍会在运行时验证主机可用性。",
+          "agentLaunchDefaults": "默认代理、命令覆盖、CLI 参数和启动环境保存在所选主机上。",
           "clientDefaultProjectScopes": "客户端默认 + 项目范围",
           "terminalQuickCommands": "命令保存在此客户端，然后限定为全局或某项目设置，以便从所选终端上下文运行。",
           "hostOverride": "主机覆盖",
@@ -12382,7 +12376,7 @@
           }
         },
         "sshHostServer": {
-          "sourceChanged": "在较旧版本的 Orca 上发生了更改：会持续运行中继，直到再次迁移到其受管服务器。",
+          "sourceChanged": "较旧版本的 Orca 更改了此主机的项目。要重新连接，请将这些更改迁移到其受管服务器，或保留服务器版本。",
           "deploying": "正在设置受管的 Orca 服务器…",
           "converting": "正在将此主机的项目迁移到其受管的 Orca 服务器…",
           "connecting": "正在连接到受管的 Orca 服务器…",
@@ -17561,7 +17555,8 @@
         "expandNode": "展开 {{value0}}",
         "selectMachine": "选择 {{value0}} 上的全部聊天",
         "sshHost": "SSH",
-        "done": "完成"
+        "done": "完成",
+        "resultListLabel": "本次恢复的聊天"
       },
       "linear-issue-attribute-filter-coverage-notice": {
         "statusPartialTeamCoverage": "过滤 {{value1}} 团队状态中的 {{value0}} — 不包括其余团队的问题。",
@@ -17663,7 +17658,11 @@
         "resumedTitleOne": "已恢复 {{value0}}/1 个聊天",
         "resumingTitleOne": "正在恢复 1 个聊天",
         "resumingTitle": "正在恢复 {{value0}} 个聊天",
-        "description": "每个聊天都会带着完整上下文恢复，并被要求检查它停在了哪里。你可以关闭此窗口，状态栏会继续显示进度。"
+        "description": "每个聊天都会带着完整上下文恢复，并被要求检查它停在了哪里。你可以关闭此窗口，状态栏会继续显示进度。",
+        "finished": "Orca 关闭时这些聊天正在工作。Orca 已将每个聊天恢复到停止的位置并保留完整上下文，并让智能体在继续之前先检查它之前在做什么。你自己的提示没有被重新发送。",
+        "finishedUpdate": "Orca 安装更新时这些聊天正在工作。Orca 已将每个聊天恢复到停止的位置并保留完整上下文，并让智能体在继续之前先检查它之前在做什么。你自己的提示没有被重新发送。",
+        "finishedPartial": "Orca 关闭时这些聊天正在工作。Orca 恢复的聊天已回到停止的位置并保留完整上下文，并被要求在继续之前先检查之前在做什么。你自己的提示没有被重新发送。请在列表中查看仍需处理或可以恢复的聊天。",
+        "finishedPartialUpdate": "Orca 安装更新时这些聊天正在工作。Orca 恢复的聊天已回到停止的位置并保留完整上下文，并被要求在继续之前先检查之前在做什么。你自己的提示没有被重新发送。请在列表中查看仍需处理或可以恢复的聊天。"
       },
       "NativeChatResumeRunStatusIcon": {
         "waitingForReply": "等待回复",
@@ -17683,6 +17682,11 @@
         "attention": "需要处理",
         "running": "已运行 {{value0}}",
         "filter": "显示聊天"
+      },
+      "NativeChatResumeAutoNote": {
+        "resuming": "重启后正在自动恢复。",
+        "resumed": "重启后已自动恢复。",
+        "changeInSettings": "在设置中更改"
       }
     },
     "i18n": {
@@ -17767,6 +17771,7 @@
         "couldNotStart": "{{agent}} 无法启动。",
         "editSavedArguments": "请在设置 > 智能体 > 参数中编辑。",
         "couldNotRestart": "{{agent}} 无法重新启动。",
+        "codexCliTooOld": "Codex {{installedVersion}} 版本过旧，无法用于聊天。请更新到 {{minimumVersion}} 或更高版本。",
         "notSignedIn": "{{agent}} 尚未登录。",
         "claudeSystemNotSignedIn": "Claude 尚未登录。请运行 `{{loginCommand}}`，或在 Claude 账户设置中选择账户。",
         "claudeManagedNotSignedIn": "此 Claude 账户尚未登录。请在 Claude 账户设置中重新登录。",
@@ -17790,8 +17795,8 @@
         "chooseClaudeAccountThenSend": "请在 Claude 账户设置中选择或添加一个，然后重新发送您的消息。",
         "providerExitedRow": "{{agent}} 在生成此回复时停止了。您可以在此对话中继续。",
         "providerExitedRejection": "{{agent}} 在发送此消息前已停止。",
-        "providerRejected": "提供商未接受此消息。",
-        "providerRejectedQuoted": "提供商未接受此消息：{{detail}}。",
+        "providerRejected": "{{agent}} 未接受此消息。",
+        "providerRejectedQuoted": "{{agent}} 未接受此消息：{{detail}}。",
         "attachmentEmpty": "此消息中的一张图片为空，因此消息未发送。",
         "attachmentTooLarge": "此消息中的一张图片过大，因此消息未发送。",
         "attachmentLargerThan": "此消息中的一张图片超过 {{size}} MB，因此消息未发送。",
@@ -17944,7 +17949,6 @@
         "imagePasteFailed": "图片粘贴失败。",
         "worktreeNotReady": "工作树未就绪 — 请稍后重试。",
         "pasteUnavailable": "无法粘贴 — 此聊天当前不接受输入。",
-        "uploadingAttachments": "正在将 {{value0}} 个文件上传到远端…",
         "model": "模型",
         "effort": "推理强度",
         "fastMode": "快速模式",
@@ -18001,6 +18005,19 @@
         "attachmentOwnerChanged": "此工作区在附加时更改了主机 - 再次删除文件。",
         "attachmentUnreadable": "无法读取删除的文件。",
         "tooManyAttachments": "每次最多附加 {{value0}} 个文件。",
+        "permissions": "权限",
+        "permissionAsk": "请求批准",
+        "permissionAskDescription": "在设置未允许的编辑和命令前询问",
+        "permissionAskCodexDescription": "在此工作区中编辑文件并运行命令；其他操作前会询问",
+        "permissionAskSharedDescription": "在执行尚未获准的编辑或命令前询问",
+        "permissionAcceptEdits": "接受编辑",
+        "permissionAcceptEditsDescription": "批准文件编辑和文件命令；其余操作会询问",
+        "permissionAuto": "替我批准",
+        "permissionAutoDescription": "代你审核批准请求",
+        "permissionFullAccess": "完全访问",
+        "permissionFullAccessDescription": "编辑或运行命令前从不询问",
+        "permissionFullAccessCodexDescription": "从不询问；可以编辑任何文件并使用网络",
+        "permissionFullAccessSharedDescription": "编辑或运行命令前从不询问",
         "pasteFailed": "粘贴失败。",
         "commandAttachmentsUnsupported": "使用聊天会话命令前，请先移除附件。"
       },
@@ -18121,8 +18138,11 @@
       },
       "transcriptLabel": "对话",
       "toggle": {
-        "showTerminal": "显示终端",
-        "showChat": "显示聊天视图"
+        "showTerminal": "显示终端"
+      },
+      "resumeInNewChat": {
+        "notSavedYet": "{{agent}} 尚未保存此对话。请在它回复后重试。",
+        "cannotResume": "此 {{agent}} 对话无法在本机聊天中恢复。"
       },
       "state": {
         "loading": {
@@ -18200,7 +18220,8 @@
         "one": "1 个已更改的文件",
         "many": "{{count}} 更改了文件",
         "partial": "部分差异",
-        "recorded": "本轮记录编辑的总计。"
+        "showDiff": "显示差异",
+        "hideDiff": "隐藏差异"
       },
       "receipt": {
         "unavailable": "所选答案不可用",
@@ -18314,6 +18335,8 @@
         "subtitle": "文件将作为智能体可以读取的路径添加到您的消息中。"
       },
       "copyCode": "复制代码",
+      "wrapLines": "自动换行",
+      "disableLineWrap": "关闭自动换行",
       "context": {
         "unavailable": "上下文用量暂时未知，将在智能体下次响应后提供。",
         "summary": "上下文：{{used}}/{{window}} token（{{percent}}%），根据上一次响应的估算值。",
@@ -19537,5 +19560,16 @@
   },
   "projectField": {
     "updateFailed": "无法更新项目字段"
-  }
+  },
+  "settings.agents.environmentName": "环境变量名称",
+  "settings.agents.environmentValue": "{{name}} 的值",
+  "settings.agents.savedEnvironment": "已保存的值 · 输入以替换",
+  "settings.agents.newEnvironment": "值",
+  "settings.agents.removeEnvironment": "删除",
+  "settings.agents.loadingHost": "正在加载代理设置…",
+  "settings.agents.updateHost": "请更新此服务器以编辑其代理启动设置。",
+  "settings.agents.readFailed": "无法读取代理设置。请检查主机连接并重试。",
+  "settings.agents.saveFailed": "无法保存代理设置。请检查主机连接并重试。",
+  "settings.agents.hostDefaults": "所选主机上新代理的默认设置。",
+  "settings.agents.save": "保存"
 }
