@@ -47,7 +47,9 @@ export function countUnsupportedSessionState(
   count += Object.values(session.sleepingAgentSessionsByPaneKey ?? {}).filter((record) => {
     const touchesSource = matches(record.worktreeId) || record.connectionId === scope.targetId
     return (
-      touchesSource && !transferableSleepingAgentSession(record, session, scope, terminalTabIds)
+      touchesSource &&
+      !transferableSleepingAgentSession(record, session, scope, terminalTabIds) &&
+      !retainedOrphanedSleepingAgentSession(record, scope, terminalTabIds)
     )
   }).length
   count += Object.entries(session.clientHostedBrowserPagesByWorktree ?? {})
@@ -164,5 +166,24 @@ export function transferableSleepingAgentSession(
     (!('automaticResumeBlockedBy' in record) || record.automaticResumeBlockedBy === undefined) &&
     ((record.origin ?? 'worktree-sleep') === 'worktree-sleep' ||
       paneBelongsToTerminalLayout(record, session, terminalTabIds))
+  )
+}
+
+/** Closed panes keep their resume evidence on the source; migrating must not resurrect their tabs. */
+function retainedOrphanedSleepingAgentSession(
+  record: SleepingAgentSessionRecord,
+  scope: OrcadMigrationSourceScope,
+  terminalTabIds: ReadonlySet<string>
+): boolean {
+  const separator = record.paneKey.lastIndexOf(':')
+  const tabId = record.paneKey.slice(0, separator)
+  return (
+    separator > 0 &&
+    (record.tabId === undefined || record.tabId === tabId) &&
+    !terminalTabIds.has(tabId) &&
+    (record.origin === 'quit' || record.origin === 'live') &&
+    orcadMigrationOwnerMatchesScope(record.worktreeId, scope) &&
+    (record.connectionId == null || record.connectionId === scope.targetId) &&
+    (!('automaticResumeBlockedBy' in record) || record.automaticResumeBlockedBy === undefined)
   )
 }
