@@ -19445,6 +19445,10 @@
       "openInSidebarCopy": "Type what you remember, or ask an agent: “find the session where we fixed the login timeout.”",
       "open": "Open",
       "enableOnAll": "Enable on all computers"
+    },
+    "dialog": {
+      "select": "Select",
+      "open": "Open"
     }
   },
   "aiVault": {

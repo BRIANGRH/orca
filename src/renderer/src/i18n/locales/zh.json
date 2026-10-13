@@ -19304,6 +19304,10 @@
       "openInSidebarCopy": "输入您记得的内容，或询问智能体：“找到我们修复登录超时的会话。”",
       "open": "打开",
       "enableOnAll": "在所有计算机上启用"
+    },
+    "dialog": {
+      "select": "选择",
+      "open": "打开"
     }
   },
   "aiVault": {
