@@ -73,6 +73,11 @@ export function normalizeAppBackgroundPanelOpacity(value: unknown): number {
   )
 }
 
+/** Workspace content (terminal, chat) opacity over the image; reads `terminalBackgroundOpacity`. */
+export function normalizeAppBackgroundContentOpacity(value: unknown): number {
+  return clampFinite(value, 0, 1, 1)
+}
+
 /** Clamps renderer-written background fields in place; only present keys are touched. */
 export function normalizeAppBackgroundSettingsUpdate(update: Partial<GlobalSettings>): void {
   if ('appBackgroundScope' in update) {

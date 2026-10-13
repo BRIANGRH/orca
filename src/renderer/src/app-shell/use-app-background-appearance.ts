@@ -50,6 +50,7 @@ export type ScopedAppBackground = {
 /** Host props and layer props once the applied background for `scope` has loaded; null otherwise. */
 export function useScopedAppBackground(scope: AppBackgroundScope): ScopedAppBackground | null {
   const appearance = useAppBackgroundAppearance()
+  const terminalBackgroundOpacity = useAppStore((s) => s.settings?.terminalBackgroundOpacity)
   const target = appearance?.scope === scope ? appearance : null
   // Why: a missing or still-loading image must not leave translucent panels over nothing.
   const loaded =
@@ -59,12 +60,12 @@ export function useScopedAppBackground(scope: AppBackgroundScope): ScopedAppBack
       return null
     }
     return {
-      host: getAppBackgroundHostProps(scope, target.panelOpacity),
+      host: getAppBackgroundHostProps(scope, target.panelOpacity, terminalBackgroundOpacity),
       layer: {
         imageId: target.imageId,
         imageOpacity: target.imageOpacity,
         blur: target.blur
       }
     }
-  }, [target, loaded, scope])
+  }, [target, loaded, scope, terminalBackgroundOpacity])
 }

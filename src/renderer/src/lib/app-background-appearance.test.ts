@@ -42,8 +42,16 @@ describe('getAppBackgroundHostProps', () => {
   it('sets the scope attribute and the unitless panel opacity variable', () => {
     expect(getAppBackgroundHostProps('workspace', 0.55)).toEqual({
       'data-app-background': 'workspace',
-      style: { '--app-panel-opacity': '0.55' }
+      style: { '--app-panel-opacity': '0.55', '--app-content-opacity': '1' }
     })
+  })
+
+  it('carries the terminal opacity as the clamped content opacity variable', () => {
+    expect(getAppBackgroundHostProps('window', 0.8, 0.6).style['--app-content-opacity']).toBe('0.6')
+    expect(getAppBackgroundHostProps('window', 0.8, -1).style['--app-content-opacity']).toBe('0')
+    expect(
+      getAppBackgroundHostProps('window', 0.8, Number.NaN).style['--app-content-opacity']
+    ).toBe('1')
   })
 
   it('clamps the panel opacity', () => {

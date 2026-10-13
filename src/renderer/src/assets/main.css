@@ -1100,6 +1100,15 @@ html.native-shell .app-layout {
   background-color: transparent;
 }
 
+/* Why: chat is workspace content like the terminal, so it follows the terminal opacity slider. */
+[data-app-background] [data-native-chat-root] {
+  background: color-mix(
+    in srgb,
+    var(--chat-canvas) calc(var(--app-content-opacity, 1) * 100%),
+    transparent
+  );
+}
+
 .titlebar-traffic-light-pad {
   width: calc(80px / var(--ui-zoom-factor, 1));
   flex-shrink: 0;

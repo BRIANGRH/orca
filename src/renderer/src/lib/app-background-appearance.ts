@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import type { GlobalSettings } from '../../../shared/global-settings-types'
 import {
   normalizeAppBackgroundBlur,
+  normalizeAppBackgroundContentOpacity,
   normalizeAppBackgroundImageId,
   normalizeAppBackgroundImageOpacity,
   normalizeAppBackgroundPanelOpacity,
@@ -15,6 +16,8 @@ export const APP_BACKGROUND_ATTRIBUTE = 'data-app-background'
 export const APP_BACKGROUND_SURFACE_ATTRIBUTE = 'data-app-background-surface'
 /** Unitless 0..1 panel opacity set inline on the host. */
 export const APP_PANEL_OPACITY_VAR = '--app-panel-opacity'
+/** Unitless 0..1 opacity for workspace content surfaces (chat) that follow the terminal slider. */
+export const APP_CONTENT_OPACITY_VAR = '--app-content-opacity'
 
 export type AppBackgroundSurface = 'card' | 'sidebar' | 'worktree-sidebar'
 
@@ -26,7 +29,8 @@ export type AppBackgroundAppearance = {
   panelOpacity: number
 }
 
-export type AppBackgroundHostStyle = CSSProperties & Record<typeof APP_PANEL_OPACITY_VAR, string>
+export type AppBackgroundHostStyle = CSSProperties &
+  Record<typeof APP_PANEL_OPACITY_VAR | typeof APP_CONTENT_OPACITY_VAR, string>
 
 export type AppBackgroundHostProps = {
   [APP_BACKGROUND_ATTRIBUTE]: AppBackgroundScope
@@ -63,11 +67,15 @@ export function resolveAppBackgroundAppearance(
 /** Props for any element that should host the background (app root, workspace, or a preview frame). */
 export function getAppBackgroundHostProps(
   scope: AppBackgroundScope,
-  panelOpacity: number
+  panelOpacity: number,
+  contentOpacity?: number
 ): AppBackgroundHostProps {
   return {
     [APP_BACKGROUND_ATTRIBUTE]: scope,
-    style: { [APP_PANEL_OPACITY_VAR]: String(normalizeAppBackgroundPanelOpacity(panelOpacity)) }
+    style: {
+      [APP_PANEL_OPACITY_VAR]: String(normalizeAppBackgroundPanelOpacity(panelOpacity)),
+      [APP_CONTENT_OPACITY_VAR]: String(normalizeAppBackgroundContentOpacity(contentOpacity))
+    }
   }
 }
 
@@ -79,10 +87,7 @@ export function resolveTranslucentPaneTitleBackground(
   if (!terminalBackground) {
     return null
   }
-  const opacity =
-    typeof terminalBackgroundOpacity === 'number' && Number.isFinite(terminalBackgroundOpacity)
-      ? Math.min(1, Math.max(0, terminalBackgroundOpacity))
-      : 1
+  const opacity = normalizeAppBackgroundContentOpacity(terminalBackgroundOpacity)
   if (opacity >= 1) {
     return null
   }
