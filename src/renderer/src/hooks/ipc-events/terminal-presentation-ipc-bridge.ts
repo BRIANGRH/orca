@@ -59,10 +59,18 @@ export function registerTerminalPresentationIpcBridge(unsubs: (() => void)[]): v
             agentLaunchViewer === undefined &&
             terminalPresentation !== 'background' &&
             surfaceOwner !== false
+          const worktreeTabs = store.tabsByWorktree[worktreeId] ?? []
+          const isSplitReveal = Boolean(ptyId && tabId && leafId && splitFromLeafId)
+          const splitTargetTab = isSplitReveal
+            ? worktreeTabs.find((candidate) => candidate.id === tabId)
+            : undefined
+          // Why: before activating, so a split into a tab this window lacks does not navigate.
+          if (isSplitReveal && !splitTargetTab) {
+            throw new Error(`Terminal tab ${tabId} not found`)
+          }
           if (shouldActivate) {
             activateTerminalInitiatedWorktree(store, worktreeId)
           }
-          const worktreeTabs = store.tabsByWorktree[worktreeId] ?? []
           if (ptyId && tabId && leafId && wasAgentLaunchPaneClosedByUser(tabId, leafId)) {
             // The user closed the launch's tab or pane while it waited. That close wins: it stays
             // closed, and its agent stops, as closing any tab stops what runs in it.
@@ -84,13 +92,6 @@ export function registerTerminalPresentationIpcBridge(unsubs: (() => void)[]): v
             ownership.kind === 'owned'
               ? worktreeTabs.find((candidate) => candidate.id === ownership.tabId)
               : undefined
-          const isSplitReveal = Boolean(ptyId && tabId && leafId && splitFromLeafId)
-          const splitTargetTab = isSplitReveal
-            ? worktreeTabs.find((candidate) => candidate.id === tabId)
-            : undefined
-          if (isSplitReveal && !splitTargetTab) {
-            throw new Error(`Terminal tab ${tabId} not found`)
-          }
           const reusedTab = existingTab ?? splitTargetTab
           if (ptyId && tabId && leafId && reusedTab?.agentLaunchPane?.leafId === leafId) {
             // A launch pane this window made and the host never showed early: the host now holds it,
