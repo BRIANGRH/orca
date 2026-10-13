@@ -1,10 +1,10 @@
 import { ServerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { translate } from '@/i18n/i18n'
 import { openWslHostsExperimentalSetting } from '../sidebar/use-wsl-hosts-enabled'
 import {
   getWslHostServerFilesMissingLabel,
-  getWslHostsTurnedOffLabel
+  getWslHostsTurnedOffLabel,
+  getWslHostsTurnOnLabel
 } from '../sidebar/wsl-host-row-status'
 import type { WslHostUnavailableReason } from './use-wsl-host-unavailable-reason'
 
@@ -33,7 +33,7 @@ export function WslHostUnavailableBanner({
         </div>
         {reason === 'turned-off' ? (
           <Button size="sm" onClick={openWslHostsExperimentalSetting}>
-            {translate('auto.components.terminal.pane.WslHostUnavailableBanner.turnOn', 'Turn on')}
+            {getWslHostsTurnOnLabel()}
           </Button>
         ) : null}
       </div>

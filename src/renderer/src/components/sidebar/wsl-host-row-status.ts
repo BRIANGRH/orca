@@ -60,6 +60,10 @@ export function getWslHostsTurnedOffLabel(): string {
   )
 }
 
+export function getWslHostsTurnOnLabel(): string {
+  return translate('auto.components.terminal.pane.WslHostUnavailableBanner.turnOn', 'Turn on')
+}
+
 /** The same state, short enough for a host-picker row. */
 export function getWslHostRowTurnedOffDetail(): string {
   return translate(
