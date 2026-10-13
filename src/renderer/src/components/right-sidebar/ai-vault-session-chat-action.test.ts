@@ -65,6 +65,19 @@ describe('session row chat actions', () => {
     expect(actions({ originalPaneTarget: pane }).canJumpToOriginalPane).toBe(true)
   })
 
+  it("falls back to the row's own resume only where its button would run", () => {
+    expect(actions({}).resumeWorktreeId).toBe('wt-1')
+    expect(
+      actions({ resumeState: { blocked: true, worktreeId: 'wt-1', usesSessionWorktree: true } })
+        .resumeWorktreeId
+    ).toBeNull()
+    // An open chat hides the button; switching to it is the only offer.
+    expect(actions({ structuredSessionOpen: true }).resumeWorktreeId).toBeNull()
+    expect(
+      actions({ session: { ...session, messageCount: 0, previewMessages: [] } }).resumeWorktreeId
+    ).toBeNull()
+  })
+
   it('offers nothing a hidden button would not', () => {
     expect(
       actions({ resumeInChat: { available: false, reason: 'remote' } }).resumeInNewChatWorkspaceId
@@ -72,6 +85,7 @@ describe('session row chat actions', () => {
     // A search hit whose transcript is gone cannot resume, whatever eligibility said.
     expect(actions({ searchHit: hit })).toEqual({
       canJumpToOriginalPane: false,
+      resumeWorktreeId: null,
       resumeInNewChatWorkspaceId: null,
       resumeInNewCliWorktreeId: null
     })

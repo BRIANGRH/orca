@@ -82,6 +82,7 @@ function renderList(
     collapsedGroups?: ReadonlySet<string>
     openSessionIds?: ReadonlySet<string>
     eligible?: (session: AiVaultSession) => boolean
+    resumeBlocked?: (session: AiVaultSession) => boolean
     searchHits?: ReadonlyMap<string, AiVaultSearchHit>
   } = {}
 ) {
@@ -89,6 +90,7 @@ function renderList(
   const calls = {
     onJumpToOriginalPane: vi.fn(),
     onResumeInNewChat: vi.fn(),
+    onResume: vi.fn(),
     onActiveRowIdChange: vi.fn()
   }
   const groups = options.groups ?? [{ key: 'all', label: null, sessions }]
@@ -107,8 +109,8 @@ function renderList(
       isStructuredSessionOpen={(s) => options.openSessionIds?.has(s.id) ?? false}
       getSessionLiveState={() => null}
       getWorktreeInfo={() => null}
-      getSessionResumeState={() => ({
-        blocked: false,
+      getSessionResumeState={(s) => ({
+        blocked: options.resumeBlocked?.(s) ?? false,
         worktreeId: 'wt-1',
         usesSessionWorktree: true
       })}
@@ -124,7 +126,7 @@ function renderList(
       onToggleGroup={vi.fn()}
       onJumpToOriginalPane={calls.onJumpToOriginalPane}
       onJumpToWorktree={vi.fn()}
-      onResume={vi.fn()}
+      onResume={calls.onResume}
       onContinueInNewSession={vi.fn()}
       onResumeInNewChat={calls.onResumeInNewChat}
       onResumeInNewCli={vi.fn()}
@@ -238,7 +240,14 @@ describe('Session History keyboard selection', () => {
     expect(calls.onResumeInNewChat).not.toHaveBeenCalled()
   })
 
-  it('opens details, and launches nothing, when the row offers no chat action', () => {
+  it("falls back to the row's own resume when it cannot open as a chat", () => {
+    const { press, calls } = renderList({ eligible: () => false })
+    press('Enter')
+    expect(calls.onResumeInNewChat).not.toHaveBeenCalled()
+    expect(calls.onResume).toHaveBeenCalledExactlyOnceWith(sessions[0], 'wt-1')
+  })
+
+  it('opens details, and launches nothing, when the row offers no action', () => {
     const missing: AiVaultSearchHit = {
       agent: 'claude',
       sessionId: 's-1',
@@ -253,11 +262,13 @@ describe('Session History keyboard selection', () => {
     }
     const { press, calls } = renderList({
       eligible: (s) => s.id !== sessions[0].id,
+      resumeBlocked: (s) => s.id === sessions[0].id,
       searchHits: new Map([[sessions[1].id, missing]])
     })
     press('Enter')
     press('ArrowDown')
     press('Enter')
+    expect(calls.onResume).not.toHaveBeenCalled()
     expect(calls.onResumeInNewChat).not.toHaveBeenCalled()
     expect(calls.onJumpToOriginalPane).not.toHaveBeenCalled()
     const expanded = screen

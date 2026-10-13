@@ -176,7 +176,7 @@ export function AiVaultSessionVirtualList({
     })
   }, [])
 
-  // Enter does what the row's own buttons offer, or opens its details when they offer nothing.
+  // Enter takes the row's best offer: switch, chat, then its own resume; details when it offers none.
   const activateSession = (session: AiVaultSession, index: number): void => {
     const actions = resolveAiVaultSessionRowChatActions({
       session,
@@ -190,6 +190,8 @@ export function AiVaultSessionVirtualList({
       onJumpToOriginalPane(session)
     } else if (actions.resumeInNewChatWorkspaceId) {
       onResumeInNewChat(session, actions.resumeInNewChatWorkspaceId)
+    } else if (actions.resumeWorktreeId) {
+      onResume(session, actions.resumeWorktreeId)
     } else {
       setExpandedSessionIds((current) => new Set(current).add(session.id))
       virtualizer.scrollToIndex(index)
