@@ -1,4 +1,5 @@
 import type { ManagedOrcadPreloadApi } from './managed-orcad-api'
+import type { WslHostsPreloadApi } from './wsl-hosts-api'
 import type { RuntimeHostStatusSnapshot } from '../../shared/runtime-host-status'
 import type {
   RuntimeBrowserDriverState,
@@ -151,6 +152,8 @@ export type RuntimeApi = {
     ) => Promise<RuntimeEnvironmentSubscriptionHandle>
     // Why optional: only the desktop preload deploys servers over SSH.
     managedOrcad?: ManagedOrcadPreloadApi
+    // Why optional: only a Windows desktop (or the e2e fake) has WSL distros to host.
+    wslHosts?: WslHostsPreloadApi
   }
   wsl: {
     isAvailable: () => Promise<boolean>

@@ -13,6 +13,7 @@ import type { OrcadMigrationSourceCutover } from '../../shared/orcad-migration-s
 import { recordManagedOrcadMigration } from '../../shared/runtime-environment-managed-orcad-store'
 import { listEnvironments } from '../../shared/runtime-environment-store'
 import {
+  getOrcadSshDeployment,
   redactRuntimeEnvironment,
   type KnownRuntimeEnvironment
 } from '../../shared/runtime-environments'
@@ -132,7 +133,7 @@ async function fenceOrResume(
     )
   }
   const converted = listEnvironments(userDataPath).some(
-    (environment) => environment.orcadDeployment?.sshTargetId === target.id
+    (environment) => getOrcadSshDeployment(environment)?.sshTargetId === target.id
   )
   if (converted) {
     return refuse(
